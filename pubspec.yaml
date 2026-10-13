@@ -1,0 +1,27 @@
+name: call_assistant
+description: "导入 Excel 表格，自动识别手机号列，点击号码跳转系统拨号页并自动填充号码。"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 解析 .xlsx
+  excel: ">=2.1.0 <5.0.0"
+  # 选择本地文件
+  file_picker: ">=8.0.0 <11.0.0"
+  # 调用系统拨号盘
+  url_launcher: ">=6.2.0 <7.0.0"
+  # 记录已呼叫号码
+  shared_preferences: ">=2.2.0 <3.0.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ">=3.0.0 <6.0.0"
+
+flutter:
+  uses-material-design: true
