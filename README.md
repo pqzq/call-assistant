@@ -80,12 +80,12 @@ flutter build apk --release
 
 | Job | 触发 | 产物 |
 | --- | --- | --- |
-| `build` | push 到 main / PR / 手动触发 | 分析 + 测试 + **Debug APK** + **正式签名 Release APK**，两个都作为 Actions Artifact 上传（分别保留 14 / 30 天） |
-| `release` | 打 `v*` 标签时 | 复用 `build` 产出的 Release APK 创建 GitHub Release（自动生成 Release Notes） |
+| `ci` | push 到 main / PR / 手动触发 | 分析 + 测试 + Debug APK（Artifact，保留 14 天） |
+| `release` | **打 `v*` 标签时** | 正式签名 APK，重命名为 `call-assistant-版本号.apk`（如 `call-assistant-1.0.0.apk`），并创建 GitHub Release |
 
-流程：`flutter pub get` → `flutter analyze` → `flutter test` → `flutter build apk --debug` → `flutter build apk --release` → 上传 Artifact。
+流程（release job）：checkout → JDK 21 + Flutter → 从 Secrets 还原密钥 → `flutter pub get` → 校验标签版本与 pubspec 版本一致 → `flutter build apk --release` → 重命名为 `call-assistant-版本号.apk` → 创建 GitHub Release。
 
-> `release` job 只在 `refs/tags/v*` 时运行（这是 GitHub Actions 的条件判断，不是出错）。普通 push 不会创建 GitHub Release，但 **Release APK 依然会作为 Artifact 产出**，在 Actions 运行页的 *Artifacts* 区域点 `app-release-apk` 即可下载安装。
+> 标签推送时 `ci` job 会被跳过（不重复构建），只跑 `release`；普通 push 只做 CI 校验，不产出安装包。
 
 ### 一次性准备
 
@@ -109,17 +109,22 @@ flutter build apk --release
 3. **打标签发布**：
 
    ```powershell
+   # 先把 pubspec.yaml 里的 version 改成要发布的版本号并提交
+   # version: 1.0.0+1  ->  版本号取 1.0.0
+   git add pubspec.yaml && git commit -m "chore: bump version to 1.0.0"
+   git push origin main
    git tag v1.0.0
    git push origin v1.0.0
    ```
 
-   标签推送后 `release` job 会跑，Release 页面即可下载 APK。
+   标签推送后 `release` job 会跑，校验标签版本与 `pubspec.yaml` 版本一致（不一致直接报错终止），构建正式签名包并重命名为 `call-assistant-1.0.0.apk`，挂到 GitHub Release 上。
 
 ### 说明
 
 - JDK 21（Temurin）+ Flutter 3.47.7 + Gradle 缓存，CI 与本地环境一致
 - 仓库默认配置了国内镜像（本地网络需要），CI 会自动切回官方源（runner 在海外，官方源更快更全）
-- `android/app/build.gradle.kts` 已改为：存在 `key.properties` 就用正式签名，否则回退 debug 签名 —— 所以没配 Secret 时 CI 也能出包，只是签名是 debug 的（不能覆盖安装已发布版本）
+- `android/app/build.gradle.kts` 已改为：存在 `key.properties` 就用正式签名，否则回退 debug 签名
+- **发布 job 强制要求配置了签名 Secret**：缺少 `KEYSTORE_BASE64` 会直接报错终止，避免误发出 debug 签名的包
 - 密钥务必备份，丢失后无法给已发布应用做更新
 
 ## 常见问题
