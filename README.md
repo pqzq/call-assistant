@@ -1,5 +1,7 @@
 # 话务助手（call_assistant）
 
+[![APK 构建与发布](https://github.com/pqzq/call-assistant/actions/workflows/apk.yml/badge.svg)](https://github.com/pqzq/call-assistant/actions/workflows/apk.yml)
+
 导入一份 Excel 名单 → 自动识别「手机号」列 → 点击号码跳转系统拨号页并自动填充号码。
 
 ## 功能
@@ -71,6 +73,52 @@ flutter build apk --release
 > 本机网络对 `github.com` / `maven.google.com` 不通，因此 `android/gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl` 指向腾讯云镜像，`android/settings.gradle.kts` 与 `android/build.gradle.kts` 的仓库列表前置了腾讯云/华为云 Maven 镜像（官方源保留在后面兜底）。换到能直连的网络时可以把镜像删掉。
 >
 > `android/gradle.properties` 关闭了 Kotlin 增量编译（Windows 下偶发 `Could not close incremental caches`）。
+
+## CI 自动发布 APK（GitHub Actions）
+
+工作流：`.github/workflows/apk.yml`，两个 job：
+
+| Job | 触发 | 产物 |
+| --- | --- | --- |
+| `build` | push 到 main / PR / 手动触发 | 分析 + 测试 + Debug APK，作为 Actions Artifact 上传（保留 14 天） |
+| `release` | 打 `v*` 标签时 | 正式签名 Release APK，自动创建 GitHub Release 并附上安装包 |
+
+流程：`flutter pub get` → `flutter analyze` → `flutter test` → `flutter build apk --release` → 上传。
+
+### 一次性准备
+
+1. **生成签名密钥**（在本机执行，密钥不会提交到仓库）：
+
+   ```powershell
+   pwsh -File tool/make_keystore.ps1
+   ```
+
+   会生成 `android/app/upload-keystore.jks` 和 `android/key.properties`（两者均已在 `.gitignore` 中），并在终端打印 4 个 Secret 的值。
+
+2. **在 GitHub 添加 4 个 Secret**：仓库 `Settings → Secrets and variables → Actions → New repository secret`
+
+   | Secret | 内容 |
+   | --- | --- |
+   | `KEYSTORE_BASE64` | 脚本打印的 base64 串（整行） |
+   | `KEYSTORE_PASSWORD` | 脚本打印的 keystore 密码 |
+   | `KEY_ALIAS` | 脚本打印的别名（默认 `upload`） |
+   | `KEY_PASSWORD` | 脚本打印的 key 密码 |
+
+3. **打标签发布**：
+
+   ```powershell
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+   标签推送后 `release` job 会跑，Release 页面即可下载 APK。
+
+### 说明
+
+- JDK 21（Temurin）+ Flutter 3.47.7 + Gradle 缓存，CI 与本地环境一致
+- 仓库默认配置了国内镜像（本地网络需要），CI 会自动切回官方源（runner 在海外，官方源更快更全）
+- `android/app/build.gradle.kts` 已改为：存在 `key.properties` 就用正式签名，否则回退 debug 签名 —— 所以没配 Secret 时 CI 也能出包，只是签名是 debug 的（不能覆盖安装已发布版本）
+- 密钥务必备份，丢失后无法给已发布应用做更新
 
 ## 常见问题
 
