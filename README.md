@@ -80,10 +80,12 @@ flutter build apk --release
 
 | Job | 触发 | 产物 |
 | --- | --- | --- |
-| `build` | push 到 main / PR / 手动触发 | 分析 + 测试 + Debug APK，作为 Actions Artifact 上传（保留 14 天） |
-| `release` | 打 `v*` 标签时 | 正式签名 Release APK，自动创建 GitHub Release 并附上安装包 |
+| `build` | push 到 main / PR / 手动触发 | 分析 + 测试 + **Debug APK** + **正式签名 Release APK**，两个都作为 Actions Artifact 上传（分别保留 14 / 30 天） |
+| `release` | 打 `v*` 标签时 | 复用 `build` 产出的 Release APK 创建 GitHub Release（自动生成 Release Notes） |
 
-流程：`flutter pub get` → `flutter analyze` → `flutter test` → `flutter build apk --release` → 上传。
+流程：`flutter pub get` → `flutter analyze` → `flutter test` → `flutter build apk --debug` → `flutter build apk --release` → 上传 Artifact。
+
+> `release` job 只在 `refs/tags/v*` 时运行（这是 GitHub Actions 的条件判断，不是出错）。普通 push 不会创建 GitHub Release，但 **Release APK 依然会作为 Artifact 产出**，在 Actions 运行页的 *Artifacts* 区域点 `app-release-apk` 即可下载安装。
 
 ### 一次性准备
 
