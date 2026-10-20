@@ -81,9 +81,20 @@ flutter build apk --release
 | Job | 触发 | 产物 |
 | --- | --- | --- |
 | `ci` | push 到 main / PR / 手动触发 | 分析 + 测试 + Debug APK（Artifact，保留 14 天） |
-| `release` | **打 `v*` 标签时** | 正式签名 APK，重命名为 `call-assistant-版本号.apk`（如 `call-assistant-1.0.0.apk`），并创建 GitHub Release |
+| `release` | **打 `v*` 标签时** | 正式签名 APK（按 ABI 拆分，**只发布 ARM 架构**），重命名为 `call-assistant-版本号-架构.apk`，并创建 GitHub Release |
 
-流程（release job）：checkout → JDK 21 + Flutter → 从 Secrets 还原密钥 → `flutter pub get` → 校验标签版本与 pubspec 版本一致 → `flutter build apk --release` → 重命名为 `call-assistant-版本号.apk` → 创建 GitHub Release。
+流程（release job）：checkout → JDK 21 + Flutter → 从 Secrets 还原密钥 → `flutter pub get` → 校验标签版本与 pubspec 版本一致 → `flutter build apk --release --split-per-abi` → 只保留 ARM 架构并重命名 → 创建 GitHub Release。
+
+发布产物（以 v1.0.0 为例）：
+
+| 文件名 | 体积 | 适用设备 |
+| --- | --- | --- |
+| `call-assistant-1.0.0-arm64-v8a.apk` | ~17.5 MB | 绝大多数现代手机（**推荐**） |
+| `call-assistant-1.0.0-armeabi-v7a.apk` | ~15 MB | 32 位老旧机型（Android 5~7 时代） |
+
+- 用 `--split-per-abi` 拆分后每个包只含一套 so，相比通用包（49.3MB）体积小一半以上
+- `x86_64` 仅用于模拟器，不发布
+- 两个包共用同一签名密钥，可互相覆盖安装
 
 > 标签推送时 `ci` job 会被跳过（不重复构建），只跑 `release`；普通 push 只做 CI 校验，不产出安装包。
 

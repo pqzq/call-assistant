@@ -134,14 +134,21 @@ jobs:
           fi
           echo "APP_VERSION=$PUB_VERSION" >> "$GITHUB_ENV"
 
-      - name: 构建 Release APK
-        run: flutter build apk --release
+      - name: 构建 Release APK（按 ABI 拆分）
+        run: flutter build apk --release --split-per-abi
 
-      - name: 重命名为 call-assistant-版本号.apk
+      - name: 只保留 ARM 架构并重命名
         run: |
           cd build/app/outputs/flutter-apk
-          mv app-release.apk "call-assistant-${APP_VERSION}.apk"
-          ls -lh "call-assistant-${APP_VERSION}.apk"
+          for f in app-*-release.apk; do
+            [ -e "$f" ] || continue
+            abi=$(echo "$f" | sed -E 's/^app-(.*)-release\.apk$/\1/')
+            case "$abi" in
+              arm64-v8a|armeabi-v7a) mv "$f" "call-assistant-${APP_VERSION}-${abi}.apk" ;;
+              *) rm -f "$f" ;;
+            esac
+          done
+          ls -lh call-assistant-*.apk
 
       - name: 创建 GitHub Release
         uses: softprops/action-gh-release@v2
