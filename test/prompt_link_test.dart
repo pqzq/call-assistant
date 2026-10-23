@@ -2,9 +2,38 @@ import 'dart:convert';
 
 import 'package:call_assistant/services/call_state_watcher.dart';
 import 'package:call_assistant/services/lan_link.dart';
+import 'package:call_assistant/utils/avatar_layout.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('浮动数字人坐标换算', () {
+    const free = Size(240, 400);
+
+    test('归一化坐标转像素', () {
+      expect(AvatarLayout.resolve(0, 0, free), Offset.zero);
+      expect(AvatarLayout.resolve(1, 1, free), const Offset(240, 400));
+      expect(AvatarLayout.resolve(0.5, 0.25, free), const Offset(120, 100));
+    });
+
+    test('越界的归一化值被夹到 0~1', () {
+      expect(AvatarLayout.resolve(2.5, -1.0, free), const Offset(240, 0));
+    });
+
+    test('像素转归一化并夹在可用区域内', () {
+      expect(AvatarLayout.normalize(const Offset(120, 100), free), const Offset(0.5, 0.25));
+      expect(AvatarLayout.clampPixel(const Offset(-30, 999), free), const Offset(0, 400));
+      expect(AvatarLayout.clampPixel(const Offset(120, 100), free), const Offset(120, 100));
+    });
+
+    test('可用区域为 0 时不会出现除零', () {
+      expect(AvatarLayout.normalize(const Offset(10, 10), Size.zero), Offset.zero);
+      expect(AvatarLayout.resolve(0.5, 0.5, Size.zero), Offset.zero);
+    });
+  });
+
   group('LanMessage 编解码', () {
     test('answered 消息可往返编解码', () {
       final message = LanMessage(

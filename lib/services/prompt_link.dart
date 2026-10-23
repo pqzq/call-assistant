@@ -41,6 +41,12 @@ class PromptLink extends ChangeNotifier {
   static const String _kAudioPath = 'prompt_audio_path';
   static const String _kAvatarEnabled = 'prompt_avatar_enabled';
   static const String _kAvatarModel = 'prompt_avatar_model';
+  static const String _kAvatarPosX = 'prompt_avatar_pos_x';
+  static const String _kAvatarPosY = 'prompt_avatar_pos_y';
+
+  /// 浮动数字人默认位置（屏幕可用区域的归一化坐标）
+  static const double defaultAvatarX = 0.82;
+  static const double defaultAvatarY = 0.22;
 
   static const String defaultScript =
       '您好，我是本次项目的对接人，占用您一分钟时间，跟您同步一个事情，方便吗？';
@@ -63,6 +69,8 @@ class PromptLink extends ChangeNotifier {
   bool _initialized = false;
   bool _avatarEnabled = false;
   String _avatarModel = Live2dService.defaultModel;
+  double _avatarPosX = defaultAvatarX;
+  double _avatarPosY = defaultAvatarY;
   List<double>? _envelope;
   Timer? _mouthTimer;
 
@@ -93,6 +101,10 @@ class PromptLink extends ChangeNotifier {
 
   /// 当前数字人模型（相对路径）
   String get avatarModel => _avatarModel;
+
+  /// 浮动数字人位置（0~1，相对可用区域）
+  double get avatarPosX => _avatarPosX;
+  double get avatarPosY => _avatarPosY;
 
   /// 0~1 的嘴型幅度，Live2D 组件监听它
   final ValueNotifier<double> mouth = ValueNotifier<double>(0);
@@ -142,6 +154,8 @@ class PromptLink extends ChangeNotifier {
     if (savedAudio != null && File(savedAudio).existsSync()) _audioPath = savedAudio;
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
+    _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
+    _avatarPosY = prefs.getDouble(_kAvatarPosY) ?? defaultAvatarY;
     notifyListeners();
 
     // 嘴型跟随音频播放位置
@@ -284,6 +298,26 @@ class PromptLink extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAvatarModel, model);
     _log('数字人模型：$model');
+  }
+
+  /// 保存浮动数字人的位置（0~1 归一化），拖动结束时调用
+  Future<void> setAvatarPosition(double x, double y) async {
+    _avatarPosX = x.clamp(0.0, 1.0);
+    _avatarPosY = y.clamp(0.0, 1.0);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_kAvatarPosX, _avatarPosX);
+      await prefs.setDouble(_kAvatarPosY, _avatarPosY);
+    } catch (_) {
+      // 忽略
+    }
+  }
+
+  /// 位置复位到默认（右上）
+  Future<void> resetAvatarPosition() async {
+    await setAvatarPosition(defaultAvatarX, defaultAvatarY);
+    notifyListeners();
+    _log('数字人位置已复位');
   }
 
   /// 导入用户自备模型（zip 内含 *.model3.json）

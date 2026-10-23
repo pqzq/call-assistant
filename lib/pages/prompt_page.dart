@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../services/call_state_watcher.dart';
 import '../services/prompt_link.dart';
-import '../widgets/live2d_avatar.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
 class PromptPage extends StatefulWidget {
@@ -490,10 +489,33 @@ class _PromptPageState extends State<PromptPage> {
           ),
           if (enabled) ...<Widget>[
             const SizedBox(height: 10),
-            Live2dAvatar(
-              modelPath: _link.avatarModel,
-              mouth: _link.mouth,
-              height: 220,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF0FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.open_with, size: 16, color: Color(0xFF2F6BFF)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '数字人已浮动在屏幕上方，按住底部灰条即可拖动位置，✕ 可关闭。',
+                      style: TextStyle(fontSize: 12, height: 1.5, color: Color(0xFF2F6BFF)),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _link.resetAvatarPosition,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('复位', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             const Text(

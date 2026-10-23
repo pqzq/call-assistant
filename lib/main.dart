@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'pages/home_page.dart';
 import 'services/prompt_link.dart';
+import 'widgets/floating_avatar.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +23,8 @@ class CallAssistantApp extends StatelessWidget {
     return MaterialApp(
       title: '话务助手',
       debugShowCheckedModeBanner: false,
+      // 数字人浮在所有页面之上，可拖动
+      builder: (context, child) => FloatingAvatarHost(child: child ?? const SizedBox.shrink()),
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
