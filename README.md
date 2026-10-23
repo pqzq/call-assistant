@@ -231,6 +231,22 @@ flutter build apk --release
 oot: 卷名也做了兼容），不依赖各 ROM 行为不一致的文件选择器
   - 找不到模型时会说明原因（目录读不到 / 有 json 但不是模型描述文件 / 确实没有）
 
+### Windows 数字人的透明背景
+
+Windows 的 WebView2 默认是**白色不透明**背景，会导致：
+
+- 模型周围出现一圈白/灰块
+- 浮窗贴到屏幕左/右边缘时，超出部分露出灰白条
+
+处理方式（`live2d_avatar.dart` 的 `_bootstrapWindows`）：
+
+```dart
+await controller.setBackgroundColor(const Color(0x00000000));
+```
+
+- 只能传 **alpha = 0 的全透明**，传半透明会被 WebView2 当成不透明
+- 页面本身也必须是透明背景（`assets/live2d/index.html` 里 `html, body { background: transparent; }`）
+- Android 侧本来就通过 `webview_flutter` 设了同样的透明背景，两端表现一致
 ### 数字人模型的移除
 
 「切换模型」列表里：

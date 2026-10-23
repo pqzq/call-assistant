@@ -153,6 +153,10 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       final controller = wv.WebviewController();
       try {
         await controller.initialize();
+        // 背景设为全透明：WebView2 默认是白色，不透明的话
+        // 模型周围 / 浮窗贴边时就会露出一圈灰白条。
+        // 注意只能传 alpha=0（全透明），半透明会被当成不透明。
+        await controller.setBackgroundColor(const Color(0x00000000));
       } catch (e) {
         if (mounted) {
           setState(() => _error = 'WebView2 初始化失败：$e\n'
