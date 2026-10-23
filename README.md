@@ -109,6 +109,39 @@ flutter build apk --release
 
 > **为什么推荐音频文件**：实测小米 HyperOS 的系统 TTS（`com.xiaomi.mibrain.speech`）不对第三方应用开放，`TextToSpeech` 初始化直接返回 `-1`，App 无法让系统引擎发声。换成真人录音播放，既绕过引擎限制，声音也更自然、更不容易被听出是合成的。
 
+### 端侧语音合成（C+A 混合，文本驱动 + 零播报延迟）
+
+既想「文本可改」又不想依赖系统 TTS，可以让 App 用内置的 sherpa-onnx **离线合成一次**，把开场白变成 wav 缓存下来，之后每次接通只播 wav：
+
+```
+编辑开场白文本 → 点「生成语音」（本机合成 2 秒左右，只做一次）
+        ↓
+   缓存 opening_tts_<ts>.wav（自动设为播报音频）
+        ↓
+接通 → 广播 → 播放端直接播 wav（延迟 ≈ 0，不等合成）
+```
+
+**安装模型（一次性，13.4MB）**
+
+1. 下载 `vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2`（13.4MB）
+   <https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models>
+2. 把 `.tar.bz2` 传到手机
+3. App 内「双机联动播报 → 端侧语音合成 → 导入模型包」，选这个文件
+4. 状态变为「模型就绪」后，点「生成语音」即可
+
+模型解压到 `Android/data/com.callassistant.call_assistant/files/sherpa-tts/`（可用 adb 直接推），也可手动放模型目录后重启 App 自动识别。
+
+**实测数据（小米 2410DPN6CC / Android 17）**
+
+| 环节 | 耗时 |
+| --- | --- |
+| 解压 13.4MB 模型包 | ~1.0 s |
+| 首次合成（含模型加载，约 24 字） | ~2.1 s |
+| 后续合成（模型常驻） | 明显更快 |
+| 播报时（播 wav） | 启动 < 100 ms |
+
+> 生成的是 16bit PCM 单声道 wav，语速由文本卡的「语速」滑块换算成 `speed` 参数。模型只在合成时用到，**不打包进 APK**。
+
 ### 关键注意事项
 
 | 项 | 说明 |
@@ -144,11 +177,11 @@ flutter build apk --release
 
 | 文件名 | 体积 | 适用设备 |
 | --- | --- | --- |
-| `call-assistant-1.0.0-arm64-v8a.apk` | ~17.5 MB | 绝大多数现代手机（**推荐**） |
-| `call-assistant-1.0.0-armeabi-v7a.apk` | ~15 MB | 32 位老旧机型（Android 5~7 时代） |
+| `call-assistant-1.0.0-arm64-v8a.apk` | ~44.2 MB | 绝大多数现代手机（**推荐**） |
+| `call-assistant-1.0.0-armeabi-v7a.apk` | ~33.7 MB | 32 位老旧机型（Android 5~7 时代） |
 
-- 用 `--split-per-abi` 拆分后每个包只含一套 so，相比通用包（49.3MB）体积小一半以上
-- `x86_64` 仅用于模拟器，不发布
+- 用 `--split-per-abi` 拆分后每个包只含一套 so；`x86_64` 仅用于模拟器，不发布
+- 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）；通用包会到 125MB，所以**必须按 ABI 拆分**
 - 两个包共用同一签名密钥，可互相覆盖安装
 
 > 标签推送时 `ci` job 会被跳过（不重复构建），只跑 `release`；普通 push 只做 CI 校验，不产出安装包。

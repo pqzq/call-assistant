@@ -62,9 +62,11 @@ class _PromptPageState extends State<PromptPage> {
           const SizedBox(height: 12),
           _buildRoleCard(),
           const SizedBox(height: 12),
-          _buildAudioCard(),
-          const SizedBox(height: 12),
           _buildScriptCard(),
+          const SizedBox(height: 12),
+          _buildSynthCard(),
+          const SizedBox(height: 12),
+          _buildAudioCard(),
           const SizedBox(height: 12),
           _buildLogCard(),
           const SizedBox(height: 16),
@@ -211,6 +213,105 @@ class _PromptPageState extends State<PromptPage> {
               style: const TextStyle(fontSize: 12, color: Color(0xFF2F6BFF)),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSynthCard() {
+    final ready = _link.ttsModelReady;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.graphic_eq, size: 18, color: Color(0xFF2F6BFF)),
+              const SizedBox(width: 8),
+              const Text('端侧语音合成', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ready ? const Color(0xFFE7F7EE) : const Color(0xFFFDECEC),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  ready ? '模型就绪' : '未安装模型',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: ready ? const Color(0xFF17A05A) : const Color(0xFFD03B3B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '在本机离线把上面的开场白文本合成成 wav（sherpa-onnx + 中文 VITS，int8 模型约 13MB）。合成只在点按钮时跑一次，之后接通播的就是这个 wav，不需要系统 TTS。',
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+          ),
+          if (ready) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              _link.ttsModelDir ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Colors.black38),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final ok = await _link.importTtsModel();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(ok ? '模型导入成功' : '模型导入失败，详见日志'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.unarchive_outlined, size: 18),
+                  label: const Text('导入模型包'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: ready && !_link.synthesizing
+                      ? () async {
+                          final ok = await _link.synthesizeOpening();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(ok ? '已生成并设为播报音频' : '合成失败，详见日志'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      : null,
+                  icon: _link.synthesizing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.auto_awesome, size: 18),
+                  label: Text(_link.synthesizing ? '合成中…' : '生成语音'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '模型下载：github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models\n'
+            '推荐 vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2（13.4MB），下载后传手机再点「导入模型包」。',
+            style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
+          ),
         ],
       ),
     );

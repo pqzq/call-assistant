@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'call_state_watcher.dart';
 import 'lan_link.dart';
+import 'tts_synthesizer.dart';
 
 /// 联动日志
 class PromptLog {
@@ -123,6 +124,7 @@ class PromptLink extends ChangeNotifier {
 
     await _initTts();
     await refreshAccessibility();
+    await refreshTtsModel();
     await _startLink();
     CallStateWatcher.stream().listen(_onCallState);
   }
@@ -145,6 +147,85 @@ class PromptLink extends ChangeNotifier {
     } catch (_) {
       _ttsReady = false;
     }
+    notifyListeners();
+  }
+
+  // ---------------- 端侧语音合成 ----------------
+
+  bool get ttsModelReady => TtsSynthesizer.instance.isModelReady;
+  String? get ttsModelDir => TtsSynthesizer.instance.modelDir;
+  bool _synthesizing = false;
+  bool get synthesizing => _synthesizing;
+
+  Future<String> ttsModelRootPath() async => (await TtsSynthesizer.instance.modelRoot()).path;
+
+  /// 扫描是否已安装端侧模型
+  Future<void> refreshTtsModel() async {
+    await TtsSynthesizer.instance.detectModel();
+    notifyListeners();
+  }
+
+  /// 导入模型压缩包（.tar.bz2）
+  Future<bool> importTtsModel() async {
+    try {
+      // 注意：FileType.any 不能同时传 allowedExtensions（file_picker 会抛异常）
+      final result = await FilePicker.platform.pickFiles(type: FileType.any);
+      if (result == null || result.files.isEmpty) return false;
+      final path = result.files.single.path;
+      if (path == null) {
+        _log('无法读取所选模型包');
+        return false;
+      }
+      _log('正在解压模型包…', important: true);
+      notifyListeners();
+      final dir = await TtsSynthesizer.instance.importArchive(File(path));
+      if (dir == null) {
+        _log('模型包解压完成，但未识别到可用模型（需含 .onnx 与 tokens.txt）');
+        return false;
+      }
+      _log('端侧模型已就绪：${dir.split(Platform.pathSeparator).where((e) => e.isNotEmpty).last}', important: true);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _log('导入模型失败：$e');
+      return false;
+    }
+  }
+
+  /// 用端侧模型把开场白文本合成成 wav，并设为播报音频
+  Future<bool> synthesizeOpening() async {
+    if (!ttsModelReady) {
+      _log('尚未安装端侧模型，无法合成');
+      return false;
+    }
+    if (_synthesizing) return false;
+    _synthesizing = true;
+    notifyListeners();
+    final started = DateTime.now();
+    try {
+      final path = await TtsSynthesizer.instance.synthesize(text: _script, speed: _rate <= 0 ? 1.0 : _rate / 0.5);
+      if (path == null) {
+        _log('合成失败，请检查模型文件是否完整');
+        return false;
+      }
+      final cost = DateTime.now().difference(started).inMilliseconds;
+      await useAudioFile(path);
+      _log('语音合成完成（${cost}ms），已设为播报音频', important: true);
+      return true;
+    } catch (e) {
+      _log('合成失败：$e');
+      return false;
+    } finally {
+      _synthesizing = false;
+      notifyListeners();
+    }
+  }
+
+  /// 把指定音频文件设为播报音频
+  Future<void> useAudioFile(String path) async {
+    _audioPath = path;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAudioPath, path);
     notifyListeners();
   }
 
