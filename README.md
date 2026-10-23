@@ -234,7 +234,7 @@ flutter build apk --release
 
 > **授权提醒**：这些都是 Live2D 官方样例模型，**仅允许测试/非商业用途**，对外发布必须替换成自有或已购买授权的模型。
 
-> **关于 Cubism 3 格式的模型（如 Ren）**：内置运行时是 Cubism 5 Core，只支持 **moc3 v5 及以下**（= Cubism 4/5）；Cubism 3 的模型是 **moc3 v6**，且官方运行时早已移除 Cubism 3 实现、Cubism 3 Core 也不再公开分发，因此**这类模型无法加载**。App 会自动把这类模型从「切换已有模型」列表里过滤掉；万一手动指定了它，页面会给出明确提示而不是英文报错。
+> **关于 Cubism 3 格式的模型**：内置运行时是 Cubism 5 Core，只支持 **moc3 v5 及以下**（= Cubism 4/5）；Cubism 3 的模型是 **moc3 v6**，且官方运行时早已移除 Cubism 3 实现、Cubism 3 Core 也不再公开分发，因此**这类模型无法加载**（官方样例里的 Ren 就属于这一类，已从内置列表移除）。App 仍会按 **moc 文件头版本号**自动过滤这类模型，万一手动指定了它，页面会给出明确提示而不是英文报错。
 > 判据是 **moc 文件头的版本号**（不是 model3.json 里的 `Version`——那个字段 Cubism 4 也是 3）。
 
 - 自备模型：打包成 zip（内含 `*.model3.json` 及贴图/动作/表情文件）→ 数字人菜单 →「导入模型包（zip）」→ 释放到 `Android/data/<包名>/files/live2d/models/<名字>/`

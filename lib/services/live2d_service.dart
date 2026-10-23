@@ -17,7 +17,7 @@ class Live2dService {
   static const String _assetRoot = 'assets/live2d/';
 
   /// 资源版本：改了 assets 里的文件就 +1，启动时会重新释放
-  static const String assetVersion = '6';
+  static const String assetVersion = '7';
 
   static const String defaultModel = 'hiyori/Hiyori.model3.json';
 
@@ -195,6 +195,15 @@ class Live2dService {
     final upToDate = marker.existsSync() && marker.readAsStringSync().trim() == assetVersion;
 
     if (!upToDate) {
+      // 版本变化：先清空旧资源再重新释放，避免删除/替换模型后残留旧文件
+      if (root.existsSync()) {
+        try {
+          root.deleteSync(recursive: true);
+        } catch (_) {
+          // 删除失败就覆盖写入
+        }
+      }
+      root.createSync(recursive: true);
       await _extractAssets(root);
       marker.writeAsStringSync(assetVersion);
     }
