@@ -155,14 +155,19 @@ class _RecordListPageState extends State<RecordListPage> {
     final fields = <CellField>[];
     for (var column = 0; column < sheet.columnCount; column++) {
       if (sheet.isPhoneColumn(column)) continue;
-      final label = sheet.headerAt(column).trim();
-      // 「序号」列不展示（行号在界面左侧已经有了）
-      if (label == '序号') continue;
       final value = sheet.cellAt(row, column).trim();
       if (value.isEmpty) continue;
-      fields.add(CellField(label, value));
+      fields.add(CellField(sheet.headerAt(column).trim(), value));
     }
     return fields;
+  }
+
+  /// 卡片上展示的字段：去掉标题本身与「序号」项
+  List<CellField> _displayFields(List<CellField> fields, int titleIndex) {
+    return <CellField>[
+      for (var i = 0; i < fields.length; i++)
+        if (i != titleIndex && fields[i].label != '序号') fields[i],
+    ];
   }
 
   static final RegExp _pureNumber = RegExp(r'^\d+$');
@@ -187,10 +192,8 @@ class _RecordListPageState extends State<RecordListPage> {
     final fields = _fieldsOf(row);
     final titleIndex = _titleIndexOf(fields);
     final name = titleIndex >= 0 ? fields[titleIndex].value.trim() : '第 ${row + 1} 行';
-    final extras = <CellField>[
-      for (var i = 0; i < fields.length; i++)
-        if (i != titleIndex) fields[i],
-    ];
+    // 提词气泡里不占用「序号」的位置（展示部门/备注更有用）
+    final extras = _displayFields(fields, titleIndex);
     Map<String, DateTime> times = <String, DateTime>{};
     try {
       times = await CallLogStore.loadTimes();
@@ -658,10 +661,8 @@ class _RecordListPageState extends State<RecordListPage> {
       final row = rows[index];
       final fields = _fieldsOf(row);
       final titleIndex = _titleIndexOf(fields);
-      final details = <CellField>[
-        for (var i = 0; i < fields.length; i++)
-          if (i != titleIndex) fields[i],
-      ];
+      // 卡片上不展示「序号」项（长按详情里仍能看到完整字段）
+      final details = _displayFields(fields, titleIndex);
       final phones = sheet.phonesAt(row, widget.areaCode);
       final anyCalled = phones.any(
         (p) => p.dialTarget != null && _called.contains(p.dialTarget),
