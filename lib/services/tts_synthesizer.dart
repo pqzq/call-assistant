@@ -8,6 +8,7 @@ import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 /// 端侧 TTS：用 sherpa-onnx 把开场白文本合成成 wav，播放端直接播音视频文件，
 /// 避免依赖系统 TTS 引擎（很多定制 ROM 不对第三方开放）与播报时的合成延迟。
+/// 同时输出振幅包络，供 Live2D 数字人做嘴型同步。
 class TtsSynthesizer {
   TtsSynthesizer._();
 
@@ -98,8 +99,8 @@ class TtsSynthesizer {
     return detectModel();
   }
 
-  /// 合成语音，返回生成的 wav 路径
-  Future<String?> synthesize({required String text, double speed = 1.0}) async {
+  /// 合成语音，返回 wav 路径 + 振幅包络（用于驱动 Live2D 嘴型）
+  Future<SynthesisResult?> synthesize({required String text, double speed = 1.0}) async {
     final content = text.trim();
     if (content.isEmpty) return null;
 
@@ -110,9 +111,77 @@ class TtsSynthesizer {
     if (audio.samples.isEmpty || audio.sampleRate <= 0) return null;
 
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/opening_tts_${DateTime.now().millisecondsSinceEpoch}.wav');
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final file = File('${dir.path}/opening_tts_$stamp.wav');
     await file.writeAsBytes(_encodeWav(audio.samples, audio.sampleRate));
-    return file.path;
+
+    // 每 50ms 一个 RMS 值，归一化到 0~1，供播放时驱动嘴型
+    final envelope = _buildEnvelope(audio.samples, audio.sampleRate, 50);
+    await File('${file.path}.env.json').writeAsString(_encodeEnvelope(envelope, audio.sampleRate));
+
+    return SynthesisResult(wavPath: file.path, envelope: envelope, stepMs: 50);
+  }
+
+  /// 读取 wav 旁边的包络文件（重启后仍可用）
+  Future<List<double>?> loadEnvelope(String wavPath) async {
+    try {
+      final file = File('$wavPath.env.json');
+      if (!file.existsSync()) return null;
+      final text = await file.readAsString();
+      final values = _decodeEnvelope(text);
+      if (values == null || values.isEmpty) return null;
+      return values;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 逐窗计算 RMS 并归一化
+  List<double> _buildEnvelope(Float32List samples, int sampleRate, int stepMs) {
+    final window = (sampleRate * stepMs / 1000).round().clamp(1, samples.length);
+    final result = <double>[];
+    for (var start = 0; start < samples.length; start += window) {
+      final end = math.min(start + window, samples.length);
+      var sum = 0.0;
+      for (var i = start; i < end; i++) {
+        sum += samples[i] * samples[i];
+      }
+      result.add(math.sqrt(sum / (end - start)));
+    }
+    if (result.isEmpty) return result;
+    final peak = result.reduce(math.max);
+    if (peak <= 0) return List<double>.filled(result.length, 0);
+    // 归一化 + 轻微非线性压缩，小音量也能带出嘴型
+    return result
+        .map((v) => math.min(1.0, math.pow(v / peak, 0.7).toDouble()))
+        .toList(growable: false);
+  }
+
+  String _encodeEnvelope(List<double> values, int sampleRate) {
+    final buffer = StringBuffer()
+      ..write('{"stepMs":50,"sampleRate":')
+      ..write(sampleRate)
+      ..write(',"values":[');
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) buffer.write(',');
+      buffer.write(values[i].toStringAsFixed(3));
+    }
+    buffer.write(']}');
+    return buffer.toString();
+  }
+
+  List<double>? _decodeEnvelope(String text) {
+    final start = text.indexOf('"values"');
+    if (start < 0) return null;
+    final open = text.indexOf('[', start);
+    final close = text.lastIndexOf(']');
+    if (open < 0 || close <= open) return null;
+    final body = text.substring(open + 1, close).trim();
+    if (body.isEmpty) return <double>[];
+    return body
+        .split(',')
+        .map((e) => double.tryParse(e.trim()) ?? 0)
+        .toList(growable: false);
   }
 
   Future<sherpa.OfflineTts?> _ensureTts() async {
@@ -191,6 +260,24 @@ class TtsSynthesizer {
     final index = path.lastIndexOf(Platform.pathSeparator);
     return index >= 0 ? path.substring(index + 1) : path;
   }
+}
+
+/// 合成结果：wav 路径 + 振幅包络
+class SynthesisResult {
+  const SynthesisResult({
+    required this.wavPath,
+    required this.envelope,
+    required this.stepMs,
+  });
+
+  final String wavPath;
+
+  /// 每 [stepMs] 毫秒一个 0~1 的振幅值
+  final List<double> envelope;
+
+  final int stepMs;
+
+  Duration get duration => Duration(milliseconds: envelope.length * stepMs);
 }
 
 class _ModelFiles {

@@ -40,13 +40,17 @@ lib/
 │  ├─ call_log_store.dart         已呼叫号码本地存储
 │  ├─ call_state_watcher.dart     无障碍通话状态通道（EventChannel）
 │  ├─ lan_link.dart               局域网 UDP 广播通道
-│  └─ prompt_link.dart            双机联动编排（接通→广播→朗读）
+│  ├─ live2d_service.dart         Live2D 资源释放 + 本地静态服务 + 模型导入
+│  ├─ tts_synthesizer.dart        端侧 TTS 合成（sherpa-onnx）+ 振幅包络
+│  └─ prompt_link.dart            双机联动编排（接通→广播→朗读→口型）
 ├─ utils/phone_utils.dart         号码归一化、类型识别（手机/固话/本地座机）、区号补全
 ├─ pages/
 │  ├─ home_page.dart              导入、参数确认（工作表 / 手机号列 / 统计）
 │  ├─ record_list_page.dart       名单列表、搜索、拨号
 │  └─ prompt_page.dart            双机联动配置（角色 / 开场白 / 日志）
-└─ widgets/record_card.dart       单条记录卡片
+└─ widgets/
+   ├─ record_card.dart           单条记录卡片
+   └─ live2d_avatar.dart         Live2D 数字人组件（WebView + 嘴型驱动）
 test/                               18 个用例（号码解析 / Excel 导入 / 列识别 / 界面冒烟）
 android/                            gradle 工程 + 带 <queries> 的 AndroidManifest
 ```
@@ -142,6 +146,43 @@ flutter build apk --release
 
 > 生成的是 16bit PCM 单声道 wav，语速由文本卡的「语速」滑块换算成 `speed` 参数。模型只在合成时用到，**不打包进 APK**。
 
+### 数字人说话口型（Live2D）
+
+播报时界面上会有一个 Live2D 数字人做说话口型，嘴型与语音音量严格同步（只在本机屏幕可见，对方在通话里看不到画面）。
+
+**实现方式**
+
+| 环节 | 做法 |
+| --- | --- |
+| 渲染 | `webview_flutter` + `pixi-live2d-display` + Cubism 5 Core（打包在 `assets/live2d/`，5.4MB） |
+| 托管 | `file://` 下 WebView 的 `fetch` 会被 CORS 拦，因此把资源释放到应用目录后用 `127.0.0.1` 静态服务托管（`Live2dService`） |
+| 唇形 | 合成 wav 时顺带算振幅包络（每 50ms 一个 RMS 值，存 `*.wav.env.json`）→ 播放时按播放位置查表 → JS 设置 `ParamMouthOpenY` |
+| 平滑 | JS 侧按帧向目标值插值（0.35 系数），避免嘴型跳动 |
+| 兜底 | 没有包络（用户自选 mp3/ogg）或走系统 TTS 时，用正弦+随机包络的程序化口型 |
+
+**模型**
+
+- 内置 **Live2D 官方样例 Hiyori**（`assets/live2d/hiyori/`），仅用于测试验证，**商用请替换**
+- 自备模型：打包成 zip（内含 `*.model3.json` 及贴图/动作文件）→ 页面右上角数字人菜单 →「导入模型包（zip）」→ 释放到 `Android/data/<包名>/files/live2d/models/<名字>/`
+- 可在同一菜单里「切换已有模型」
+
+**实测（小米 2410DPN6CC / Android 17）**
+
+```
+[Live2D] mouth=0.52 smooth=0
+[Live2D] mouth=0.52 smooth=0.16
+[Live2D] mouth=0.17 smooth=0.31
+[Live2D] mouth=0.64 smooth=0.48
+```
+
+`smooth` 是模型里实际生效的 `ParamMouthOpenY`，会平滑跟随包络目标值，说明唇形链路正常。
+
+**已知限制**
+
+- **WebView 是平台视图（混合合成），会遮挡紧邻的 Flutter 控件** —— 所以「导入模型」「切换模型」放在标题栏菜单，不放在卡片里
+- 个别 ROM 的 WebView 若关闭 WebGL，会显示「数字人加载失败」，功能不受影响（只影响动画）
+- 数字人只在本机屏幕上，通话对方看不到；要做给客户看的画面需要视频通话/录屏，是另一套方案
+
 ### 关键注意事项
 
 | 项 | 说明 |
@@ -177,11 +218,11 @@ flutter build apk --release
 
 | 文件名 | 体积 | 适用设备 |
 | --- | --- | --- |
-| `call-assistant-1.0.0-arm64-v8a.apk` | ~44.2 MB | 绝大多数现代手机（**推荐**） |
-| `call-assistant-1.0.0-armeabi-v7a.apk` | ~33.7 MB | 32 位老旧机型（Android 5~7 时代） |
+| `call-assistant-1.0.0-arm64-v8a.apk` | ~49.1 MB | 绝大多数现代手机（**推荐**） |
+| `call-assistant-1.0.0-armeabi-v7a.apk` | ~38.7 MB | 32 位老旧机型（Android 5~7 时代） |
 
 - 用 `--split-per-abi` 拆分后每个包只含一套 so；`x86_64` 仅用于模拟器，不发布
-- 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）；通用包会到 125MB，所以**必须按 ABI 拆分**
+- 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）与 Live2D 数字人运行时+样例模型（约 5.4MB assets）；通用包会到 130MB，所以**必须按 ABI 拆分**
 - 两个包共用同一签名密钥，可互相覆盖安装
 
 > 标签推送时 `ci` job 会被跳过（不重复构建），只跑 `release`；普通 push 只做 CI 校验，不产出安装包。

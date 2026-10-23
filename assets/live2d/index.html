@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Live2D Avatar</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  canvas { display: block; }
+  #tip {
+    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    text-align: center; color: #8a94a6; font: 13px/1.6 -apple-system, "PingFang SC", sans-serif;
+    white-space: pre-wrap; padding: 0 16px;
+  }
+</style>
+</head>
+<body>
+<div id="tip">模型加载中…</div>
+
+<script src="pixi.min.js"></script>
+<script src="live2dcubismcore.min.js"></script>
+<script src="cubism4.min.js"></script>
+<script>
+  // 暴露给 Flutter 的控制接口
+  const avatar = window.avatar = {
+    ready: false,
+    status: 'init',
+    mouth: 0,        // 目标张嘴幅度 0..1
+    mouthSmooth: 0,  // 平滑后的实际值
+    speaking: false,
+    setMouth(v) { avatar.mouth = Math.max(0, Math.min(1, v || 0)); },
+    setSpeaking(on) { avatar.speaking = !!on; if (!on) avatar.mouth = 0; },
+    reset() { avatar.mouth = 0; avatar.mouthSmooth = 0; avatar.speaking = false; }
+  };
+
+  const tip = document.getElementById('tip');
+  function fail(msg) {
+    avatar.status = 'error: ' + msg;
+    tip.textContent = '数字人加载失败\n' + msg;
+    tip.style.display = 'block';
+  }
+
+  function modelUrlFromQuery() {
+    const q = new URLSearchParams(location.search).get('model');
+    return q || 'hiyori/Hiyori.model3.json';
+  }
+
+  try {
+    if (!window.PIXI || !PIXI.live2d) throw new Error('PIXI 或 pixi-live2d-display 未加载');
+
+    const app = new PIXI.Application({
+      transparent: true,
+      antialias: true,
+      autoDensity: true,
+      resolution: window.devicePixelRatio || 1,
+      resizeTo: window
+    });
+    document.body.appendChild(app.view);
+
+    const url = modelUrlFromQuery();
+    avatar.status = 'loading: ' + url;
+
+    PIXI.live2d.Live2DModel.from(url, { autoInteract: false }).then((model) => {
+      app.stage.addChild(model);
+      avatar.app = app;   // 便于诊断
+
+      // 注意：必须用 app.screen（逻辑像素），renderer.width/height 是物理像素，
+      // 混用会把模型推到视口外（表现为一片空白）
+      const fit = () => {
+        const w = app.screen.width;
+        const h = app.screen.height;
+        // model.width/height 会随 scale 变化，必须先复位到 1 再测量原始尺寸，
+        // 否则会二次缩放并把模型推到视口外
+        model.scale.set(1);
+        const baseW = model.width;
+        const baseH = model.height;
+        if (!baseW || !baseH) return;
+        const scale = Math.min(w / baseW, h / baseH) * 0.96;
+        model.scale.set(scale);
+        model.x = (w - baseW * scale) / 2;
+        model.y = h - baseH * scale;   // 贴底显示
+      };
+      fit();
+      window.addEventListener('resize', () => { app.renderer.resize(window.innerWidth, window.innerHeight); fit(); });
+
+      // 嘴型：在动作更新之后覆盖，避免被 idle 动作覆盖
+      const applyMouth = () => {
+        const core = model.internalModel && model.internalModel.coreModel;
+        if (!core) return;
+        // 平滑逼近目标值，看起来更自然
+        avatar.mouthSmooth += (avatar.mouth - avatar.mouthSmooth) * 0.35;
+        try {
+          core.setParameterValueById('ParamMouthOpenY', avatar.mouthSmooth);
+        } catch (e) { /* 模型没有该参数时忽略 */ }
+      };
+
+      avatar._tick = applyMouth;   // 便于诊断手动调用
+      try {
+        model.internalModel.on('afterMotionUpdate', applyMouth);
+      } catch (e) { /* 事件不存在则由 ticker 兜底 */ }
+      // 即使没有动作在跑也要驱动嘴型
+      app.ticker.add(applyMouth);
+
+      avatar.model = model;
+      avatar.ready = true;
+      avatar.status = 'ready';
+      tip.style.display = 'none';
+    }).catch((e) => fail('' + (e && e.message ? e.message : e)));
+  } catch (e) {
+    fail('' + (e && e.message ? e.message : e));
+  }
+
+  // 阻止页面滚动/缩放干扰
+  document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+</script>
+</body>
+</html>

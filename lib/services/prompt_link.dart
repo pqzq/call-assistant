@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'call_state_watcher.dart';
 import 'lan_link.dart';
+import 'live2d_service.dart';
 import 'tts_synthesizer.dart';
 
 /// 联动日志
@@ -38,6 +39,8 @@ class PromptLink extends ChangeNotifier {
   static const String _kAsPlayer = 'prompt_as_player';
   static const String _kRate = 'prompt_rate';
   static const String _kAudioPath = 'prompt_audio_path';
+  static const String _kAvatarEnabled = 'prompt_avatar_enabled';
+  static const String _kAvatarModel = 'prompt_avatar_model';
 
   static const String defaultScript =
       '您好，我是本次项目的对接人，占用您一分钟时间，跟您同步一个事情，方便吗？';
@@ -48,6 +51,7 @@ class PromptLink extends ChangeNotifier {
   final LanLink _link = LanLink();
   final FlutterTts _tts = FlutterTts();
   final AudioPlayer _player = AudioPlayer();
+  final Random _random = Random();
 
   String _deviceId = '';
   String _deviceName = '';
@@ -57,6 +61,10 @@ class PromptLink extends ChangeNotifier {
   bool _asPlayer = true;
   bool _ttsReady = false;
   bool _initialized = false;
+  bool _avatarEnabled = false;
+  String _avatarModel = Live2dService.defaultModel;
+  List<double>? _envelope;
+  Timer? _mouthTimer;
 
   /// 开场白音频文件路径（优先于 TTS；很多定制 ROM 的系统 TTS 不对第三方开放）
   String? _audioPath;
@@ -79,6 +87,18 @@ class PromptLink extends ChangeNotifier {
   bool get autoTrigger => _autoTrigger;
   bool get asPlayer => _asPlayer;
   bool get ttsReady => _ttsReady;
+
+  /// 数字人开关（关闭时不渲染、不驱动嘴型）
+  bool get avatarEnabled => _avatarEnabled;
+
+  /// 当前数字人模型（相对路径）
+  String get avatarModel => _avatarModel;
+
+  /// 0~1 的嘴型幅度，Live2D 组件监听它
+  final ValueNotifier<double> mouth = ValueNotifier<double>(0);
+
+  bool get avatarSpeaking => mouth.value > 0.01;
+
   String? get audioPath => _audioPath;
   bool get hasAudio => _audioPath != null && File(_audioPath!).existsSync();
   String get audioFileName {
@@ -120,7 +140,16 @@ class PromptLink extends ChangeNotifier {
     _rate = prefs.getDouble(_kRate) ?? 0.5;
     final savedAudio = prefs.getString(_kAudioPath);
     if (savedAudio != null && File(savedAudio).existsSync()) _audioPath = savedAudio;
+    _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
+    _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
     notifyListeners();
+
+    // 嘴型跟随音频播放位置
+    _player.onPositionChanged.listen((position) {
+      if (!_avatarEnabled) return;
+      _updateMouthByPosition(position);
+    });
+    _player.onPlayerComplete.listen((_) => _stopMouth());
 
     await _initTts();
     await refreshAccessibility();
@@ -203,13 +232,13 @@ class PromptLink extends ChangeNotifier {
     notifyListeners();
     final started = DateTime.now();
     try {
-      final path = await TtsSynthesizer.instance.synthesize(text: _script, speed: _rate <= 0 ? 1.0 : _rate / 0.5);
-      if (path == null) {
+      final result = await TtsSynthesizer.instance.synthesize(text: _script, speed: _rate <= 0 ? 1.0 : _rate / 0.5);
+      if (result == null) {
         _log('合成失败，请检查模型文件是否完整');
         return false;
       }
       final cost = DateTime.now().difference(started).inMilliseconds;
-      await useAudioFile(path);
+      await useAudioFile(result.wavPath);
       _log('语音合成完成（${cost}ms），已设为播报音频', important: true);
       return true;
     } catch (e) {
@@ -224,9 +253,133 @@ class PromptLink extends ChangeNotifier {
   /// 把指定音频文件设为播报音频
   Future<void> useAudioFile(String path) async {
     _audioPath = path;
+    _envelope = await TtsSynthesizer.instance.loadEnvelope(path);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAudioPath, path);
     notifyListeners();
+  }
+
+  // ---------------- 数字人 ----------------
+
+  /// 可用模型列表（含内置样例）
+  Future<List<String>> availableAvatarModels() async {
+    if (await Live2dService.instance.ensureStarted() == null) return <String>[];
+    return Live2dService.instance.listModels();
+  }
+
+  Future<void> setAvatarEnabled(bool value) async {
+    _avatarEnabled = value;
+    if (!value) _stopMouth();
+    notifyListeners();
+    if (value) await Live2dService.instance.ensureStarted();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kAvatarEnabled, value);
+    _log(value ? '数字人已开启' : '数字人已关闭');
+  }
+
+  Future<void> setAvatarModel(String model) async {
+    if (model.isEmpty || model == _avatarModel) return;
+    _avatarModel = model;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAvatarModel, model);
+    _log('数字人模型：$model');
+  }
+
+  /// 导入用户自备模型（zip 内含 *.model3.json）
+  Future<bool> importAvatarModel() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.any);
+      if (result == null || result.files.isEmpty) return false;
+      final picked = result.files.single.path;
+      if (picked == null) {
+        _log('无法读取所选模型包');
+        return false;
+      }
+      _log('正在导入数字人模型…', important: true);
+      notifyListeners();
+      final model = await Live2dService.instance.importModelArchive(File(picked));
+      if (model == null) {
+        _log('导入失败：压缩包里没有 .model3.json');
+        return false;
+      }
+      await setAvatarModel(model);
+      _log('数字人模型已导入：$model', important: true);
+      return true;
+    } catch (e) {
+      _log('导入数字人模型失败：$e');
+      return false;
+    }
+  }
+
+  DateTime? _mouthClock;
+
+  /// 播放音频时启动嘴型驱动（有包络用包络，没有就用程序化动画）
+  void _startAudioMouth() {
+    if (!_avatarEnabled) return;
+    _mouthTimer?.cancel();
+    _mouthClock = DateTime.now();
+    final envelope = _envelope;
+    _mouthTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
+      final clock = _mouthClock;
+      if (clock == null) return;
+      final elapsedMs = DateTime.now().difference(clock).inMilliseconds;
+      final values = envelope;
+      if (values != null && values.isNotEmpty) {
+        final index = elapsedMs ~/ 50;
+        if (index >= values.length) {
+          _stopMouth();
+          return;
+        }
+        mouth.value = values[index];
+      } else {
+        mouth.value = _proceduralMouth(elapsedMs);
+      }
+    });
+  }
+
+  /// 系统 TTS 朗读时没有音频位置，按文本长度估算时长做程序化口型
+  void _startTtsMouth(String text) {
+    if (!_avatarEnabled) return;
+    _mouthTimer?.cancel();
+    _mouthClock = DateTime.now();
+    final estimated = (text.length * 170).clamp(1200, 60000);
+    _mouthTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
+      final clock = _mouthClock;
+      if (clock == null) return;
+      final elapsedMs = DateTime.now().difference(clock).inMilliseconds;
+      if (elapsedMs >= estimated) {
+        _stopMouth();
+        return;
+      }
+      mouth.value = _proceduralMouth(elapsedMs);
+    });
+  }
+
+  double _proceduralMouth(int elapsedMs) {
+    final t = elapsedMs / 1000.0;
+    final wave = 0.5 + 0.5 * sin(t * 11.5);
+    final jitter = 0.85 + 0.15 * _random.nextDouble();
+    return (0.12 + 0.55 * wave * jitter).clamp(0.0, 1.0);
+  }
+
+  /// 播放位置事件：用来校正时钟漂移
+  void _updateMouthByPosition(Duration position) {
+    final envelope = _envelope;
+    final clock = _mouthClock;
+    if (envelope == null || envelope.isEmpty || clock == null) return;
+    final expected = clock.add(position);
+    final drift = DateTime.now().difference(expected).inMilliseconds;
+    if (drift.abs() > 120) {
+      _mouthClock = DateTime.now().subtract(position);
+    }
+  }
+
+  void _stopMouth() {
+    _mouthTimer?.cancel();
+    _mouthTimer = null;
+    _mouthClock = null;
+    if (mouth.value != 0) mouth.value = 0;
   }
 
   /// 选择开场白音频文件（复制到应用目录，避免被系统清理）
@@ -285,9 +438,11 @@ class PromptLink extends ChangeNotifier {
     try {
       await _player.stop();
       await _player.play(DeviceFileSource(path));
+      _startAudioMouth();
       _log('开始播放音频：$audioFileName');
     } catch (e) {
       _log('播放音频失败：$e');
+      _stopMouth();
     }
   }
 
@@ -478,13 +633,16 @@ class PromptLink extends ChangeNotifier {
     try {
       await _tts.stop();
       await _tts.speak(content);
+      _startTtsMouth(content);
       _log('开始朗读：${content.length > 18 ? '${content.substring(0, 18)}…' : content}');
     } catch (e) {
       _log('朗读失败：$e');
+      _stopMouth();
     }
   }
 
   Future<void> stopSpeaking() async {
+    _stopMouth();
     try {
       await _tts.stop();
     } catch (_) {
@@ -512,9 +670,11 @@ class PromptLink extends ChangeNotifier {
 
   @override
   void dispose() {
+    _mouthTimer?.cancel();
     _link.close();
     _tts.stop();
     _player.dispose();
+    mouth.dispose();
     super.dispose();
   }
 }

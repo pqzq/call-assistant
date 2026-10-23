@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/call_state_watcher.dart';
 import '../services/prompt_link.dart';
+import '../widgets/live2d_avatar.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
 class PromptPage extends StatefulWidget {
@@ -42,12 +43,67 @@ class _PromptPageState extends State<PromptPage> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _showModelPicker(List<String> models) async {
+    if (models.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有可用模型'), behavior: SnackBarBehavior.floating),
+      );
+      return;
+    }
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text('选择数字人模型', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            for (final model in models)
+              ListTile(
+                title: Text(model, maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: model == _link.avatarModel ? const Icon(Icons.check, size: 18) : null,
+                onTap: () => Navigator.of(sheetContext).pop(model),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen != null) await _link.setAvatarModel(chosen);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('双机联动播报'),
         actions: <Widget>[
+          PopupMenuButton<String>(
+            tooltip: '数字人模型',
+            icon: const Icon(Icons.face_retouching_natural),
+            onSelected: (value) async {
+              if (value == 'import') {
+                final ok = await _link.importAvatarModel();
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? '数字人模型已导入' : '导入失败，详见日志'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else if (value == 'models') {
+                final models = await _link.availableAvatarModels();
+                if (!mounted) return;
+                _showModelPicker(models);
+              }
+            },
+            itemBuilder: (context) => const <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(value: 'import', child: Text('导入模型包（zip）')),
+              PopupMenuItem<String>(value: 'models', child: Text('切换已有模型')),
+            ],
+          ),
           IconButton(
             tooltip: '刷新状态',
             icon: const Icon(Icons.refresh),
@@ -61,6 +117,8 @@ class _PromptPageState extends State<PromptPage> {
           _buildStatusCard(),
           const SizedBox(height: 12),
           _buildRoleCard(),
+          const SizedBox(height: 12),
+          _buildAvatarCard(),
           const SizedBox(height: 12),
           _buildScriptCard(),
           const SizedBox(height: 12),
@@ -403,6 +461,46 @@ class _PromptPageState extends State<PromptPage> {
                 child: const Text('清除音频', style: TextStyle(fontSize: 12)),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatarCard() {
+    final enabled = _link.avatarEnabled;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.face_retouching_natural, size: 18, color: Color(0xFF2F6BFF)),
+              const SizedBox(width: 8),
+              const Text('数字人', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Switch(
+                value: enabled,
+                onChanged: (v) => _link.setAvatarEnabled(v),
+              ),
+            ],
+          ),
+          const Text(
+            '播报时数字人会做说话口型，嘴型按语音音量同步。仅本机屏幕可见，对方在通话里看不到画面。',
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+          ),
+          if (enabled) ...<Widget>[
+            const SizedBox(height: 10),
+            Live2dAvatar(
+              modelPath: _link.avatarModel,
+              mouth: _link.mouth,
+              height: 220,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '内置样例为 Live2D 官方 Hiyori（仅测试用）。自备模型请打包成 zip（内含 *.model3.json 及其贴图/动作文件），从右上角数字人菜单导入。',
+              style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
+            ),
+          ],
         ],
       ),
     );
