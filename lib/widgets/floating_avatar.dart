@@ -4,57 +4,54 @@ import '../services/prompt_link.dart';
 import '../utils/avatar_layout.dart';
 import 'live2d_avatar.dart';
 
-/// 全局浮动的 Live2D 数字人（状态条 + 提词气泡），浮在所有页面之上，可拖动。
+/// 全局浮动的 Live2D 数字人：
+/// - 展开态：角色 + 右侧竖排操作栏 + 话术框（状态信息并入话术框顶部）
+/// - 贴边态：像微信通话「最小化」一样缩到屏幕边缘，只留一个小挂件，点击或拖动即恢复
 ///
-/// 说明：Live2D 用 WebView（平台视图）渲染，平台视图会吃掉其范围内的触摸，
-/// 所以所有可点元素（拖动、折叠、关闭、下一步）都放在视图外的区域。
+/// 说明：Live2D 用 WebView（平台视图）渲染。平台视图上已加 IgnorePointer，
+/// 因此角色区域/状态/话术框的点击都会穿透到下面的页面，只有操作栏和挂件按钮可交互。
 class FloatingAvatarHost extends StatefulWidget {
   const FloatingAvatarHost({super.key, required this.child});
 
   final Widget child;
 
-  /// 展开时的数字人尺寸
+  /// 展开时角色区尺寸
   static const double avatarWidth = 300;
   static const double avatarHeight = 380;
 
-  /// 折叠后的小头像尺寸
-  static const double miniWidth = 104;
-  static const double miniHeight = 132;
+  /// 贴边时（缩小）尺寸
+  static const double dockedWidth = 116;
+  static const double dockedHeight = 146;
 
-  /// 顶部状态条
-  static const double stripHeight = 30;
+  /// 右侧竖排操作栏宽度
+  static const double barWidth = 40;
 
-  /// 底部控制条（拖动 / 折叠 / 关闭）
-  static const double barHeight = 44;
+  /// 展开态整体宽度（角色 + 间隔 + 操作栏）
+  static const double expandedWidth = avatarWidth + 4 + barWidth;
 
-  /// 提词气泡最大高度
+  /// 话术框最大高度
   static const double bubbleMaxHeight = 178;
+
+  /// 贴边判定阈值（距屏幕边缘多少像素内触发）
+  static const double dockThreshold = 36;
 
   @override
   State<FloatingAvatarHost> createState() => _FloatingAvatarHostState();
 }
 
 class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
+  /// 拖动中的像素坐标（左上角）
   Offset? _dragPos;
   bool _dragging = false;
 
-  double get _unitWidth =>
-      PromptLink.instance.collapsed ? FloatingAvatarHost.miniWidth : FloatingAvatarHost.avatarWidth;
+  /// 是否处于贴边（最小化）状态
+  bool _docked = false;
 
-  Size _freeSize(BoxConstraints constraints) {
-    final collapsed = PromptLink.instance.collapsed;
-    final width = collapsed ? FloatingAvatarHost.miniWidth : FloatingAvatarHost.avatarWidth;
-    final height = collapsed
-        ? FloatingAvatarHost.miniHeight + FloatingAvatarHost.barHeight
-        : FloatingAvatarHost.stripHeight +
-            FloatingAvatarHost.avatarHeight +
-            FloatingAvatarHost.bubbleMaxHeight +
-            FloatingAvatarHost.barHeight;
-    return Size(
-      (constraints.maxWidth - width).clamp(0.0, double.infinity),
-      (constraints.maxHeight - height).clamp(0.0, double.infinity),
-    );
-  }
+  /// 贴在哪一侧
+  bool _dockRight = true;
+
+  /// 贴边时拖动前的锚点
+  Offset _dockAnchor = Offset.zero;
 
   @override
   Widget build(BuildContext context) {
@@ -66,19 +63,39 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
           _dragPos = null;
           return widget.child;
         }
-        // LayoutBuilder 必须在 Stack 外层：Positioned 只有当 Stack 的直接子节点才生效
         return LayoutBuilder(
           builder: (context, constraints) {
-            final free = _freeSize(constraints);
-            final pos = _dragPos ?? AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free);
-            final clamped = AvatarLayout.clampPixel(pos, free);
+            final screen = Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
               children: <Widget>[
                 widget.child,
-                Positioned(
-                  left: clamped.dx,
-                  top: clamped.dy,
-                  child: _buildUnit(link, free),
+                // 展开/贴边之间用尺寸插值做过渡
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(end: _docked ? 1 : 0),
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, _) {
+                    final unitWidth = _lerp(
+                      FloatingAvatarHost.expandedWidth,
+                      FloatingAvatarHost.dockedWidth,
+                      t,
+                    );
+                    final avatarHeight =
+                        _lerp(FloatingAvatarHost.avatarHeight, FloatingAvatarHost.dockedHeight, t);
+                    final unitHeight = avatarHeight + (t > 0.5 ? 0 : 190);
+                    final free = Size(
+                      (screen.width - unitWidth).clamp(0.0, double.infinity).toDouble(),
+                      (screen.height - unitHeight).clamp(0.0, double.infinity).toDouble(),
+                    );
+                    final pos = _resolvePosition(link, free, screen, t);
+                    return AnimatedPositioned(
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOutCubic,
+                      left: pos.dx,
+                      top: pos.dy,
+                      child: _buildUnit(link, free, t, avatarHeight, unitWidth),
+                    );
+                  },
                 ),
               ],
             );
@@ -88,114 +105,233 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     );
   }
 
-  Widget _buildUnit(PromptLink link, Size free) {
-    final collapsed = link.collapsed;
-    // 注意：这里不能用 Material/Container 之类的装饰性容器包住整体，
-    // 它们会吃掉整块区域的点击，导致浮窗下方的号码/按钮点不动。
-    // 纯展示部分统一用 IgnorePointer，只有底部控制条保持可交互。
-    //
-    // 另外浮层挂在 MaterialApp.builder 上、没有 Material 祖先，
-    // 不给 DefaultTextStyle 的话会落到 Flutter 的 fallback 样式（红字+黄色下划线）
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
+
+  /// 计算当前左上角位置
+  Offset _resolvePosition(PromptLink link, Size free, Size screen, double t) {
+    if (_docked) {
+      final left = _dockRight ? screen.width - FloatingAvatarHost.dockedWidth : 0.0;
+      final top = (_dragPos?.dy ?? link.avatarPosY * free.height).clamp(0.0, free.height).toDouble();
+      return Offset(left, top);
+    }
+    final stored = _dragPos ?? AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free);
+    final clamped = AvatarLayout.clampPixel(stored, free);
+    return Offset(clamped.dx, clamped.dy);
+  }
+
+  Widget _buildUnit(PromptLink link, Size free, double t, double avatarHeight, double unitWidth) {
+    final docked = t > 0.5;
+    // 浮层没有 Material 祖先，必须给 DefaultTextStyle，
+    // 否则文字会落到 Flutter 的 fallback 样式（红字 + 黄色双下划线）
     final textStyle = Theme.of(context).textTheme.bodyMedium ??
         const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4);
     return DefaultTextStyle(
       style: textStyle,
       child: SizedBox(
-        width: _unitWidth,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        width: unitWidth,
+        child: docked
+            ? _buildDockedChip(link, avatarHeight)
+            :                 Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
+                  // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
+                  SizedBox(
+                    width: FloatingAvatarHost.avatarWidth,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Live2dAvatar(
+                          modelPath: link.avatarModel,
+                          mouth: link.mouth,
+                          height: avatarHeight,
+                        ),
+                        const SizedBox(height: 6),
+                        _buildBubble(link),
+                      ],
+                    ),
+                  ),
+                  _buildSideBar(link, free),
+                ],
+                ),
+      ),
+    );
+  }
+
+  // ---------------- 贴边小挂件 ----------------
+
+  Widget _buildDockedChip(PromptLink link, double avatarHeight) {
+    final status = link.avatarStatus;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _restoreFromDock,
+      onPanStart: (_) => setState(() => _dragging = true),
+      onPanUpdate: (details) {
+        // 从贴边状态拖动 -> 立即恢复展开并继续跟随
+        setState(() {
+          if (_docked) {
+            _docked = false;
+            _dragPos = _dockAnchor;
+          }
+          _dragPos = (_dragPos ?? Offset.zero) + details.delta;
+        });
+      },
+      onPanEnd: (_) async {
+        setState(() => _dragging = false);
+        await _persistPosition(free: _freeSizeForExpanded());
+      },
+      child: SizedBox(
+        width: FloatingAvatarHost.dockedWidth,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: <Widget>[
-            if (!collapsed) ...<Widget>[
-              _buildStatusStrip(link),
-              const SizedBox(height: 4),
-            ],
             Live2dAvatar(
               modelPath: link.avatarModel,
               mouth: link.mouth,
-              height: collapsed ? FloatingAvatarHost.miniHeight : FloatingAvatarHost.avatarHeight,
+              height: avatarHeight,
             ),
-            if (!collapsed) ...<Widget>[
-              const SizedBox(height: 6),
-              _buildBubble(link),
-            ],
-            _buildBar(link, free),
+            // 恢复按钮（画在 WebView 之上，命中测试优先）
+            // 贴右边时按钮放左下角，避免被屏幕边缘切掉
+            Positioned(
+              right: _dockRight ? null : -2,
+              left: _dockRight ? -2 : null,
+              bottom: -2,
+              child: _RoundButton(
+                icon: Icons.open_in_full_rounded,
+                tooltip: '展开数字人',
+                onTap: _restoreFromDock,
+              ),
+            ),
+            // 状态小圆点
+            Positioned(
+              left: 2,
+              top: 2,
+              child: IgnorePointer(
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: _statusColor(status),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  // ---------------- 状态条 ----------------
+  void _restoreFromDock() {
+    setState(() {
+      _docked = false;
+      // 恢复后把位置挪回屏幕内的安全位置
+      final size = _freeSizeForExpanded();
+      _dragPos = AvatarLayout.clampPixel(
+        _dragPos ?? Offset.zero,
+        size,
+      );
+    });
+  }
 
-  Widget _buildStatusStrip(PromptLink link) {
-    final status = link.avatarStatus;
-    final (color, label) = switch (status) {
-      AvatarStatus.disabled => (const Color(0xFF9AA4B2), '未启用'),
-      AvatarStatus.ready => (const Color(0xFF17A05A), '待拨号'),
-      AvatarStatus.armed => (const Color(0xFF2F6BFF), '等待接通'),
-      AvatarStatus.speaking => (const Color(0xFFE07A00), '播报中'),
-      AvatarStatus.error => (const Color(0xFFD03B3B), '异常'),
-    };
-    // 纯展示：整体不可命中，避免挡住下面的内容
-    return IgnorePointer(
-      child: SizedBox(
-        height: FloatingAvatarHost.stripHeight,
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            height: 26,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.82),
-              borderRadius: BorderRadius.circular(13),
-              border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+  // ---------------- 右侧操作栏 ----------------
+
+  Widget _buildSideBar(PromptLink link, Size free) {
+    return Container(
+      width: FloatingAvatarHost.barWidth,
+      margin: const EdgeInsets.only(left: 4),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: _dragging ? 0.95 : 0.82),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // 拖动
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (_) => setState(() => _dragging = true),
+            onPanUpdate: (details) => _onDragUpdate(link, free, details.delta),
+            onPanEnd: (_) => _onDragEnd(link, free),
+            onPanCancel: () => setState(() => _dragging = false),
+            child: const SizedBox(
+              width: FloatingAvatarHost.barWidth,
+              height: 40,
+              child: Icon(Icons.drag_indicator, size: 19, color: Color(0xFF6B7A99)),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
-                ),
-                if (link.activeLead != null && status == AvatarStatus.armed) ...<Widget>[
-                  const SizedBox(width: 6),
-                  const Text('·', style: TextStyle(fontSize: 12, color: Colors.black26)),
-                  const SizedBox(width: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 92),
-                    child: Text(
-                      link.activeLead!.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          ),
+          _divider(),
+          _sideButton(
+            icon: Icons.chevron_left,
+            tooltip: '上一步',
+            enabled: link.stepIndex > 0,
+            onTap: link.previousStep,
+          ),
+          _sideButton(
+            icon: Icons.chevron_right,
+            tooltip: '下一步',
+            enabled: link.stepIndex < link.scriptSteps.length - 1,
+            onTap: link.nextStep,
+          ),
+          _divider(),
+          _sideButton(
+            icon: Icons.compress_rounded,
+            tooltip: '贴边收起',
+            onTap: _dockToEdge,
+          ),
+          _sideButton(
+            icon: Icons.close,
+            tooltip: '关闭数字人',
+            onTap: () => link.setAvatarEnabled(false),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider() => Container(width: 18, height: 1, color: const Color(0xFFD6DEEE));
+
+  Widget _sideButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+    bool enabled = true,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          width: FloatingAvatarHost.barWidth,
+          height: 40,
+          child: Icon(
+            icon,
+            size: 18,
+            color: enabled ? const Color(0xFF6B7A99) : Colors.black26,
           ),
         ),
       ),
     );
   }
 
-  // ---------------- 提词气泡 ----------------
+  // ---------------- 话术框（含状态信息） ----------------
 
   Widget _buildBubble(PromptLink link) {
     final lead = link.activeLead;
     final steps = link.scriptSteps;
     final step = link.currentStep;
-    // 气泡只是信息展示，整体不可命中（翻页按钮在底部控制条上）
+    final status = link.avatarStatus;
+    // 纯展示：整体不可命中，避免挡住下面的内容
     return IgnorePointer(
       child: Container(
         width: FloatingAvatarHost.avatarWidth,
         constraints: const BoxConstraints(maxHeight: FloatingAvatarHost.bubbleMaxHeight),
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.94),
           borderRadius: BorderRadius.circular(14),
@@ -213,6 +349,46 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // 状态行（整合到话术框顶部）
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: _statusColor(status),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    status.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _statusColor(status),
+                    ),
+                  ),
+                  if (lead != null) ...<Widget>[
+                    const SizedBox(width: 6),
+                    const Text('·', style: TextStyle(fontSize: 12, color: Colors.black26)),
+                    const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 150),
+                      child: Text(
+                        lead.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 7),
+                child: Divider(height: 1, color: Color(0xFFEEF1F7)),
+              ),
               if (lead == null)
                 const Text(
                   '拨号后这里会显示客户信息与话术提词',
@@ -250,10 +426,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                 ],
               ],
               if (step != null) ...<Widget>[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 1, color: Color(0xFFEEF1F7)),
-                ),
+                const SizedBox(height: 6),
                 Text(
                   '话术 ${link.stepIndex + 1}/${steps.length}',
                   style: const TextStyle(
@@ -262,7 +435,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                     color: Color(0xFF2F6BFF),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   step,
                   maxLines: 3,
@@ -277,90 +450,107 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     );
   }
 
-  // ---------------- 底部控制条 ----------------
+  // ---------------- 拖动 / 贴边 ----------------
 
-  Widget _buildBar(PromptLink link, Size free) {
-    final compact = link.collapsed;
-    final steps = link.scriptSteps;
-    return Container(
-      height: FloatingAvatarHost.barHeight,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: _dragging ? 0.95 : 0.85),
-        borderRadius: BorderRadius.circular(FloatingAvatarHost.barHeight / 2),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        children: <Widget>[
-          // 整宽拖动区：面积大，好抓
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanStart: (_) => setState(() => _dragging = true),
-              onPanUpdate: (details) {
-                setState(() {
-                  final current =
-                      _dragPos ?? AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free);
-                  _dragPos = AvatarLayout.clampPixel(
-                    Offset(current.dx + details.delta.dx, current.dy + details.delta.dy),
-                    free,
-                  );
-                });
-              },
-              onPanEnd: (_) async {
-                final pos = _dragPos;
-                setState(() => _dragging = false);
-                if (pos == null) return;
-                final normalized = AvatarLayout.normalize(pos, free);
-                await link.setAvatarPosition(normalized.dx, normalized.dy);
-              },
-              onPanCancel: () => setState(() => _dragging = false),
-              child: const Center(
-                child: Icon(Icons.drag_indicator, size: 20, color: Color(0xFF6B7A99)),
-              ),
-            ),
-          ),
-          if (!compact) ...<Widget>[
-            _barButton(
-              icon: Icons.chevron_left,
-              tooltip: '上一步',
-              onTap: link.stepIndex > 0 ? link.previousStep : null,
-            ),
-            _barButton(
-              icon: Icons.chevron_right,
-              tooltip: '下一步',
-              onTap: link.stepIndex < steps.length - 1 ? link.nextStep : null,
-            ),
-          ],
-          _barButton(
-            icon: compact ? Icons.unfold_more : Icons.unfold_less,
-            tooltip: compact ? '展开' : '折叠成小头像',
-            onTap: () => link.setCollapsed(!link.collapsed),
-          ),
-          _barButton(
-            icon: Icons.close,
-            tooltip: '关闭数字人',
-            onTap: () => link.setAvatarEnabled(false),
-          ),
-        ],
-      ),
+  Size _freeSizeForExpanded() {
+    final media = MediaQuery.of(context);
+    return Size(
+      (media.size.width - FloatingAvatarHost.avatarWidth - FloatingAvatarHost.barWidth)
+          .clamp(0.0, double.infinity).toDouble(),
+      (media.size.height - FloatingAvatarHost.avatarHeight - 190).clamp(0.0, double.infinity).toDouble(),
     );
   }
 
-  /// 控制条上的小按钮
-  Widget _barButton({required IconData icon, required String tooltip, VoidCallback? onTap}) {
-    final enabled = onTap != null;
+  void _onDragUpdate(PromptLink link, Size free, Offset delta) {
+    setState(() {
+      final current = _dragPos ?? AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free);
+      _dragPos = AvatarLayout.clampPixel(current + delta, free);
+    });
+  }
+
+  Future<void> _onDragEnd(PromptLink link, Size free) async {
+    setState(() => _dragging = false);
+    final pos = _dragPos;
+    if (pos == null) return;
+
+    final media = MediaQuery.of(context);
+    final unitWidth = FloatingAvatarHost.avatarWidth + FloatingAvatarHost.barWidth;
+    // 靠近左右边缘 -> 自动贴边收起
+    final nearLeft = pos.dx <= FloatingAvatarHost.dockThreshold;
+    final nearRight = (media.size.width - (pos.dx + unitWidth)) <= FloatingAvatarHost.dockThreshold;
+    if (nearLeft || nearRight) {
+      setState(() {
+        _docked = true;
+        _dockRight = nearRight && !nearLeft;
+        _dockAnchor = pos;
+        _dragPos = Offset(pos.dx, pos.dy);
+      });
+      return;
+    }
+    await _persistPosition(free: free);
+  }
+
+  void _dockToEdge() {
+    final media = MediaQuery.of(context);
+    final free = _freeSizeForExpanded();
+    final link = PromptLink.instance;
+    // 用实际位置判断贴哪一侧（_dragPos 为空时取已保存的位置）
+    final currentLeft = _dragPos?.dx ??
+        AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free).dx;
+    final center = currentLeft + FloatingAvatarHost.expandedWidth / 2;
+    setState(() {
+      _dockRight = center > media.size.width / 2;
+      _dockAnchor = _dragPos ?? Offset.zero;
+      _docked = true;
+    });
+  }
+
+  Future<void> _persistPosition({required Size free}) async {
+    final pos = _dragPos;
+    if (pos == null) return;
+    final normalized = AvatarLayout.normalize(pos, free);
+    await PromptLink.instance.setAvatarPosition(normalized.dx, normalized.dy);
+  }
+
+  static Color _statusColor(AvatarStatus status) {
+    switch (status) {
+      case AvatarStatus.disabled:
+        return const Color(0xFF9AA4B2);
+      case AvatarStatus.ready:
+        return const Color(0xFF17A05A);
+      case AvatarStatus.armed:
+        return const Color(0xFF2F6BFF);
+      case AvatarStatus.speaking:
+        return const Color(0xFFE07A00);
+      case AvatarStatus.error:
+        return const Color(0xFFD03B3B);
+    }
+  }
+}
+
+/// 圆形小按钮（贴边挂件上的恢复按钮）
+class _RoundButton extends StatelessWidget {
+  const _RoundButton({required this.icon, required this.tooltip, this.onTap});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: 42,
-          height: FloatingAvatarHost.barHeight,
-          child: Icon(
-            icon,
-            size: 18,
-            color: enabled ? const Color(0xFF6B7A99) : Colors.black26,
+      child: Material(
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 3,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: Icon(icon, size: 15, color: const Color(0xFF2F6BFF)),
           ),
         ),
       ),
