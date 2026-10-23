@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/active_lead.dart';
+import 'asr_recognizer.dart';
 import 'call_log_store.dart';
 import 'call_state_watcher.dart';
 import 'lan_link.dart';
@@ -309,6 +310,12 @@ class PromptLink extends ChangeNotifier {
     if (_initialized) return;
     _initialized = true;
 
+    // 检测是否已安装语音识别模型（支持手动把模型目录推入）
+    unawaited(() async {
+      await AsrRecognizer.instance.detectModel();
+      notifyListeners();
+    }());
+
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString(_kDeviceId) ?? _newDeviceId();
     await prefs.setString(_kDeviceId, _deviceId);
@@ -571,6 +578,61 @@ class PromptLink extends ChangeNotifier {
     } catch (e) {
       _log('从文件夹导入数字人模型失败：$e');
       return false;
+    }
+  }
+
+  /// 识别模型是否已安装
+  bool get asrModelReady => AsrRecognizer.instance.isModelReady;
+
+  /// 当前识别模型名
+  String get asrModelName => AsrRecognizer.instance.modelName;
+
+  /// 导入语音识别模型（.tar.bz2）
+  Future<bool> importAsrModel(File archiveFile) async {
+    try {
+      _log('正在导入语音识别模型…', important: true);
+      notifyListeners();
+      final dir = await AsrRecognizer.instance.importArchive(archiveFile);
+      if (dir == null) {
+        _log('导入失败：压缩包里没有找到模型文件（*.onnx + tokens.txt）');
+        return false;
+      }
+      notifyListeners();
+      _log('语音识别模型已导入：${AsrRecognizer.instance.modelName}', important: true);
+      return true;
+    } catch (e) {
+      _log('导入语音识别模型失败：$e');
+      return false;
+    }
+  }
+
+  /// 把当前开场白音频识别成文本（失败返回 null）
+  Future<String?> recognizeOpeningAudio() async {
+    final path = _audioPath;
+    if (path == null || !File(path).existsSync()) {
+      _log('还没有设置开场白音频，无法识别');
+      return null;
+    }
+    if (!AsrRecognizer.instance.isModelReady) {
+      await AsrRecognizer.instance.detectModel();
+      if (!AsrRecognizer.instance.isModelReady) {
+        _log('还没有安装语音识别模型');
+        return null;
+      }
+    }
+    _log('正在识别开场白音频…', important: true);
+    notifyListeners();
+    try {
+      final text = await AsrRecognizer.instance.recognize(path);
+      if (text == null || text.isEmpty) {
+        _log('识别失败：没有得到识别结果');
+        return null;
+      }
+      _log('识别完成：$text', important: true);
+      return text;
+    } catch (e) {
+      _log('识别失败：$e');
+      return null;
     }
   }
 

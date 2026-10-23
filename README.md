@@ -249,6 +249,27 @@ flutter build apk --release
   - 取消按钮为描边样式，不抢主操作的视觉权重
   - 标题可带图标（清空=扫帚、移除=垃圾桶）
 
+### 开场白音频转文本（离线语音识别）
+
+「播报」标签页 → **开场白音频**卡片 →「把这段音频转成文本」→ 识别结果弹窗（可直接改）→「填入」回写到开场白文本框。
+
+**完全离线**：用 sherpa-onnx 的离线识别器（和端侧合成同一套技术栈），录音不会上传。
+
+**支持全格式**：新增 Android 原生解码器（`AudioDecoder.kt`，MediaExtractor + MediaCodec），
+mp3 / m4a / aac / ogg / wav / amr 等常见格式都能读，统一转成 16kHz 单声道 WAV 再送识别器。
+解码结果写成文件而不是走 MethodChannel，避免长录音超 Binder 事务 1MB 限制。
+
+**模型**（在「语音识别模型」卡片导入，`.tar.bz2` 格式，导入后自动识别，无需手动解压）：
+
+| 模型 | 体积 | 说明 |
+| --- | --- | --- |
+| `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2` | 155 MB | 推荐，中文效果最好、自带标点 |
+| `sherpa-onnx-paraformer-zh-small-2024-03-09.tar.bz2` | 74 MB | 更轻，速度快 |
+
+- 模型目录：`/storage/emulated/0/Android/data/<包名>/files/sherpa-asr/`，也可直接用 adb 推入
+- 识别开了**逆文本正规化**：数字会输出成「10086」而不是「一万零八十六」
+- 开了标点，输出自带逗号句号
+
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

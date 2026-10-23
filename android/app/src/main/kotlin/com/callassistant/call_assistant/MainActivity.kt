@@ -130,6 +130,22 @@ class MainActivity : FlutterActivity() {
                         result.error("SAVE_FAILED", e.message, null)
                     }
                 }
+                // 解码音频文件成 16kHz 单声道 WAV（供离线语音识别）
+                "decodeAudioToWav" -> {
+                    try {
+                        val path = call.argument<String>("path") ?: ""
+                        val cacheDir = java.io.File(cacheDir, "asr")
+                        val out = java.io.File(cacheDir, "decoded_${System.currentTimeMillis()}.wav")
+                        val wavPath = AudioDecoder.decodeToWav(path, out)
+                        if (wavPath == null) {
+                            result.error("DECODE_FAILED", "无法解码该音频文件（格式不支持或文件损坏）", null)
+                        } else {
+                            result.success(wavPath)
+                        }
+                    } catch (e: Exception) {
+                        result.error("DECODE_FAILED", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

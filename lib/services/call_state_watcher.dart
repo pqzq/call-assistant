@@ -103,6 +103,21 @@ class CallStateWatcher {
     }
   }
 
+  /// 用 Android 原生解码器把音频转成 16kHz 单声道 WAV，返回 wav 路径
+  ///
+  /// 支持 mp3 / m4a / aac / ogg / wav / amr 等常见格式；
+  /// 输出走文件而不是 MethodChannel，避免长音频超 Binder 事务限制。
+  static Future<String?> decodeAudioToWav(String path) async {
+    try {
+      return await _methodChannel.invokeMethod<String>(
+        'decodeAudioToWav',
+        <String, Object>{'path': path},
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 把文件保存到系统「下载」目录，返回展示路径（失败返回 null）
   ///
   /// 用 MediaStore 写入，不需要任何存储权限；比系统「另存为」对话框可靠得多。

@@ -1,6 +1,10 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/asr_recognizer.dart';
 import '../services/call_state_watcher.dart';
 import '../services/live2d_service.dart';
 import '../services/prompt_link.dart';
@@ -184,6 +188,8 @@ class _PromptPageState extends State<PromptPage> {
                         _buildSynthCard(),
                         const SizedBox(height: 12),
                         _buildAudioCard(),
+                        const SizedBox(height: 12),
+                        _buildAsrCard(),
                       ]),
                       _tabView(<Widget>[
                         _buildAvatarCard(),
@@ -793,9 +799,179 @@ class _PromptPageState extends State<PromptPage> {
                 child: const Text('清除音频', style: TextStyle(fontSize: 12)),
               ),
             ),
+          const SizedBox(height: 10),
+          // 用离线语音识别把这段录音转成文本
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: hasAudio ? _recognizeToText : null,
+              icon: const Icon(Icons.record_voice_over_outlined, size: 18),
+              label: const Text('把这段音频转成文本'),
+            ),
+          ),
+          if (hasAudio && !_link.asrModelReady)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '需要先在下方「语音识别模型」里导入模型',
+                style: const TextStyle(fontSize: 11, color: Color(0xFFE08A00)),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  /// 语音识别模型卡片：导入模型 + 下载链接
+  Widget _buildAsrCard() {
+    final ready = _link.asrModelReady;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.multitrack_audio, size: 18, color: Color(0xFF2F6BFF)),
+              const SizedBox(width: 8),
+              const Text('语音识别模型', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ready ? const Color(0xFFE7F7EE) : const Color(0xFFFDECEC),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  ready ? '已安装' : '未安装',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: ready ? const Color(0xFF17A05A) : const Color(0xFFD03B3B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            ready
+                ? '当前模型：${_link.asrModelName}'
+                : '把「开场白音频」转成文本需要离线语音识别模型（SenseVoice，约 155MB）。'
+                    '模型只在本机运行，录音不会上传。',
+            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _importAsrModel,
+                  icon: const Icon(Icons.upload_file, size: 18),
+                  label: const Text('导入模型包'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _openUrl(AsrRecognizer.modelDownloadPage),
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  label: const Text('下载模型'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '模型包：sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2\n'
+            '（tar.bz2 格式，导入后自动识别，无需手动解压）',
+            style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 导入语音识别模型
+  Future<void> _importAsrModel() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      withData: false,
+    );
+    if (!mounted) return;
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (path == null) {
+      AppToast.error(context, '无法读取所选模型包');
+      return;
+    }
+    final ok = await _link.importAsrModel(File(path));
+    if (!mounted) return;
+    if (ok) {
+      AppToast.show(context, '语音识别模型已导入', icon: Icons.check_circle_outline);
+    } else {
+      AppToast.error(context, '导入失败，详见日志');
+    }
+  }
+
+  /// 识别当前开场白音频 -> 弹出结果（可编辑）-> 填入文本框
+  Future<void> _recognizeToText() async {
+    final text = await _link.recognizeOpeningAudio();
+    if (!mounted) return;
+    if (text == null) {
+      AppToast.error(context, '识别失败，详见日志');
+      return;
+    }
+    final controller = TextEditingController(text: text);
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('识别结果', style: TextStyle(fontSize: 17)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            // 不自动弹键盘：否则弹窗被顶起来，按钮位置会变
+            autofocus: false,
+            maxLines: 6,
+            minLines: 3,
+            decoration: const InputDecoration(
+              hintText: '识别出的文本，可以直接修改',
+              isDense: true,
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    foregroundColor: const Color(0xFF5B6B84),
+                    side: const BorderSide(color: Color(0xFFD7DEE9)),
+                  ),
+                  child: const Text('取消'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                  child: const Text('填入'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    final value = controller.text.trim();
+    if (value.isEmpty) return;
+    _scriptController.text = value;
+    setState(() {});
+    AppToast.show(context, '已填入开场白文本', icon: Icons.check_circle_outline);
   }
 
   Widget _buildAvatarCard() {
