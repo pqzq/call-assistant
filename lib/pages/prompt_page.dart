@@ -101,22 +101,11 @@ class _PromptPageState extends State<PromptPage> {
             icon: const Icon(Icons.face_retouching_natural),
             onSelected: (value) async {
               if (value == 'import') {
-                final ok = await _link.importAvatarModel();
-                if (!mounted) return;
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  SnackBar(
-                    content: Text(ok ? '数字人模型已导入' : '导入失败，详见日志'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                await _importModel();
               } else if (value == 'models') {
-                final models = await _link.availableAvatarModels();
-                if (!mounted) return;
-                _showModelPicker(models);
+                await _switchModel();
               } else if (value == 'demo') {
-                Navigator.of(this.context).push(
-                  MaterialPageRoute<void>(builder: (_) => const DemoPage()),
-                );
+                _openDemo();
               }
             },
             itemBuilder: (context) => const <PopupMenuEntry<String>>[
@@ -132,28 +121,290 @@ class _PromptPageState extends State<PromptPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      body: Column(
         children: <Widget>[
-          _buildStatusCard(),
-          const SizedBox(height: 12),
-          _buildRoleCard(),
-          const SizedBox(height: 12),
-          _buildAvatarCard(),
-          const SizedBox(height: 12),
-          _buildScriptCard(),
-          const SizedBox(height: 12),
-          _buildSynthCard(),
-          const SizedBox(height: 12),
-          _buildAudioCard(),
-          const SizedBox(height: 12),
-          _buildSingleDeviceCard(),
-          const SizedBox(height: 12),
-          _buildLogCard(),
-          const SizedBox(height: 16),
-          _buildTipCard(),
+          // 常驻快捷条：角色开关 + 连接状态 + 立即播报，一屏可达
+          _buildQuickBar(),
+          Expanded(
+            child: DefaultTabController(
+              length: 4,
+              child: Column(
+                children: <Widget>[
+                  Expanded(
+                    child: TabBarView(
+                      children: <Widget>[
+                        _tabView(<Widget>[
+                          _buildStatusCard(),
+                          const SizedBox(height: 12),
+                          _buildDeviceCard(),
+                          const SizedBox(height: 12),
+                          _buildSingleDeviceCard(),
+                        ]),
+                        _tabView(<Widget>[
+                          _buildScriptCard(),
+                          const SizedBox(height: 12),
+                          _buildSynthCard(),
+                          const SizedBox(height: 12),
+                          _buildAudioCard(),
+                        ]),
+                        _tabView(<Widget>[
+                          _buildAvatarCard(),
+                          const SizedBox(height: 12),
+                          _buildAvatarModelCard(),
+                        ]),
+                        _tabView(<Widget>[
+                          _buildLogCard(),
+                          const SizedBox(height: 16),
+                          _buildTipCard(),
+                        ]),
+                      ],
+                    ),
+                  ),
+                  const TabBar(
+                    isScrollable: false,
+                    tabAlignment: TabAlignment.fill,
+                    labelPadding: EdgeInsets.zero,
+                    tabs: <Widget>[
+                      Tab(text: '连接', height: 44),
+                      Tab(text: '播报', height: 44),
+                      Tab(text: '数字人', height: 44),
+                      Tab(text: '日志', height: 44),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  /// 数字人模型与展示入口
+  Widget _buildAvatarModelCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Row(
+            children: <Widget>[
+              Icon(Icons.face_retouching_natural, size: 18, color: Color(0xFF2F6BFF)),
+              SizedBox(width: 8),
+              Text('模型与展示', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '当前模型：${_link.avatarModel}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              _modelButton('切换模型', Icons.swap_horiz, _switchModel),
+              _modelButton('导入 zip', Icons.folder_open, _importModel),
+              _modelButton('演示模式', Icons.fullscreen, _openDemo),
+              _modelButton('复位位置', Icons.my_location, _link.resetAvatarPosition),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 模型操作按钮（两列排布）
+  Widget _modelButton(String label, IconData icon, VoidCallback onTap) {
+    return SizedBox(
+      width: (MediaQuery.of(context).size.width - 32 - 32 - 8) / 2,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 17),
+        label: Text(label, style: const TextStyle(fontSize: 13)),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+      ),
+    );
+  }
+
+  /// 导入模型包（zip）
+  Future<void> _importModel() async {
+    final ok = await _link.importAvatarModel();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? '数字人模型已导入' : '导入失败，详见日志'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// 切换已有模型
+  Future<void> _switchModel() async {
+    final models = await _link.availableAvatarModels();
+    if (!mounted) return;
+    _showModelPicker(models);
+  }
+
+  /// 打开全屏演示模式
+  void _openDemo() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const DemoPage()),
+    );
+  }
+
+  /// 标签页内容（各自可滚动，但关键操作都在首屏）
+  Widget _tabView(List<Widget> children) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: children,
+    );
+  }
+
+  /// 常驻快捷条：角色开关 + 连接状态 + 立即播报
+  Widget _buildQuickBar() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              _roleChip(
+                label: '拨号端',
+                icon: Icons.phone_in_talk,
+                on: _link.autoTrigger,
+                onChanged: (v) => _link.setAutoTrigger(v),
+              ),
+              const SizedBox(width: 8),
+              _roleChip(
+                label: '播放端',
+                icon: Icons.volume_up,
+                on: _link.asPlayer,
+                onChanged: (v) => _link.setAsPlayer(v),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: _buildConnChip()),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _link.triggerManually,
+                  icon: const Icon(Icons.campaign_outlined, size: 18),
+                  label: const Text('立即播报'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(40),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ),
+              if (!_link.accessibilityEnabled) ...<Widget>[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await CallStateWatcher.openSettings();
+                  },
+                  icon: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFE08A00)),
+                  label: const Text('开启检测', style: TextStyle(fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (_link.armed) ...<Widget>[
+            const SizedBox(height: 6),
+            Text(
+              '等待接通中：${_link.armedLabel} ${_link.armedPhone}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF2F6BFF)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 角色开关胶囊
+  Widget _roleChip({
+    required String label,
+    required IconData icon,
+    required bool on,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return GestureDetector(
+      onTap: () => onChanged(!on),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: on ? const Color(0xFF2F6BFF) : const Color(0xFFF0F2F6),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 14, color: on ? Colors.white : const Color(0xFF8A94A6)),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: on ? Colors.white : const Color(0xFF6B7688),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 连接状态 + 手动连接按钮
+  Widget _buildConnChip() {
+    final text = _link.peerConnected
+        ? '已连接 ${_link.connectedPeerName ?? '对端'}'
+        : _link.seeking
+            ? '正在寻找拨号端…'
+            : _link.listening
+                ? (_link.asPlayer ? '未连接拨号端' : '等待播放端连接')
+                : '局域网未启动';
+    final color = _link.peerConnected
+        ? const Color(0xFF17A05A)
+        : _link.listening
+            ? const Color(0xFF2F6BFF)
+            : Colors.black38;
+    if (_link.asPlayer && _link.listening) {
+      return TextButton(
+        onPressed: _link.peerConnected ? _link.disconnectPeer : _link.connectToDialer,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(0, 30),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(
+          _link.peerConnected ? '断开' : (_link.seeking ? '搜索中…' : '连接拨号端'),
+          style: const TextStyle(fontSize: 12),
+        ),
+      );
+    }
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(fontSize: 12, color: color),
     );
   }
 
@@ -209,53 +460,6 @@ class _PromptPageState extends State<PromptPage> {
               label: const Text('打开系统无障碍设置'),
             ),
           ],
-          const SizedBox(height: 12),
-          Row(
-            children: <Widget>[
-              Icon(
-                _link.peerConnected
-                    ? Icons.wifi
-                    : _link.listening
-                        ? Icons.wifi_find
-                        : Icons.wifi_off,
-                size: 16,
-                color: _link.peerConnected
-                    ? const Color(0xFF17A05A)
-                    : _link.listening
-                        ? const Color(0xFF2F6BFF)
-                        : Colors.black38,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  _link.peerConnected
-                      ? '已连接：${_link.connectedPeerName ?? '对端'}'
-                      : _link.seeking
-                          ? '正在寻找拨号端…'
-                          : _link.listening
-                              ? (_link.asPlayer ? '未连接拨号端' : '等待播放端连接')
-                              : '局域网未启动',
-                  style: const TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-              ),
-              // 播放端：手动发起连接
-              if (_link.asPlayer && _link.listening)
-                TextButton(
-                  onPressed: _link.peerConnected
-                      ? _link.disconnectPeer
-                      : _link.connectToDialer,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    _link.peerConnected ? '断开' : (_link.seeking ? '搜索中…' : '连接拨号端'),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-            ],
-          ),
           if (_link.lastError != null) ...<Widget>[
             const SizedBox(height: 6),
             Text(_link.lastError!, style: const TextStyle(fontSize: 12, color: Color(0xFFD03B3B))),
@@ -265,7 +469,8 @@ class _PromptPageState extends State<PromptPage> {
     );
   }
 
-  Widget _buildRoleCard() {
+  /// 设备名（角色开关与播报按钮已移到顶部快捷条）
+  Widget _buildDeviceCard() {
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,21 +482,13 @@ class _PromptPageState extends State<PromptPage> {
               Text('本机角色', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ],
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('拨号端：接通后自动通知播放端', style: TextStyle(fontSize: 14)),
-            subtitle: const Text('本机拨打电话，检测到对方接通后广播播报指令', style: TextStyle(fontSize: 11)),
-            value: _link.autoTrigger,
-            onChanged: (v) => _link.setAutoTrigger(v),
+          const SizedBox(height: 6),
+          const Text(
+            '拨号端：本机拨打电话，检测到对方接通后广播播报指令。\n'
+            '播放端：放在拨号手机旁边，用它来朗读（建议固定支架、对准麦克风）。',
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('播放端：收到指令后朗读开场白', style: TextStyle(fontSize: 14)),
-            subtitle: const Text('放在拨号手机旁边，用它来朗读（建议固定支架、对准麦克风）', style: TextStyle(fontSize: 11)),
-            value: _link.asPlayer,
-            onChanged: (v) => _link.setAsPlayer(v),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           TextField(
             controller: _nameController,
             decoration: const InputDecoration(
@@ -301,25 +498,6 @@ class _PromptPageState extends State<PromptPage> {
             onSubmitted: (v) => _link.setDeviceName(v),
             onTapOutside: (_) => _link.setDeviceName(_nameController.text),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _link.triggerManually(),
-                  icon: const Icon(Icons.campaign_outlined, size: 18),
-                  label: const Text('立即播报'),
-                ),
-              ),
-            ],
-          ),
-          if (_link.armed) ...<Widget>[
-            const SizedBox(height: 8),
-            Text(
-              '等待接通中：${_link.armedLabel} ${_link.armedPhone}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF2F6BFF)),
-            ),
-          ],
         ],
       ),
     );
@@ -780,10 +958,11 @@ class _PromptPageState extends State<PromptPage> {
           SizedBox(height: 8),
           Text(
             '1. 两台手机连同一个 Wi-Fi，且都装了本应用\n'
-            '2. 拨号端：打开「拨号端」开关，并在系统里开启无障碍权限\n'
-            '3. 播放端：只打开「播放端」开关，把手机放在拨号端麦克风旁 5~10cm\n'
-            '4. 拨号端建议关闭「AI 通话降噪/人声增强」，否则可能削弱外放声音\n'
-            '5. 系统省电策略请设为「无限制/允许后台运行」，避免通话中进程被回收',
+            '2. 拨号端：点顶部「拨号端」胶囊打开，并在系统里开启无障碍权限\n'
+            '3. 播放端：点顶部「播放端」胶囊打开，再点「连接拨号端」完成配对\n'
+            '4. 把播放端手机放在拨号端麦克风旁 5~10cm，音量 60~80%\n'
+            '5. 拨号端建议关闭「AI 通话降噪/人声增强」，否则可能削弱外放声音\n'
+            '6. 系统省电策略请设为「无限制/允许后台运行」，避免通话中进程被回收',
             style: TextStyle(fontSize: 12, height: 1.7, color: Color(0xFF8A5A00)),
           ),
         ],
