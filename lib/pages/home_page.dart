@@ -323,14 +323,16 @@ class _HomePageState extends State<HomePage> {
           // 底部留白：给悬浮玻璃按钮让位
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
           children: <Widget>[
-            // 工作表 / 统计：两卡顶部对齐（标题行齐平）
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(child: _buildSourceCard(sheet)),
-                const SizedBox(width: 10),
-                Expanded(child: _buildStatsCard(sheet)),
-              ],
+            // 工作表 / 统计：两卡顶部对齐 + 等高
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(child: _buildSourceCard(sheet)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _buildStatsCard(sheet)),
+                ],
+              ),
             ),
             const SizedBox(height: 10),
             // 电话号码列放在固话区号上面
@@ -391,23 +393,28 @@ class _HomePageState extends State<HomePage> {
   Widget _buildSourceCard(ImportedSheet sheet) {
     final multipleSheets = _sheets.length > 1;
     return _card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              const Icon(Icons.description_outlined, size: 18, color: Color(0xFF2F6BFF)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _sourceName.isEmpty ? '未命名表格' : _sourceName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      child: InkWell(
+        // 名称被截断时，点一下看完整信息
+        onTap: () => _showSourceDetail(sheet),
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(Icons.description_outlined, size: 18, color: Color(0xFF2F6BFF)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _sourceName.isEmpty ? '未命名表格' : _sourceName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
-            ],
-          ),
+                const Icon(Icons.info_outline, size: 15, color: Colors.black26),
+              ],
+            ),
           const SizedBox(height: 12),
           if (multipleSheets) ...<Widget>[
             const Text('工作表', style: TextStyle(fontSize: 12, color: Colors.black45)),
@@ -445,6 +452,47 @@ class _HomePageState extends State<HomePage> {
           Text(
             sheet.hasHeader ? '表头位于第 ${sheet.headerRow} 行' : '未识别到表头，列名使用 A / B / C 自动编号',
             style: const TextStyle(fontSize: 12, color: Colors.black38),
+          ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 来源表详细信息（文件名被截断时点开看）
+  void _showSourceDetail(ImportedSheet sheet) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('表格信息', style: TextStyle(fontSize: 17)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _DetailRow(label: '文件', value: _sourceName.isEmpty ? '未命名表格' : _sourceName),
+              _DetailRow(label: '工作表', value: sheet.name),
+              _DetailRow(label: '数据行', value: '${sheet.rowCount} 行'),
+              _DetailRow(label: '总列数', value: '${sheet.columnCount} 列'),
+              _DetailRow(
+                label: '表头',
+                value: sheet.hasHeader ? '第 ${sheet.headerRow} 行' : '未识别（用 A/B/C 编号）',
+              ),
+              _DetailRow(
+                label: '已选号码列',
+                value: sheet.phoneColumns.isEmpty
+                    ? '未选择'
+                    : sheet.phoneColumns.map((c) => sheet.headerAt(c)).join(' / '),
+              ),
+              if (_sheets.length > 1)
+                _DetailRow(label: '工作表数量', value: '${_sheets.length} 个'),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
           ),
         ],
       ),
@@ -683,6 +731,38 @@ class _TipLine extends StatelessWidget {
   }
 }
 
+/// 详情弹窗里的一行「标签 - 值」
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 78,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: Colors.black45),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 /// 悬浮玻璃条里的操作按钮
 class _GlassAction extends StatelessWidget {
   const _GlassAction({

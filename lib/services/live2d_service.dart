@@ -52,8 +52,40 @@ class Live2dService {
     }
   }
 
+  /// 模型描述文件的标准后缀（Cubism 3/4/5 都用它）
+  static const String modelFileSuffix = '.model3.json';
+
+  /// 判断一个文件是不是 Live2D 模型描述文件。
+  ///
+  /// 优先按**后缀**判断（`*.model3.json`，大小写不敏感）；
+  /// 后缀不标准时（比如被改名成 model.json / config.json）再按**内容**兜底：
+  /// 含有 `FileReferences` 且引用了 `Moc` 即认为是模型描述文件。
+  static bool isModelDescriptionFile(String name, {String? content}) {
+    final lower = name.split('/').last.toLowerCase();
+    // 后缀判断：xxx.model3.json 或 model3.json 都算（大小写不敏感）
+    if (lower.endsWith('model3.json')) return true;
+    if (!lower.endsWith('.json')) return false;
+    if (content == null) return false;
+    return content.contains('"FileReferences"') && content.contains('"Moc"');
+  }
+
+  /// 从模型文件路径里取出展示名（去掉 .model3.json 后缀）
+  static String modelNameOf(String path) {
+    final file = path.split('/').last;
+    final lower = file.toLowerCase();
+    if (lower.endsWith(modelFileSuffix)) {
+      return file.substring(0, file.length - modelFileSuffix.length);
+    }
+    if (lower == 'model3.json') {
+      final dir = path.split('/');
+      return dir.length > 1 ? dir[dir.length - 2] : file;
+    }
+    final dot = file.lastIndexOf('.');
+    return dot > 0 ? file.substring(0, dot) : file;
+  }
+
   /// 可用模型列表（相对路径，如 hiyori/Hiyori.model3.json）
-  /// 只返回 Cubism 4/5 的模型；Cubism 3（Version<4）当前运行时不支持
+  /// 只返回 Cubism 4/5 的模型；Cubism 3（moc3 v6）当前运行时不支持
   Future<List<String>> listModels() async {
     final root = _webRoot;
     if (root == null) return const <String>[];
@@ -110,7 +142,7 @@ class Live2dService {
     }
   }
 
-  /// 导入用户自备的模型包（zip，内含 *.model3.json 及其依赖文件）
+  /// 导入用户自备的模型包（zip，内含模型描述文件及其依赖文件）
   /// 返回导入后的模型相对路径
   Future<String?> importModelArchive(File archiveFile, {String? name}) async {
     final root = _webRoot;
@@ -125,12 +157,27 @@ class Live2dService {
     }
 
     final files = archive.where((e) => e.isFile).toList();
-    // 找到 model3.json，取它所在的目录作为模型根
+    // 找模型描述文件：先按后缀（*.model3.json），再按内容兜底（改过名的 json）
     ArchiveFile? modelEntry;
     for (final entry in files) {
-      if (entry.name.toLowerCase().endsWith('.model3.json')) {
+      if (isModelDescriptionFile(entry.name)) {
         modelEntry = entry;
         break;
+      }
+    }
+    if (modelEntry == null) {
+      // 后缀不标准时，按内容再找一遍
+      for (final entry in files) {
+        if (!entry.name.toLowerCase().endsWith('.json')) continue;
+        try {
+          final content = utf8.decode(entry.content as List<int>, allowMalformed: true);
+          if (isModelDescriptionFile(entry.name, content: content)) {
+            modelEntry = entry;
+            break;
+          }
+        } catch (_) {
+          // 忽略
+        }
       }
     }
     if (modelEntry == null) return null;
@@ -138,13 +185,12 @@ class Live2dService {
     final modelPath = modelEntry.name.replaceAll('\\', '/');
     final cut = modelPath.lastIndexOf('/');
     final prefix = cut >= 0 ? modelPath.substring(0, cut + 1) : '';
-    final dirName = (name ?? (cut >= 0 ? modelPath.substring(0, cut) : ''))
-        .split('/')
-        .where((e) => e.isNotEmpty)
-        .lastOrNull ??
-        'model';
+    final dirName = (name ?? modelNameOf(modelPath))
+        .replaceAll(RegExp(r'[^\w\-.\u4e00-\u9fa5]'), '_')
+        .trim();
+    final safeName = dirName.isEmpty ? 'model' : dirName;
 
-    final targetDir = Directory('${root.path}/models/$dirName');
+    final targetDir = Directory('${root.path}/models/$safeName');
     if (targetDir.existsSync()) targetDir.deleteSync(recursive: true);
     targetDir.createSync(recursive: true);
 
@@ -158,7 +204,7 @@ class Live2dService {
       out.writeAsBytesSync(entry.content as List<int>);
     }
 
-    return 'models/$dirName/${modelPath.substring(prefix.length)}';
+    return 'models/$safeName/${modelPath.substring(prefix.length)}';
   }
 
   /// 从文件夹导入模型：递归寻找 *.model3.json，并把该模型目录（含贴图/动作/表情）
@@ -168,8 +214,9 @@ class Live2dService {
     if (root == null) return null;
     if (!folder.existsSync()) return null;
 
-    // 递归查找 model3.json（优先最浅的那个，避免选到子目录里的重复模型）
+    // 递归查找模型描述文件：先按后缀（*.model3.json），再按内容兜底
     final models = <File>[];
+    final jsonCandidates = <File>[];
     void scan(Directory dir, int depth) {
       if (depth > 6 || models.length > 20) return;
       List<FileSystemEntity> children;
@@ -179,8 +226,12 @@ class Live2dService {
         return;
       }
       for (final entity in children) {
-        if (entity is File && entity.path.toLowerCase().endsWith('.model3.json')) {
-          models.add(entity);
+        if (entity is File) {
+          if (isModelDescriptionFile(entity.path)) {
+            models.add(entity);
+          } else if (entity.path.toLowerCase().endsWith('.json')) {
+            jsonCandidates.add(entity);
+          }
         }
       }
       for (final entity in children) {
@@ -193,6 +244,20 @@ class Live2dService {
     }
 
     scan(folder, 0);
+    if (models.isEmpty) {
+      // 后缀不标准（模型 json 被改过名）时按内容再找一遍
+      for (final candidate in jsonCandidates) {
+        try {
+          final content = await candidate.readAsString();
+          if (isModelDescriptionFile(candidate.path, content: content)) {
+            models.add(candidate);
+            break;
+          }
+        } catch (_) {
+          // 忽略
+        }
+      }
+    }
     if (models.isEmpty) return null;
     models.sort((a, b) => a.path.length.compareTo(b.path.length));
     final modelFile = models.first;
@@ -348,8 +413,4 @@ class Live2dService {
     if (lower.endsWith('.webp')) return ContentType('image', 'webp');
     return ContentType.binary;
   }
-}
-
-extension _LastOrNull<T> on Iterable<T> {
-  T? get lastOrNull => isEmpty ? null : last;
 }

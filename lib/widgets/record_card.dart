@@ -14,6 +14,7 @@ class RecordCard extends StatelessWidget {
     required this.called,
     required this.onTap,
     required this.onPhoneTap,
+    this.onMoreTap,
     this.highlighted = false,
     this.compact = false,
     this.narrow = false,
@@ -46,6 +47,9 @@ class RecordCard extends StatelessWidget {
 
   /// 点击某个号码，直接拨该号码
   final ValueChanged<PhoneEntry> onPhoneTap;
+
+  /// 点击「更多」查看该行完整信息
+  final VoidCallback? onMoreTap;
 
   static const int maxVisibleFields = 5;
   static const int maxVisiblePhones = 3;
@@ -371,6 +375,7 @@ class RecordCard extends StatelessWidget {
   }
 
   /// 紧凑模式：其它字段摘要（部门/备注等，最多两条，一行省略）
+  /// 整行可点 → 弹出该行完整信息（小按钮太小不好点）
   Widget _compactSummary() {
     if (fields.isEmpty) {
       return const Text('', style: TextStyle(fontSize: 10, height: 1.1));
@@ -381,14 +386,24 @@ class RecordCard extends StatelessWidget {
         .map((field) => '${field.label}: ${field.value}')
         .where((item) => item.trim().isNotEmpty && !item.endsWith(': '))
         .join(' · ');
-    return Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 10.5, height: 1.2, color: Colors.black38),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onMoreTap,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10.5, height: 1.2, color: Colors.black38),
+            ),
+          ),
+          const Icon(Icons.more_horiz, size: 14, color: Color(0xFF8A94A6)),
+        ],
+      ),
     );
   }
-
   /// 紧凑模式的拨号按钮
   Widget _compactCallButton(bool hasPhone) {
     return Container(

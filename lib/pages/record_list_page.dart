@@ -362,6 +362,115 @@ class _RecordListPageState extends State<RecordListPage> {
     );
   }
 
+  /// 该行完整信息（卡片里被省略的内容在这里看全）
+  void _showRowDetail(int row, List<CellField> fields, List<PhoneEntry> phones) {
+    final titleIndex = _titleIndexOf(fields);
+    final name = titleIndex >= 0 ? fields[titleIndex].value.trim() : '第 ${row + 1} 行';
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            children: <Widget>[
+              Text(
+                name.isEmpty ? '第 ${row + 1} 行' : name,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              if (phones.isNotEmpty) ...<Widget>[
+                const Text(
+                  '号码',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
+                ),
+                const SizedBox(height: 6),
+                for (final phone in phones)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        SizedBox(
+                          width: 86,
+                          child: Text(
+                            phone.label,
+                            style: const TextStyle(fontSize: 13, color: Colors.black45),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.of(sheetContext).pop();
+                              _dialEntry(phone, row);
+                            },
+                            child: Text(
+                              phone.display,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1B62F0),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (phone.note != null && phone.note!.isNotEmpty)
+                          Text(
+                            phone.note!,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF17A05A)),
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
+              ],
+              const Text(
+                '其它字段',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
+              ),
+              const SizedBox(height: 6),
+              for (final field in fields)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(
+                        width: 86,
+                        child: Text(
+                          field.label,
+                          style: const TextStyle(fontSize: 13, color: Colors.black45),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          field.value,
+                          style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(sheetContext).pop();
+                  _chooseAndDial(phones, row);
+                },
+                icon: const Icon(Icons.call, size: 18),
+                label: const Text('拨打该行号码'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
   /// 紧凑模式用两列网格（一次能看到更多记录），详细模式保持单列
   Widget _buildList(List<int> rows) {
     final sheet = widget.sheet;
@@ -390,6 +499,7 @@ class _RecordListPageState extends State<RecordListPage> {
         narrow: _compact,
         onTap: () => _chooseAndDial(phones, row),
         onPhoneTap: (entry) => _dialEntry(entry, row),
+        onMoreTap: () => _showRowDetail(row, fields, phones),
       );
     }
 
