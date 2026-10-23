@@ -53,3 +53,6 @@ app.*.map.json
 *.ipa
 *.ap_
 .bak/
+
+# 调试截图（勿提交）
+*.png
