@@ -155,12 +155,15 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       return _placeholder('数字人初始化中…');
     }
     // 背景保持透明（不能有底色，否则挡住下面的界面内容）；
-    // 但必须保留 ClipRect：不加裁剪时平台视图的触摸区域会外溢，把下方控制条也吞掉
-    return ClipRect(
-      child: SizedBox(
-        height: widget.height,
-        width: double.infinity,
-        child: WebViewWidget(controller: controller),
+    // IgnorePointer 必须包在 ClipRect 外面：ClipRect 自身也会吃掉矩形内的点击，
+    // 不加它浮窗会挡住下面的号码/按钮（拨号时点不到号码）
+    return IgnorePointer(
+      child: ClipRect(
+        child: SizedBox(
+          height: widget.height,
+          width: double.infinity,
+          child: WebViewWidget(controller: controller),
+        ),
       ),
     );
   }

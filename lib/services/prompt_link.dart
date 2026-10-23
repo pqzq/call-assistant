@@ -109,6 +109,9 @@ class PromptLink extends ChangeNotifier {
   /// 提词气泡是否收起
   bool _collapsed = false;
 
+  /// 临时隐藏浮层（演示页）
+  bool _suppressAvatar = false;
+
   bool _disposed = false;
   List<double>? _envelope;
   Timer? _mouthTimer;
@@ -147,6 +150,15 @@ class PromptLink extends ChangeNotifier {
 
   /// 提词气泡是否收起
   bool get collapsed => _collapsed;
+
+  /// 临时隐藏浮层（演示页等全屏场景使用，不持久化）
+  bool get suppressAvatar => _suppressAvatar;
+
+  void setSuppressAvatar(bool value) {
+    if (_suppressAvatar == value) return;
+    _suppressAvatar = value;
+    notifyListeners();
+  }
 
   /// 当前跟进的客户
   ActiveLead? get activeLead => _activeLead;

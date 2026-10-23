@@ -37,6 +37,8 @@ class _DemoPageState extends State<DemoPage> {
   void initState() {
     super.initState();
     _link.addListener(_onLinkChanged);
+    // 演示页是全屏场景，隐藏浮动数字人（否则会出现两个角色并挡住按钮）
+    _link.setSuppressAvatar(true);
     // 演示页打开时确保数字人可用（否则 Live2dAvatar 不会渲染）
     if (!_link.avatarEnabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _link.setAvatarEnabled(true));
@@ -46,6 +48,7 @@ class _DemoPageState extends State<DemoPage> {
   @override
   void dispose() {
     _link.removeListener(_onLinkChanged);
+    _link.setSuppressAvatar(false);
     _ticker?.cancel();
     super.dispose();
   }
