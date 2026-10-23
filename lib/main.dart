@@ -9,6 +9,7 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // 双机联动：提前初始化（恢复设置、启动局域网监听、订阅通话状态）
   PromptLink.instance.init();
+  PlatformBridge.logPlatformInfo();
   runApp(const CallAssistantApp());
 }
 

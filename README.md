@@ -304,6 +304,29 @@ flutter build windows --release        # 产物在 build/windows/x64/runner/Rele
 > 没有管理员权限时无法创建符号链接，构建会提示
 > `Building with plugins requires symlink support`。
 
+**构建 Windows**（两个一次性前置条件）
+
+1. **开启「开发者模式」**（Flutter 插件构建需要创建符号链接）
+   - 设置 → 系统 → 开发者选项 → 开发人员模式
+   - 或用**管理员** PowerShell 执行：
+     ```
+     reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
+     ```
+2. **安装 nuget.exe 并放进 PATH**（`flutter_tts` 的 Windows 实现要用它拉取 Speech API）
+   ```
+   curl.exe -L -o d:\tools\nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+   $env:PATH="d:\tools;$env:PATH"     # 每次构建前确保它在 PATH 里
+   ```
+
+然后：
+
+```
+flutter pub get
+flutter build windows --release        # 产物在 build/windows/x64/runner/Release/
+```
+
+> 若报 `file cannot create directory: C:/Program Files/...`，说明上次构建把安装前缀缓存成了 Program Files，
+> 删掉 `build/windows` 目录重新构建即可。
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

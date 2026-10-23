@@ -15,6 +15,15 @@ import 'call_state_watcher.dart';
 class PlatformBridge {
   const PlatformBridge._();
 
+  /// 启动时打印一次平台自检（桌面端排查用）
+  static void logPlatformInfo() {
+    debugPrint(
+      '[platform] isDesktop=$isDesktop isAndroid=$isAndroid '
+      'canDial=$canDial canDetectCall=$canDetectCall',
+    );
+  }
+
+
   /// 是否是桌面平台
   static bool get isDesktop {
     final t = defaultTargetPlatform;
