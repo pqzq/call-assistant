@@ -577,6 +577,23 @@ class PromptLink extends ChangeNotifier {
   /// 最近一次模型导入失败的原因（界面提示用）
   String? get lastImportError => Live2dService.instance.lastImportError;
 
+  /// 移除用户导入的模型（内置模型不允许移除）
+  ///
+  /// 如果移除的是当前正在用的模型，会自动切回默认模型。
+  Future<bool> deleteAvatarModel(String modelRelativePath) async {
+    if (!Live2dService.isUserImported(modelRelativePath)) {
+      _log('内置模型不能移除', important: true);
+      return false;
+    }
+    await Live2dService.instance.deleteImportedModel(modelRelativePath);
+    if (_avatarModel == modelRelativePath || _avatarModel.startsWith('$modelRelativePath/')) {
+      await setAvatarModel(Live2dService.defaultModel);
+    }
+    notifyListeners();
+    _log('已移除模型：$modelRelativePath', important: true);
+    return true;
+  }
+
   DateTime? _mouthClock;
 
   /// 播放音频时启动嘴型驱动（有包络用包络，没有就用程序化动画）

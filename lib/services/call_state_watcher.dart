@@ -103,6 +103,21 @@ class CallStateWatcher {
     }
   }
 
+  /// 把文件保存到系统「下载」目录，返回展示路径（失败返回 null）
+  ///
+  /// 用 MediaStore 写入，不需要任何存储权限；比系统「另存为」对话框可靠得多。
+  static Future<String?> saveToDownloads(String name, List<int> bytes) async {
+    try {
+      final result = await _methodChannel.invokeMethod<String>(
+        'saveToDownloads',
+        <String, Object>{'name': name, 'bytes': Uint8List.fromList(bytes)},
+      );
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 选一个文件夹，返回真实文件系统路径（取消返回 null）
   ///
   /// 走系统 SAF（ACTION_OPEN_DOCUMENT_TREE）并在原生侧解析 documentId，

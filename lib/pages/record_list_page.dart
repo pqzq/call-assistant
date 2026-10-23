@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import '../models/active_lead.dart';
 import '../models/sheet_data.dart';
 import '../services/call_log_store.dart';
+import '../services/call_state_watcher.dart';
 import '../services/excel_service.dart';
 import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
@@ -294,14 +295,24 @@ class _RecordListPageState extends State<RecordListPage> {
       final stamp = DateTime.now().toString().replaceAll(RegExp(r'[:. ]'), '-').substring(0, 19);
       final base = _sheet.name.isEmpty ? '名单' : _sheet.name;
       final fileName = '${base}_拨打情况_$stamp.xlsx';
-      final saved = await FilePicker.platform.saveFile(
+
+      // 首选：直接存到系统「下载」目录（MediaStore，不需要权限，也不会被系统对话框坑到）
+      final saved = await CallStateWatcher.saveToDownloads(fileName, bytes);
+      if (!mounted) return;
+      if (saved != null) {
+        AppToast.show(context, '已保存到：$saved', icon: Icons.check_circle_outline);
+        return;
+      }
+
+      // 兜底：系统「另存为」对话框
+      final picked = await FilePicker.platform.saveFile(
         dialogTitle: '保存导出的表格',
         fileName: fileName,
         bytes: bytes,
       );
       if (!mounted) return;
-      if (saved == null) return; // 用户取消
-      AppToast.show(context, '已导出：$fileName');
+      if (picked == null) return; // 用户取消
+      AppToast.show(context, '已导出：$fileName', icon: Icons.check_circle_outline);
     } catch (e) {
       if (!mounted) return;
       AppToast.error(context, '导出失败：$e');
@@ -502,12 +513,12 @@ class _RecordListPageState extends State<RecordListPage> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
-        // 整体下沉：顶部留出更多空间，弹窗从屏幕更下方升起
+        // 整体下沉：弹窗只占屏幕下 2/3
         child: Padding(
-          padding: EdgeInsets.only(top: MediaQuery.of(sheetContext).size.height * 0.28),
+          padding: EdgeInsets.only(top: MediaQuery.of(sheetContext).size.height / 3),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(sheetContext).size.height * 0.72,
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.66,
             ),
             child: ListView(
               // 不要 shrinkWrap：内容超高时要在 ConstrainedBox 里滚动，

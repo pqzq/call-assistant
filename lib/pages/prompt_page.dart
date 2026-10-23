@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/call_state_watcher.dart';
+import '../services/live2d_service.dart';
 import '../services/prompt_link.dart';
 import '../widgets/glass_surface.dart';
 import 'demo_page.dart';
@@ -80,7 +81,29 @@ class _PromptPageState extends State<PromptPage> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 11, color: Colors.black38),
                 ),
-                trailing: model == _link.avatarModel ? const Icon(Icons.check, size: 18) : null,
+                trailing: model == _link.avatarModel
+                    ? const Icon(Icons.check, size: 18)
+                    : (Live2dService.isUserImported(model)
+                        // 用户自己导入的模型可以移除，内置的不提供移除
+                        ? IconButton(
+                            tooltip: '移除这个模型',
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            onPressed: () async {
+                              // 先取出 navigator，避免 await 之后再跨异步间隙用 context
+                              final navigator = Navigator.of(sheetContext);
+                              final ok = await _confirmDeleteModel(model);
+                              if (ok != true || !mounted) return;
+                              await _link.deleteAvatarModel(model);
+                              if (!mounted) return;
+                              navigator.pop();
+                              AppToast.show(context, '已移除模型');
+                              // 刷新模型列表
+                              final rest = await _link.availableAvatarModels();
+                              if (!mounted) return;
+                              _showModelPicker(rest);
+                            },
+                          )
+                        : null),
                 onTap: () => Navigator.of(sheetContext).pop(model),
               ),
           ],
@@ -88,6 +111,28 @@ class _PromptPageState extends State<PromptPage> {
       ),
     );
     if (chosen != null) await _link.setAvatarModel(chosen);
+  }
+
+  /// 删除确认（只允许删用户导入的模型）
+  Future<bool?> _confirmDeleteModel(String model) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('移除模型', style: TextStyle(fontSize: 17)),
+        content: Text('确定移除「${_modelLabel(model)}」吗？\n该模型占用的文件会一并删除。'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD03B3B)),
+            child: const Text('移除'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

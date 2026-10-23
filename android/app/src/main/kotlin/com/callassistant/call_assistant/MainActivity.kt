@@ -119,8 +119,54 @@ class MainActivity : FlutterActivity() {
                         result.error("OPEN_FAILED", e.message, null)
                     }
                 }
+                // 保存文件到系统「下载」目录（MediaStore，不需要任何存储权限）
+                "saveToDownloads" -> {
+                    try {
+                        val name = call.argument<String>("name") ?: ""
+                        val bytes = call.argument<ByteArray>("bytes") ?: ByteArray(0)
+                        val saved = saveToDownloads(name, bytes)
+                        result.success(saved)
+                    } catch (e: Exception) {
+                        result.error("SAVE_FAILED", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /// 用 MediaStore 把文件写进系统「下载」目录，返回展示用的路径
+    private fun saveToDownloads(name: String, bytes: ByteArray): String? {
+        return try {
+            val resolver = contentResolver
+            val mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, mime)
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                    put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri == null) return null
+                resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                values.clear()
+                values.put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                "Download/$name"
+            } else {
+                // Android 10 及以下：直接写公共目录
+                val dir = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS
+                )
+                dir.mkdirs()
+                val file = java.io.File(dir, name)
+                file.writeBytes(bytes)
+                "Download/$name"
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("CallAssistant", "saveToDownloads failed: ${e.message}")
+            null
         }
     }
 

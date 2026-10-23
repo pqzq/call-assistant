@@ -108,6 +108,12 @@ class Live2dService {
   /// 被排除的 Cubism 3 模型（供界面提示）
   final List<String> incompatibleModels = <String>[];
 
+  /// 内置模型都放在资源根目录下（hiyori/ haru/ ...），
+  /// 用户自己导入的模型统一放在 `models/` 下 —— 用它区分两者，
+  /// 内置模型不允许被移除。
+  static bool isUserImported(String modelRelativePath) =>
+      modelRelativePath.startsWith('models/');
+
   /// 判断模型是否为当前运行时支持的 Cubism 4/5
   ///
   /// 注意：model3.json 里的 `Version` 是**模型描述格式版本**（Cubism 4 也是 3），
@@ -405,11 +411,11 @@ class Live2dService {
     return relativeModel;
   }
 
-  /// 删除已导入的模型目录
+  /// 删除已导入的模型目录（只允许删用户导入的，内置模型会被忽略）
   Future<void> deleteImportedModel(String modelRelativePath) async {
     final root = _webRoot;
     if (root == null) return;
-    if (!modelRelativePath.startsWith('models/')) return;
+    if (!isUserImported(modelRelativePath)) return;
     final name = modelRelativePath.split('/')[1];
     final dir = Directory('${root.path}/models/$name');
     if (dir.existsSync()) dir.deleteSync(recursive: true);
