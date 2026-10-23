@@ -102,6 +102,11 @@ class PromptLink extends ChangeNotifier {
 
   /// 正在寻找拨号端
   bool _seeking = false;
+
+  /// 单机自测：本机同时扮演拨号端与播放端（不用第二台手机就能测全链路）
+  bool _singleDeviceTest = false;
+
+  bool get singleDeviceTest => _singleDeviceTest;
   int _connectAttempts = 0;
   Timer? _queryTimer;
 
@@ -873,20 +878,24 @@ class PromptLink extends ChangeNotifier {
   // ---------------- 播放端 ----------------
 
   void _onLanMessage(LanMessage message, LanPeer peer) {
-    if (message.deviceId == _deviceId) return;
+    final isSelf = message.deviceId == _deviceId;
+    // 单机自测时允许处理自己的广播（模拟另一台手机）
+    if (isSelf && !_singleDeviceTest) return;
     _lastPeerMessageAt = DateTime.now();
+    // 单机自测：自己扮演拨号端
+    final peerRole = isSelf ? 'dialer' : peer.role;
 
     switch (message.type) {
       case LanMessageType.query:
         // 播放端在找拨号端：拨号端回应自己的身份
-        if (_autoTrigger && !_asPlayer) {
+        if (_autoTrigger && (!_asPlayer || _singleDeviceTest)) {
           _send(peer, LanMessageType.hello);
         }
         break;
 
       case LanMessageType.hello:
         // 拨号端的存在宣告（每 5 秒一次，不再刷日志）
-        if (_asPlayer && !_peerConnected && peer.role == 'dialer') {
+        if (_asPlayer && !_peerConnected && (peerRole == 'dialer' || _singleDeviceTest)) {
           // 播放端主动发起连接
           _send(peer, LanMessageType.connect);
         }
@@ -896,7 +905,10 @@ class PromptLink extends ChangeNotifier {
         // 播放端请求连接：拨号端确认
         if (_autoTrigger) {
           _send(peer, LanMessageType.connected);
-          _markConnected(peer, '播放端已连接：${peer.displayName}');
+          _markConnected(
+            peer,
+            isSelf ? '模拟拨号端已连接（本机自测）' : '播放端已连接：${peer.displayName}',
+          );
         }
         break;
 
@@ -976,6 +988,15 @@ class PromptLink extends ChangeNotifier {
         role: _roleName,
       ));
     });
+  }
+
+  /// 单机自测开关：本机同时扮演拨号端与播放端
+  Future<void> setSingleDeviceTest(bool value) async {
+    if (_singleDeviceTest == value) return;
+    _singleDeviceTest = value;
+    _link.acceptSelf = value;
+    notifyListeners();
+    _log(value ? '已开启单机自测（本机模拟拨号端）' : '已关闭单机自测');
   }
 
   /// 断开与拨号端的连接

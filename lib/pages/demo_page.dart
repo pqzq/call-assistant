@@ -163,8 +163,10 @@ class _DemoPageState extends State<DemoPage> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // 数字人放大一倍：几乎占满可用高度（原来上限 460，现在上限 900）
-            final avatarHeight = (constraints.maxHeight - 200).clamp(320.0, 900.0);
+            // 话术框至少 4 行（每行约 24px + 内边距），剩下的高度给数字人
+            const textBoxHeight = 168.0;
+            final avatarHeight =
+                (constraints.maxHeight - textBoxHeight - 110).clamp(320.0, 900.0);
             return Column(
               children: <Widget>[
                 const SizedBox(height: 8),
@@ -181,12 +183,12 @@ class _DemoPageState extends State<DemoPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // 字幕
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                // 字幕（固定高度，至少显示 4 行）
+                Container(
+                  height: textBoxHeight,
+                  width: double.infinity,
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.94),
                       borderRadius: BorderRadius.circular(16),
@@ -242,7 +244,6 @@ class _DemoPageState extends State<DemoPage> {
                       ],
                     ),
                   ),
-                ),
                 const SizedBox(height: 14),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),

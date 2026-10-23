@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/call_state_watcher.dart';
 import '../services/prompt_link.dart';
@@ -145,6 +146,8 @@ class _PromptPageState extends State<PromptPage> {
           _buildSynthCard(),
           const SizedBox(height: 12),
           _buildAudioCard(),
+          const SizedBox(height: 12),
+          _buildSingleDeviceCard(),
           const SizedBox(height: 12),
           _buildLogCard(),
           const SizedBox(height: 16),
@@ -411,10 +414,20 @@ class _PromptPageState extends State<PromptPage> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
-            '模型下载：github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models\n'
-            '推荐 vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2（13.4MB），下载后传手机再点「导入模型包」。',
-            style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
+          // 下载地址可点击跳转
+          GestureDetector(
+            onTap: () => _openUrl('https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models'),
+            child: const Text(
+              '模型下载：github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models（点击打开）\n'
+              '推荐 vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2（13.4MB），下载后传手机再点「导入模型包」。',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.6,
+                color: Color(0xFF2F6BFF),
+                decoration: TextDecoration.underline,
+                decorationColor: Color(0x332F6BFF),
+              ),
+            ),
           ),
         ],
       ),
@@ -647,6 +660,46 @@ class _PromptPageState extends State<PromptPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildSingleDeviceCard() {
+    final on = _link.singleDeviceTest;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.smartphone, size: 18, color: Color(0xFF2F6BFF)),
+              const SizedBox(width: 8),
+              const Text('单机自测', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Switch(
+                value: on,
+                onChanged: (v) => _link.setSingleDeviceTest(v),
+              ),
+            ],
+          ),
+          Text(
+            on
+                ? '本机同时扮演拨号端与播放端：点「连接拨号端」即可自连，随后拨号能完整走通「接通 → 广播 → 朗读 → 口型」全链路。'
+                : '只有一台手机时打开它，就能模拟出另一台手机，不用真机对测就能验证整条播报链路。',
+            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 打开外部链接（模型下载页等）
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开链接'), behavior: SnackBarBehavior.floating),
+      );
+    }
   }
 
   Widget _buildLogCard() {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
@@ -16,7 +17,7 @@ class Live2dService {
   static const String _assetRoot = 'assets/live2d/';
 
   /// 资源版本：改了 assets 里的文件就 +1，启动时会重新释放
-  static const String assetVersion = '4';
+  static const String assetVersion = '6';
 
   static const String defaultModel = 'hiyori/Hiyori.model3.json';
 
@@ -52,17 +53,61 @@ class Live2dService {
   }
 
   /// 可用模型列表（相对路径，如 hiyori/Hiyori.model3.json）
+  /// 只返回 Cubism 4/5 的模型；Cubism 3（Version<4）当前运行时不支持
   Future<List<String>> listModels() async {
     final root = _webRoot;
     if (root == null) return const <String>[];
     final result = <String>[];
     for (final entity in root.listSync(recursive: true)) {
       if (entity is File && entity.path.endsWith('.model3.json')) {
-        result.add(entity.path.substring(root.path.length + 1).replaceAll(r'\', '/'));
+        final relative = entity.path.substring(root.path.length + 1).replaceAll(r'\', '/');
+        if (await isSupportedModel(entity)) {
+          result.add(relative);
+        } else {
+          incompatibleModels.add(relative);
+        }
       }
     }
     result.sort();
     return result;
+  }
+
+  /// 被排除的 Cubism 3 模型（供界面提示）
+  final List<String> incompatibleModels = <String>[];
+
+  /// 判断模型是否为当前运行时支持的 Cubism 4/5
+  ///
+  /// 注意：model3.json 里的 `Version` 是**模型描述格式版本**（Cubism 4 也是 3），
+  /// 不能用来判断 SDK 版本；真正的判据是 moc3 文件头的版本号：
+  /// Cubism 3 的 moc3 是 v6，Cubism 4/5 的 moc3 是 v5 及以下（Cubism 5 Core 只支持到 v5）。
+  Future<bool> isSupportedModel(File modelFile) async {
+    try {
+      final raw = await modelFile.readAsString();
+      final json = jsonDecode(raw);
+      if (json is! Map) return true;
+      final refs = json['FileReferences'];
+      if (refs is! Map) return true;
+      final moc = refs['Moc'];
+      if (moc is! String || moc.isEmpty) return true;
+      final mocFile = File(
+        '${modelFile.parent.path}${Platform.pathSeparator}${moc.replaceAll('/', Platform.pathSeparator)}',
+      );
+      if (!mocFile.existsSync()) return true;
+      final handle = await mocFile.open();
+      try {
+        final header = await handle.read(6);
+        if (header.length < 6) return true;
+        final magic = String.fromCharCodes(header.sublist(0, 4));
+        final version = header[4] | (header[5] << 8);
+        if (magic != 'MOC3') return true;
+        // v6 = Cubism 3，当前运行时不支持
+        return version <= 5;
+      } finally {
+        await handle.close();
+      }
+    } catch (_) {
+      return true; // 解析失败时先放过，交给运行时报错
+    }
   }
 
   /// 导入用户自备的模型包（zip，内含 *.model3.json 及其依赖文件）

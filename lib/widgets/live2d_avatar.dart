@@ -67,46 +67,56 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     }
 
     final url = '$base/index.html?model=${Uri.encodeComponent(widget.modelPath)}';
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
-      ..setOnConsoleMessage((message) => debugPrint('[Live2D] ${message.message}'))
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (_) {
-            _pageReady = true;
-            _pushMouth(widget.mouth.value, force: true);
-          },
-          onWebResourceError: (error) {
-            if (!mounted || _pageReady) return;
-            setState(() => _error = '页面加载失败：${error.description}');
-          },
-        ),
-      );
 
-    // Android 上允许无手势播放、放开调试日志
-    final platform = controller.platform;
-    if (platform is AndroidWebViewController) {
-      try {
-        await platform.setMediaPlaybackRequiresUserGesture(false);
-      } catch (_) {
-        // 忽略
+    // 复用同一个 WebViewController：Android 上替换平台视图的 controller 不会刷新页面，
+    // 换模型时必须对同一个 controller 再次 loadRequest
+    if (_controller == null) {
+      final controller = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(const Color(0x00000000))
+        ..setOnConsoleMessage((message) => debugPrint('[Live2D] ${message.message}'))
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageFinished: (_) {
+              if (!mounted) return;
+              setState(() {
+                _pageReady = true;
+                _error = null;
+              });
+              _pushMouth(widget.mouth.value, force: true);
+            },
+            onWebResourceError: (error) {
+              if (!mounted || _pageReady) return;
+              setState(() => _error = '页面加载失败：${error.description}');
+            },
+          ),
+        );
+
+      // Android 上允许无手势播放、放开调试日志
+      final platform = controller.platform;
+      if (platform is AndroidWebViewController) {
+        try {
+          await platform.setMediaPlaybackRequiresUserGesture(false);
+        } catch (_) {
+          // 忽略
+        }
       }
+      if (!mounted) return;
+      setState(() => _controller = controller);
     }
+
+    final controller = _controller;
+    if (controller == null) return;
+    setState(() {
+      _pageReady = false;
+      _error = null;
+    });
 
     try {
       await controller.loadRequest(Uri.parse(url));
     } catch (e) {
       if (mounted) setState(() => _error = '加载数字人失败：$e');
-      return;
     }
-
-    if (!mounted) return;
-    setState(() {
-      _controller = controller;
-      _error = null;
-      _pageReady = false;
-    });
   }
 
   void _onMouthChanged() => _pushMouth(widget.mouth.value);

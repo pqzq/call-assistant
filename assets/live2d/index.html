@@ -8,9 +8,10 @@
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
   canvas { display: block; }
   #tip {
-    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
-    text-align: center; color: #8a94a6; font: 13px/1.6 -apple-system, "PingFang SC", sans-serif;
-    white-space: pre-wrap; padding: 0 16px;
+    position: absolute; left: 6%; right: 6%; top: 50%; transform: translateY(-50%);
+    text-align: center; color: #6b7688; font: 12px/1.6 -apple-system, "PingFang SC", sans-serif;
+    white-space: pre-wrap; padding: 8px 10px;
+    background: rgba(255,255,255,0.86); border-radius: 10px;
   }
 </style>
 </head>
@@ -60,7 +61,38 @@
     const url = modelUrlFromQuery();
     avatar.status = 'loading: ' + url;
 
-    PIXI.live2d.Live2DModel.from(url, { autoInteract: false }).then((model) => {
+    // 先检查模型版本：Cubism 3 的 moc3 是 v6，Cubism 4/5 的 moc3 是 v5 及以下，
+    // 当前内置的 Cubism 5 Core 只支持到 v5 -> 提前给出明确提示，而不是英文 core 报错
+    const checkVersion = async () => {
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const refs = (json && json.FileReferences) || {};
+        const moc = refs.Moc;
+        if (typeof moc === 'string' && moc) {
+          const mocUrl = new URL(moc, new URL(url, location.href)).href;
+          const mres = await fetch(mocUrl, { cache: 'no-store' });
+          if (mres.ok) {
+            const buf = new Uint8Array(await mres.arrayBuffer());
+            if (buf.length >= 6) {
+              const ver = buf[4] | (buf[5] << 8);
+              if (ver > 5) {
+                throw new Error(
+                  '该模型是 Cubism 3 格式（moc3 v' + ver + '），当前运行时只支持 Cubism 4/5。\n' +
+                  '请改用 Hiyori / Haru / Mao / Mark / Natori / Rice / Wanko。'
+                );
+              }
+            }
+          }
+        }
+      } catch (e) {
+        if (e && e.message && e.message.indexOf('Cubism 3') >= 0) throw e;
+        // 版本检查失败不阻断（可能是跨域等），交给真正的加载流程报错
+      }
+    };
+
+    checkVersion().then(() => PIXI.live2d.Live2DModel.from(url, { autoInteract: false })).then((model) => {
       app.stage.addChild(model);
       avatar.app = app;   // 便于诊断
 

@@ -123,6 +123,9 @@ class LanLink {
   /// 本机设备 id：广播会回环到自己，需要过滤掉
   String? localDeviceId;
 
+  /// 单机自测：允许把自己发出的广播也交给上层处理（模拟对端）
+  bool acceptSelf = false;
+
   RawDatagramSocket? _socket;
   final Map<String, LanPeer> _peers = <String, LanPeer>{};
 
@@ -146,7 +149,8 @@ class LanLink {
         final message = LanMessage.fromBytes(datagram.data);
         if (message == null) return;
         // 忽略自己发出的广播（UDP 广播会回环给发送方，否则会把自己当成对端）
-        if (localDeviceId != null && message.deviceId == localDeviceId) return;
+        // 单机自测模式下要保留，用来模拟"另一台手机"
+        if (!acceptSelf && localDeviceId != null && message.deviceId == localDeviceId) return;
         final peer = LanPeer(
           deviceId: message.deviceId,
           deviceName: message.deviceName,
