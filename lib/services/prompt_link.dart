@@ -69,7 +69,7 @@ class PromptLink extends ChangeNotifier {
   static const String _kAvatarModel = 'prompt_avatar_model';
   static const String _kAvatarPosX = 'prompt_avatar_pos_x';
   static const String _kAvatarPosY = 'prompt_avatar_pos_y';
-  static const String _kCollapsed = 'prompt_avatar_collapsed';
+  static const String _kBubbleCollapsed = 'prompt_bubble_collapsed';
 
   /// 浮动数字人默认位置（屏幕可用区域的归一化坐标）
   static const double defaultAvatarX = 0.82;
@@ -107,7 +107,7 @@ class PromptLink extends ChangeNotifier {
   int _stepIndex = 0;
 
   /// 提词气泡是否收起
-  bool _collapsed = false;
+  bool _bubbleCollapsed = false;
 
   /// 临时隐藏浮层（演示页）
   bool _suppressAvatar = false;
@@ -148,8 +148,8 @@ class PromptLink extends ChangeNotifier {
   double get avatarPosX => _avatarPosX;
   double get avatarPosY => _avatarPosY;
 
-  /// 提词气泡是否收起
-  bool get collapsed => _collapsed;
+  /// 话术框是否收起（只收起话术框，数字人保持显示）
+  bool get bubbleCollapsed => _bubbleCollapsed;
 
   /// 临时隐藏浮层（演示页等全屏场景使用，不持久化）
   bool get suppressAvatar => _suppressAvatar;
@@ -228,13 +228,13 @@ class PromptLink extends ChangeNotifier {
 
   void previousStep() => selectStep(_stepIndex - 1);
 
-  Future<void> setCollapsed(bool value) async {
-    if (_collapsed == value) return;
-    _collapsed = value;
+  Future<void> setBubbleCollapsed(bool value) async {
+    if (_bubbleCollapsed == value) return;
+    _bubbleCollapsed = value;
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kCollapsed, value);
+      await prefs.setBool(_kBubbleCollapsed, value);
     } catch (_) {
       // 忽略
     }
@@ -307,7 +307,7 @@ class PromptLink extends ChangeNotifier {
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
     _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
     _avatarPosY = prefs.getDouble(_kAvatarPosY) ?? defaultAvatarY;
-    _collapsed = prefs.getBool(_kCollapsed) ?? false;
+    _bubbleCollapsed = prefs.getBool(_kBubbleCollapsed) ?? false;
     notifyListeners();
 
     // 嘴型跟随音频播放位置
