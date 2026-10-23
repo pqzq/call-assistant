@@ -2,14 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_windows/webview_flutter_windows.dart' as wv;
 
 import '../services/live2d_service.dart';
 import '../services/platform_bridge.dart';
 
 /// Live2D 数字人：WebView 渲染，嘴型由外部 [mouth]（0~1）实时驱动。
+///
+/// WebView 按平台分两套实现：
+/// - Android / iOS：`webview_flutter`（平台实现包自动注册）
+/// - Windows：`webview_flutter_windows` 1.x 是**独立组件**（自带 WebView2），
+///   不再实现 `webview_flutter` 的 WebViewPlatform，必须单独走一套 API
 class Live2dAvatar extends StatefulWidget {
   const Live2dAvatar({
     super.key,
@@ -31,7 +37,12 @@ class Live2dAvatar extends StatefulWidget {
 }
 
 class _Live2dAvatarState extends State<Live2dAvatar> {
+  /// Android / iOS 用的控制器
   WebViewController? _controller;
+
+  /// Windows 用的控制器（webview_flutter_windows 1.x 独立组件）
+  wv.WebviewController? _winController;
+
   String? _error;
   bool _pageReady = false;
   Timer? _throttle;
@@ -39,6 +50,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   /// 加载超时检测定时器
   Timer? _loadTimer;
   double _pendingMouth = -1;
+
+  bool get _isWindows => PlatformBridge.isDesktop;
 
   @override
   void initState() {
@@ -50,7 +63,6 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   @override
   void didUpdateWidget(covariant Live2dAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 换了模型就重新加载
     if (oldWidget.modelPath != widget.modelPath) {
       _bootstrap();
     }
@@ -61,6 +73,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     widget.mouth.removeListener(_onMouthChanged);
     _throttle?.cancel();
     _loadTimer?.cancel();
+    _controller = null;
+    _winController = null;
     super.dispose();
   }
 
@@ -71,9 +85,15 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       setState(() => _error = '本地资源服务启动失败');
       return;
     }
-
     final url = '$base/index.html?model=${Uri.encodeComponent(widget.modelPath)}';
-
+    if (_isWindows) {
+      await _bootstrapWindows(url);
+    } else {
+      await _bootstrapMobile(url);
+    }
+  }
+  /// Android / iOS：webview_flutter
+  Future<void> _bootstrapMobile(String url) async {
     // 复用同一个 WebViewController：Android 上替换平台视图的 controller 不会刷新页面，
     // 换模型时必须对同一个 controller 再次 loadRequest
     if (_controller == null) {
@@ -124,11 +144,63 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       if (mounted) setState(() => _error = '加载数字人失败：$e');
       return;
     }
+    _startLoadWatchdog();
+  }
 
-    // 超时兜底：桌面端缺 WebView2 Runtime 时，浏览器进程根本起不来，
-    // 不会触发 onWebResourceError，只会一直白屏 —— 这里超时后给出可操作的提示。
+  /// Windows：webview_flutter_windows 1.x（独立 WebView2 组件）
+  Future<void> _bootstrapWindows(String url) async {
+    if (_winController == null) {
+      final controller = wv.WebviewController();
+      try {
+        await controller.initialize();
+      } catch (e) {
+        if (mounted) {
+          setState(() => _error = 'WebView2 初始化失败：$e\n'
+              '请确认已安装 Microsoft Edge WebView2 Runtime');
+        }
+        return;
+      }
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      controller.loadingState.listen((state) {
+        if (!mounted) return;
+        if (state == wv.LoadingState.navigationCompleted) {
+          setState(() {
+            _pageReady = true;
+            _error = null;
+          });
+          _pushMouth(widget.mouth.value, force: true);
+        }
+      });
+      controller.onLoadError.listen((error) {
+        if (!mounted || _pageReady) return;
+            setState(() => _error = '页面加载失败：');
+      });
+      setState(() => _winController = controller);
+    }
+
+    final controller = _winController;
+    if (controller == null) return;
+    setState(() {
+      _pageReady = false;
+      _error = null;
+    });
+
+    try {
+      await controller.loadUrl(url);
+    } catch (e) {
+      if (mounted) setState(() => _error = '加载数字人失败：$e');
+      return;
+    }
+    _startLoadWatchdog();
+  }
+  /// 超时兜底：缺 WebView2 Runtime 时浏览器进程根本起不来，
+  /// 不会触发任何错误回调，只会一直白屏 —— 超时后给出可操作的提示。
+  void _startLoadWatchdog() {
     _loadTimer?.cancel();
-    _loadTimer = Timer(const Duration(seconds: 12), () {
+    _loadTimer = Timer(const Duration(seconds: 20), () {
       if (!mounted || _pageReady) return;
       setState(() {
         _error = PlatformBridge.isDesktop
@@ -144,7 +216,7 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   /// 节流到 ~100ms 一次，避免频繁跨端调用
   void _pushMouth(double value, {bool force = false}) {
     _pendingMouth = value;
-    if (_throttle?.isActive ?? false) return;
+    if ((_throttle?.isActive ?? false)) return;
     if (!force && !_pageReady) return;
     _flushMouth();
     _throttle = Timer(const Duration(milliseconds: 100), _flushMouth);
@@ -153,14 +225,24 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   DateTime _lastMouthLog = DateTime.fromMillisecondsSinceEpoch(0);
 
   void _flushMouth() {
-    final controller = _controller;
-    if (controller == null || !_pageReady) return;
+    if (!_pageReady) return;
     final value = _pendingMouth;
     _pendingMouth = -1;
     // 夹到 0~1，保留两位小数减少传输体积
     final clamped = value.clamp(0.0, 1.0).toStringAsFixed(2);
+    final script = 'window.avatar; avatar.setMouth($clamped);';
+
+    if (_isWindows) {
+      final win = _winController;
+      if (win == null) return;
+      unawaited(win.executeScript(script).catchError((_) {}));
+      return;
+    }
+
+    final controller = _controller;
+    if (controller == null) return;
     unawaited(
-      controller.runJavaScript('window.avatar && avatar.setMouth($clamped);').catchError((_) {}),
+      controller.runJavaScript(script).catchError((_) {}),
     );
 
     // 说话期间每秒回读一次实际嘴型值，便于现场排查（模型没反应时看这里）
@@ -180,13 +262,28 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     if (_error != null) {
       return _placeholder(_error!, isError: true);
     }
+    // 背景保持透明（不能有底色，否则挡住下面的界面内容）；
+    // IgnorePointer 必须包在 ClipRect 外面：ClipRect 自身也会吃掉矩形内的点击，
+    // 不加它浮窗会挡住下面的号码/按钮（拨号时点不到号码）
+    if (_isWindows) {
+      final win = _winController;
+      if (win == null) {
+        return _placeholder('数字人初始化中…');
+      }
+      return IgnorePointer(
+        child: ClipRect(
+          child: SizedBox(
+            height: widget.height,
+            width: double.infinity,
+            child: wv.Webview(win),
+          ),
+        ),
+      );
+    }
     final controller = _controller;
     if (controller == null) {
       return _placeholder('数字人初始化中…');
     }
-    // 背景保持透明（不能有底色，否则挡住下面的界面内容）；
-    // IgnorePointer 必须包在 ClipRect 外面：ClipRect 自身也会吃掉矩形内的点击，
-    // 不加它浮窗会挡住下面的号码/按钮（拨号时点不到号码）
     return IgnorePointer(
       child: ClipRect(
         child: SizedBox(
@@ -197,7 +294,6 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       ),
     );
   }
-
   Widget _placeholder(String message, {bool isError = false}) {
     return Container(
       height: widget.height,
