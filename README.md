@@ -354,6 +354,39 @@ flutter build windows --release        # 产物在 build/windows/x64/runner/Rele
 
 > 若报 `file cannot create directory: C:/Program Files/...`，说明上次构建把安装前缀缓存成了 Program Files，
 > 删掉 `build/windows` 目录重新构建即可。
+### 桌面端的分栏布局（Windows / macOS / Linux）
+
+桌面端**不再用浮窗**展示数字人，改成**左右分栏**：
+
+```
+┌──────────────┬────────────────────────────────┐
+│  数字人       │  主操作界面                      │
+│  ┌────────┐  │  ┌──────────────────────────┐  │
+│  │ Live2D │  │  │ 播放端 / 立即播报 / 停止   │  │
+│  └────────┘  │  │                          │  │
+│  提词气泡     │  │  本机角色 / 单机自测       │  │
+│  上一步 下一步 │  │  名单 / 数字人 / 日志       │  │
+└──────────────┴────────────────────────────────┘
+```
+
+**为什么改**：Windows 的 WebView2 是**原生控件**（hybrid composition），浮在 Flutter 内容之上时会出现一串问题 —— 透明背景要等控件创建后设置才生效、resize 后背景色会被重置、Flutter 的裁剪对原生控件无效导致贴边露灰条。改成固定分栏后，数字人就是普通布局的一部分，行为稳定。
+
+- 左栏宽度 360px（`DesktopSplitView.panelWidth`），顶部是标题 + 开关
+- 中间是 Live2D 角色（白底卡片内渲染，**没有裁剪/透明问题**）
+- 下面是提词气泡（客户信息 + 话术提词）+ 上一步/下一步
+- **手机端保持原来的浮窗**（可拖动、可贴边收起）
+
+实现上把「数字人 + 提词气泡」抽成 `lib/widgets/avatar_stage.dart`（`AvatarStage` / `AvatarBubble`），手机浮窗和桌面分栏共用一份渲染逻辑。
+
+**Windows 数字人的几个坑（都已处理）**
+
+| 坑 | 现象 | 处理 |
+| --- | --- | --- |
+| `webview_flutter_windows` 1.x **不是** `webview_flutter` 的平台实现 | 它是**独立的 WebView2 组件**（`Webview` / `WebviewController`），`WebViewController` 那套 API 在 Windows 上完全不可用 | 数字人组件按平台分两套实现：Android 用 `webview_flutter`，Windows 用 `loadUrl` / `executeScript` / `loadingState` |
+| `setBackgroundColor` 调用时机 | 原生侧有 `IsValid()` 检查，控件没建好时**静默失败** | 放到 `loadUrl` 之后调用，并在导航完成时兜底重设 |
+| resize 后背景色被重置 | 展开→贴边后背景又变回默认灰色 | 用 `LayoutBuilder` 感知宽度变化，变了就重设一次透明 |
+| `dispose` 没释放原生控件 | 关掉数字人后还残留一块**擦不掉的灰色矩形** | `dispose` 里显式 `controller.dispose()` |
+| 背景色只能全透明 | 插件把任何 alpha>0 的值都当成不透明 | 传 `Color(0x00000000)`，页面侧 `html, body { background: transparent }` |
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

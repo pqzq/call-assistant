@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'services/platform_bridge.dart';
 import 'services/prompt_link.dart';
+import 'widgets/desktop_split.dart';
 import 'widgets/floating_avatar.dart';
 
 void main() {
@@ -25,9 +26,15 @@ class CallAssistantApp extends StatelessWidget {
     return MaterialApp(
       title: '话务助手',
       debugShowCheckedModeBanner: false,
-      // 数字人浮在所有页面之上，可拖动；桌面端的限宽由各页面的 DesktopBody 处理
-      builder: (context, child) =>
-          FloatingAvatarHost(child: child ?? const SizedBox.shrink()),
+      // 桌面端：左数字人 / 右主界面 分栏（数字人是原生 WebView，不再浮在内容上）
+      // 手机端：数字人浮在所有页面之上，可拖动
+      builder: (context, child) {
+        final content = child ?? const SizedBox.shrink();
+        if (PlatformBridge.isDesktop) {
+          return DesktopSplitView(child: content);
+        }
+        return FloatingAvatarHost(child: content);
+      },
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,

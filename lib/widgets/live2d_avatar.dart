@@ -51,6 +51,9 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   Timer? _loadTimer;
   double _pendingMouth = -1;
 
+  /// Windows 上 WebView 的上一次宽度（用来感知 resize）
+  double _lastWinWidth = 0;
+
   bool get _isWindows => PlatformBridge.isDesktop;
 
   @override
@@ -73,8 +76,15 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     widget.mouth.removeListener(_onMouthChanged);
     _throttle?.cancel();
     _loadTimer?.cancel();
-    _controller = null;
+    // 必须显式释放：Windows 的 WebView2 是**原生控件**，
+    // 只把引用置空的话它会继续留在界面上，表现为一块擦不掉的灰色矩形。
+    // （Android 的 WebViewController 由平台自动回收，没有 dispose）
+    final win = _winController;
     _winController = null;
+    if (win != null) {
+      unawaited(win.dispose().catchError((_) {}));
+    }
+    _controller = null;
     super.dispose();
   }
 
@@ -153,10 +163,6 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       final controller = wv.WebviewController();
       try {
         await controller.initialize();
-        // 背景设为全透明：WebView2 默认是白色，不透明的话
-        // 模型周围 / 浮窗贴边时就会露出一圈灰白条。
-        // 注意只能传 alpha=0（全透明），半透明会被当成不透明。
-        await controller.setBackgroundColor(const Color(0x00000000));
       } catch (e) {
         if (mounted) {
           setState(() => _error = 'WebView2 初始化失败：$e\n'
@@ -171,6 +177,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       controller.loadingState.listen((state) {
         if (!mounted) return;
         if (state == wv.LoadingState.navigationCompleted) {
+          // 兜底：导航完成后 WebView2 控件一定已创建，此时再确保一次透明背景
+          _applyTransparentBackground(controller);
           setState(() {
             _pageReady = true;
             _error = null;
@@ -194,11 +202,27 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
 
     try {
       await controller.loadUrl(url);
+      // 背景设为全透明：WebView2 默认是白色，不透明的话模型周围会有一圈白块，
+      // 浮窗贴到屏幕左/右边缘时更会露出整块灰白条。
+      //
+      // 注意两点：
+      // 1. 必须在原生 WebView2 控件创建之后调用（插件原生侧有 IsValid() 检查，
+      //    控件没建好时会静默失败）—— 所以放在 loadUrl 之后，而不是 initialize 之后
+      // 2. 只能传 alpha=0 的全透明；插件会把任何 alpha>0 的值当成不透明
+      await _applyTransparentBackground(controller);
     } catch (e) {
       if (mounted) setState(() => _error = '加载数字人失败：$e');
       return;
     }
     _startLoadWatchdog();
+  }
+  /// 把 WebView2 背景设为全透明
+  Future<void> _applyTransparentBackground(wv.WebviewController controller) async {
+    try {
+      await controller.setBackgroundColor(const Color(0x00000000));
+    } catch (_) {
+      // 忽略：控件还没建好时插件会直接失败
+    }
   }
   /// 超时兜底：缺 WebView2 Runtime 时浏览器进程根本起不来，
   /// 不会触发任何错误回调，只会一直白屏 —— 超时后给出可操作的提示。
@@ -279,7 +303,14 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
           child: SizedBox(
             height: widget.height,
             width: double.infinity,
-            child: wv.Webview(win),
+            // WebView2 在尺寸变化（展开 <-> 贴边）后会把背景色重置回默认灰色，
+            // 所以尺寸一变就重新设一次透明背景，否则贴边后会露出一条灰带。
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                _syncWindowsBackground(win, constraints.maxWidth);
+                return wv.Webview(win);
+              },
+            ),
           ),
         ),
       );
@@ -297,6 +328,17 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
         ),
       ),
     );
+  }
+
+  /// Windows：宽度变化时重设一次透明背景（WebView2 resize 会重置背景色）
+  void _syncWindowsBackground(wv.WebviewController controller, double width) {
+    if (width <= 0) return;
+    if ((width - _lastWinWidth).abs() < 1) return;
+    _lastWinWidth = width;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _applyTransparentBackground(controller);
+    });
   }
   Widget _placeholder(String message, {bool isError = false}) {
     return Container(
