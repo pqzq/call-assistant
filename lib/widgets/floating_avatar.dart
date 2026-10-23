@@ -15,19 +15,25 @@ class FloatingAvatarHost extends StatefulWidget {
 
   final Widget child;
 
-  /// 展开时角色区尺寸
-  static const double avatarWidth = 300;
-  static const double avatarHeight = 380;
+  /// 展开时角色区尺寸（Live2D 角色在盒子里居中，盒子可以比角色窄一些）
+  static const double avatarWidth = 176;
+  static const double avatarHeight = 264;
 
   /// 贴边时（缩小）尺寸
   static const double dockedWidth = 116;
   static const double dockedHeight = 146;
 
   /// 右侧竖排操作栏宽度
-  static const double barWidth = 40;
+  static const double barWidth = 36;
 
-  /// 展开态整体宽度（角色 + 间隔 + 操作栏）
-  static const double expandedWidth = avatarWidth + 4 + barWidth;
+  /// 展开态整体宽度（气泡 + 角色 + 操作栏），按屏幕宽度动态计算
+  static const double expandedWidth = avatarWidth + 6 + barWidth;
+
+  /// 话术框宽度上限
+  static const double bubbleMaxWidth = 220;
+
+  /// 话术框宽度下限
+  static const double bubbleMinWidth = 120;
 
   /// 话术框最大高度
   static const double bubbleMaxHeight = 178;
@@ -75,14 +81,16 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
                   builder: (context, t, _) {
-                    final unitWidth = _lerp(
-                      FloatingAvatarHost.expandedWidth,
-                      FloatingAvatarHost.dockedWidth,
-                      t,
-                    );
+                    // 气泡在角色左侧，三栏并排：整体高度 = 角色高度，不浪费竖向空间
+                    final bubbleWidth = _bubbleWidthFor(screen.width);
+                    final expandedWidth = bubbleWidth +
+                        6 +
+                        FloatingAvatarHost.avatarWidth +
+                        FloatingAvatarHost.barWidth;
+                    final unitWidth = _lerp(expandedWidth, FloatingAvatarHost.dockedWidth, t);
                     final avatarHeight =
                         _lerp(FloatingAvatarHost.avatarHeight, FloatingAvatarHost.dockedHeight, t);
-                    final unitHeight = avatarHeight + (t > 0.5 ? 0 : 190);
+                    final unitHeight = avatarHeight;
                     final free = Size(
                       (screen.width - unitWidth).clamp(0.0, double.infinity).toDouble(),
                       (screen.height - unitHeight).clamp(0.0, double.infinity).toDouble(),
@@ -93,7 +101,14 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                       curve: Curves.easeOutCubic,
                       left: pos.dx,
                       top: pos.dy,
-                      child: _buildUnit(link, free, t, avatarHeight, unitWidth),
+                      child: _buildUnit(
+                        link,
+                        free,
+                        t,
+                        avatarHeight,
+                        unitWidth,
+                        bubbleWidth,
+                      ),
                     );
                   },
                 ),
@@ -119,7 +134,14 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     return Offset(clamped.dx, clamped.dy);
   }
 
-  Widget _buildUnit(PromptLink link, Size free, double t, double avatarHeight, double unitWidth) {
+  Widget _buildUnit(
+    PromptLink link,
+    Size free,
+    double t,
+    double avatarHeight,
+    double unitWidth,
+    double bubbleWidth,
+  ) {
     final docked = t > 0.5;
     // 浮层没有 Material 祖先，必须给 DefaultTextStyle，
     // 否则文字会落到 Flutter 的 fallback 样式（红字 + 黄色双下划线）
@@ -131,30 +153,26 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         width: unitWidth,
         child: docked
             ? _buildDockedChip(link, avatarHeight)
-            :                 Row(
+            : Row(
+                // 话术框 / 角色 / 操作栏 三栏并排、顶部对齐
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
+                  _buildBubble(link, bubbleWidth, avatarHeight),
+                  const SizedBox(width: 6),
                   // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
                   // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
                   SizedBox(
                     width: FloatingAvatarHost.avatarWidth,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Live2dAvatar(
-                          modelPath: link.avatarModel,
-                          mouth: link.mouth,
-                          height: avatarHeight,
-                        ),
-                        const SizedBox(height: 6),
-                        _buildBubble(link),
-                      ],
+                    height: avatarHeight,
+                    child: Live2dAvatar(
+                      modelPath: link.avatarModel,
+                      mouth: link.mouth,
+                      height: avatarHeight,
                     ),
                   ),
-                  _buildSideBar(link, free),
+                  _buildSideBar(link, free, avatarHeight),
                 ],
-                ),
+              ),
       ),
     );
   }
@@ -226,75 +244,75 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   }
 
   void _restoreFromDock() {
+    final link = PromptLink.instance;
+    final free = _freeSizeForExpanded();
+    // 没拖动过时 _dragPos 为空，要用已保存的位置，否则会跳到左上角
+    final current = _dragPos ?? AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free);
     setState(() {
       _docked = false;
-      // 恢复后把位置挪回屏幕内的安全位置
-      final size = _freeSizeForExpanded();
-      _dragPos = AvatarLayout.clampPixel(
-        _dragPos ?? Offset.zero,
-        size,
-      );
+      _dragPos = AvatarLayout.clampPixel(current, free);
     });
   }
 
   // ---------------- 右侧操作栏 ----------------
 
-  Widget _buildSideBar(PromptLink link, Size free) {
-    return Container(
+  Widget _buildSideBar(PromptLink link, Size free, double avatarHeight) {
+    return SizedBox(
+      // 与角色等高，顶部对齐
+      height: avatarHeight,
       width: FloatingAvatarHost.barWidth,
-      margin: const EdgeInsets.only(left: 4),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: _dragging ? 0.95 : 0.82),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          // 拖动
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (_) => setState(() => _dragging = true),
-            onPanUpdate: (details) => _onDragUpdate(link, free, details.delta),
-            onPanEnd: (_) => _onDragEnd(link, free),
-            onPanCancel: () => setState(() => _dragging = false),
-            child: const SizedBox(
-              width: FloatingAvatarHost.barWidth,
-              height: 40,
-              child: Icon(Icons.drag_indicator, size: 19, color: Color(0xFF6B7A99)),
+      child: Container(
+        margin: const EdgeInsets.only(left: 4),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: _dragging ? 0.95 : 0.82),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        ),
+        child: Column(
+          // 图标沿高度均匀分布，点击区域更大
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: <Widget>[
+            // 拖动
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (_) => setState(() => _dragging = true),
+              onPanUpdate: (details) => _onDragUpdate(link, free, details.delta),
+              onPanEnd: (_) => _onDragEnd(link, free),
+              onPanCancel: () => setState(() => _dragging = false),
+              child: const SizedBox(
+                width: FloatingAvatarHost.barWidth,
+                height: 40,
+                child: Icon(Icons.drag_indicator, size: 19, color: Color(0xFF6B7A99)),
+              ),
             ),
-          ),
-          _divider(),
-          _sideButton(
-            icon: Icons.chevron_left,
-            tooltip: '上一步',
-            enabled: link.stepIndex > 0,
-            onTap: link.previousStep,
-          ),
-          _sideButton(
-            icon: Icons.chevron_right,
-            tooltip: '下一步',
-            enabled: link.stepIndex < link.scriptSteps.length - 1,
-            onTap: link.nextStep,
-          ),
-          _divider(),
-          _sideButton(
-            icon: Icons.compress_rounded,
-            tooltip: '贴边收起',
-            onTap: _dockToEdge,
-          ),
-          _sideButton(
-            icon: Icons.close,
-            tooltip: '关闭数字人',
-            onTap: () => link.setAvatarEnabled(false),
-          ),
-        ],
+            _sideButton(
+              icon: Icons.chevron_left,
+              tooltip: '上一步',
+              enabled: link.stepIndex > 0,
+              onTap: link.previousStep,
+            ),
+            _sideButton(
+              icon: Icons.chevron_right,
+              tooltip: '下一步',
+              enabled: link.stepIndex < link.scriptSteps.length - 1,
+              onTap: link.nextStep,
+            ),
+            _sideButton(
+              icon: Icons.compress_rounded,
+              tooltip: '贴边收起',
+              onTap: _dockToEdge,
+            ),
+            _sideButton(
+              icon: Icons.close,
+              tooltip: '关闭数字人',
+              onTap: () => link.setAvatarEnabled(false),
+            ),
+          ],
+        ),
       ),
     );
   }
-
-  Widget _divider() => Container(width: 18, height: 1, color: const Color(0xFFD6DEEE));
 
   Widget _sideButton({
     required IconData icon,
@@ -321,7 +339,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
 
   // ---------------- 话术框（含状态信息） ----------------
 
-  Widget _buildBubble(PromptLink link) {
+  Widget _buildBubble(PromptLink link, double bubbleWidth, double bubbleHeight) {
     final lead = link.activeLead;
     final steps = link.scriptSteps;
     final step = link.currentStep;
@@ -329,9 +347,9 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     // 纯展示：整体不可命中，避免挡住下面的内容
     return IgnorePointer(
       child: Container(
-        width: FloatingAvatarHost.avatarWidth,
-        constraints: const BoxConstraints(maxHeight: FloatingAvatarHost.bubbleMaxHeight),
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        width: bubbleWidth,
+        height: bubbleHeight,
+        padding: const EdgeInsets.fromLTRB(11, 8, 11, 8),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.94),
           borderRadius: BorderRadius.circular(14),
@@ -452,14 +470,24 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
 
   // ---------------- 拖动 / 贴边 ----------------
 
+  /// 展开态的可用区域（话术框 + 角色 + 操作栏 并排，高度=角色高）
   Size _freeSizeForExpanded() {
     final media = MediaQuery.of(context);
+    final bubbleWidth = _bubbleWidthFor(media.size.width);
+    final width = bubbleWidth + 6 + FloatingAvatarHost.avatarWidth + FloatingAvatarHost.barWidth;
     return Size(
-      (media.size.width - FloatingAvatarHost.avatarWidth - FloatingAvatarHost.barWidth)
-          .clamp(0.0, double.infinity).toDouble(),
-      (media.size.height - FloatingAvatarHost.avatarHeight - 190).clamp(0.0, double.infinity).toDouble(),
+      (media.size.width - width).clamp(0.0, double.infinity).toDouble(),
+      (media.size.height - FloatingAvatarHost.avatarHeight).clamp(0.0, double.infinity).toDouble(),
     );
   }
+
+  double _bubbleWidthFor(double screenWidth) =>
+      (screenWidth - FloatingAvatarHost.avatarWidth - FloatingAvatarHost.barWidth - 12)
+          .clamp(
+            FloatingAvatarHost.bubbleMinWidth,
+            FloatingAvatarHost.bubbleMaxWidth,
+          )
+          .toDouble();
 
   void _onDragUpdate(PromptLink link, Size free, Offset delta) {
     setState(() {
@@ -474,7 +502,10 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     if (pos == null) return;
 
     final media = MediaQuery.of(context);
-    final unitWidth = FloatingAvatarHost.avatarWidth + FloatingAvatarHost.barWidth;
+    final unitWidth = _bubbleWidthFor(media.size.width) +
+        6 +
+        FloatingAvatarHost.avatarWidth +
+        FloatingAvatarHost.barWidth;
     // 靠近左右边缘 -> 自动贴边收起
     final nearLeft = pos.dx <= FloatingAvatarHost.dockThreshold;
     final nearRight = (media.size.width - (pos.dx + unitWidth)) <= FloatingAvatarHost.dockThreshold;
