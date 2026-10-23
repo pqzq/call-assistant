@@ -4,7 +4,7 @@ import 'package:archive/archive_io.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
-import 'call_state_watcher.dart';
+import 'platform_bridge.dart';
 
 /// 端侧离线语音识别（ASR）：把开场白音频识别成中文文本。
 ///
@@ -134,7 +134,7 @@ class AsrRecognizer {
   ///
   /// [audioPath] 可以是任意常见音频格式，内部会先解码成 16kHz 单声道 WAV。
   Future<String?> recognize(String audioPath) async {
-    final wavPath = await CallStateWatcher.decodeAudioToWav(audioPath);
+    final wavPath = await PlatformBridge.decodeAudioToWav(audioPath);
     if (wavPath == null) return null;
     try {
       return await recognizeWav(wavPath);

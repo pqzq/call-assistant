@@ -270,6 +270,40 @@ mp3 / m4a / aac / ogg / wav / amr 等常见格式都能读，统一转成 16kHz 
 - 识别开了**逆文本正规化**：数字会输出成「10086」而不是「一万零八十六」
 - 开了标点，输出自带逗号句号
 
+### PC 端（Windows / macOS / Linux）
+
+PC 端定位为**播放端**：替代第二台手机，接收手机拨号端发来的播报指令并朗读（可带 Live2D 数字人）。
+
+**平台差异（由 `lib/services/platform_bridge.dart` 统一收拢）**
+
+| 能力 | Android | 桌面端 |
+| --- | --- | --- |
+| 拨号跳转（系统拨号页） | ✅ | ❌ 改为**复制号码** |
+| 「拨号端」角色（检测接通） | ✅ | ❌ **隐藏**，PC 只当播放端 |
+| 无障碍通话检测 | ✅ | ❌ 不支持 |
+| 局域网双机联动 | ✅ | ✅ PC 与手机同 Wi-Fi 即可 |
+| 立即播报 | 广播给播放端 | **本机播报** |
+| Live2D 数字人 | ✅ | ✅（WebView2） |
+| 端侧 TTS / ASR | ✅ | ✅（ASR 的音频解码暂仅 Android） |
+| 保存导出文件 | 系统「下载」目录 | 系统保存对话框 |
+
+**宽屏适配**：桌面端内容限宽 760px 居中，手机布局不会被宽屏拉散。
+
+**构建 Windows**
+
+```bash
+# 一次性准备：开启「开发者模式」（Flutter Windows 插件需要创建符号链接）
+#   设置 → 系统 → 开发者选项 → 开发人员模式
+#   或用管理员 PowerShell：
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
+
+flutter pub get
+flutter build windows --release        # 产物在 build/windows/x64/runner/Release/
+```
+
+> 没有管理员权限时无法创建符号链接，构建会提示
+> `Building with plugins requires symlink support`。
+
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/asr_recognizer.dart';
 import '../services/call_state_watcher.dart';
+import '../services/platform_bridge.dart';
 import '../services/live2d_service.dart';
 import '../services/prompt_link.dart';
 import '../widgets/glass_surface.dart';
@@ -369,13 +370,16 @@ class _PromptPageState extends State<PromptPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              _roleChip(
-                label: '拨号端',
-                icon: Icons.phone_in_talk,
-                on: _link.autoTrigger,
-                onChanged: (v) => _link.setAutoTrigger(v),
-              ),
-              const SizedBox(width: 8),
+              // 桌面端（PC）只做播放端：没有系统拨号能力，也不存在「拨号端」角色
+              if (PlatformBridge.canDetectCall) ...<Widget>[
+                _roleChip(
+                  label: '拨号端',
+                  icon: Icons.phone_in_talk,
+                  on: _link.autoTrigger,
+                  onChanged: (v) => _link.setAutoTrigger(v),
+                ),
+                const SizedBox(width: 8),
+              ],
               _roleChip(
                 label: '播放端',
                 icon: Icons.volume_up,
@@ -417,7 +421,7 @@ class _PromptPageState extends State<PromptPage> {
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
-                    await CallStateWatcher.openSettings();
+                    await PlatformBridge.openAccessibilitySettings();
                   },
                   icon: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFE08A00)),
                   label: const Text('开启检测', style: TextStyle(fontSize: 12)),
@@ -484,7 +488,7 @@ class _PromptPageState extends State<PromptPage> {
         : _link.seeking
             ? '正在寻找拨号端…'
             : _link.listening
-                ? (_link.asPlayer ? '未连接拨号端' : '等待播放端连接')
+                ? (_link.asPlayer ? '等待手机拨号端连接' : '等待播放端连接')
                 : '局域网未启动';
     final color = _link.peerConnected
         ? const Color(0xFF17A05A)
@@ -559,7 +563,7 @@ class _PromptPageState extends State<PromptPage> {
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () async {
-                await CallStateWatcher.openSettings();
+                await PlatformBridge.openAccessibilitySettings();
               },
               icon: const Icon(Icons.open_in_new, size: 18),
               label: const Text('打开系统无障碍设置'),

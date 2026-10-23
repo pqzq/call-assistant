@@ -7,7 +7,8 @@ import 'package:file_picker/file_picker.dart';
 import '../models/active_lead.dart';
 import '../models/sheet_data.dart';
 import '../services/call_log_store.dart';
-import '../services/call_state_watcher.dart';
+import '../services/dialer_service.dart';
+import '../services/platform_bridge.dart';
 import '../services/excel_service.dart';
 import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
@@ -225,6 +226,12 @@ class _RecordListPageState extends State<RecordListPage> {
       _toast('号码格式无法识别');
       return;
     }
+    // 桌面端（PC）没有系统拨号能力：改为复制号码
+    if (!DialerService.canDial) {
+      await Clipboard.setData(ClipboardData(text: target));
+      _toast('已复制号码：$target');
+      return;
+    }
     _markDialing(row);
     setState(() => _called.add(target));
     HapticFeedback.lightImpact();
@@ -298,7 +305,7 @@ class _RecordListPageState extends State<RecordListPage> {
       final fileName = '${base}_拨打情况_$stamp.xlsx';
 
       // 首选：直接存到系统「下载」目录（MediaStore，不需要权限，也不会被系统对话框坑到）
-      final saved = await CallStateWatcher.saveToDownloads(fileName, bytes);
+      final saved = await PlatformBridge.saveFile(fileName, bytes);
       if (!mounted) return;
       if (saved != null) {
         AppToast.show(context, '已保存到：$saved', icon: Icons.check_circle_outline);

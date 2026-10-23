@@ -1,10 +1,19 @@
 import 'package:url_launcher/url_launcher.dart';
 
+import 'platform_bridge.dart';
+
 /// 调起系统拨号页（tel:），号码会自动填入，但不会自动拨出（无需 CALL_PHONE 权限）。
 class DialerService {
   const DialerService._();
 
+  /// 当前平台是否支持拨号跳转
+  ///
+  /// 桌面端（Windows / macOS / Linux）没有系统拨号能力，
+  /// 调用方应改为「复制号码」等替代操作。
+  static bool get canDial => PlatformBridge.canDial;
+
   static Future<bool> dial(String? phone) async {
+    if (!canDial) return false;
     final target = _buildTelUri(phone);
     if (target == null) return false;
     try {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'pages/home_page.dart';
+import 'services/platform_bridge.dart';
 import 'services/prompt_link.dart';
 import 'widgets/floating_avatar.dart';
 
@@ -10,6 +11,9 @@ void main() {
   PromptLink.instance.init();
   runApp(const CallAssistantApp());
 }
+
+/// 桌面端内容最大宽度（窗口再宽也不会把手机布局拉散）
+const double kDesktopContentMaxWidth = 760;
 
 class CallAssistantApp extends StatelessWidget {
   const CallAssistantApp({super.key});
@@ -24,7 +28,17 @@ class CallAssistantApp extends StatelessWidget {
       title: '话务助手',
       debugShowCheckedModeBanner: false,
       // 数字人浮在所有页面之上，可拖动
-      builder: (context, child) => FloatingAvatarHost(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) {
+        final content = FloatingAvatarHost(child: child ?? const SizedBox.shrink());
+        if (!PlatformBridge.isDesktop) return content;
+        // 桌面端：内容限宽居中，避免手机布局被宽屏拉散
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: kDesktopContentMaxWidth),
+            child: content,
+          ),
+        );
+      },
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,

@@ -10,6 +10,7 @@ import '../services/dialer_service.dart';
 import '../services/excel_service.dart';
 import '../services/settings_store.dart';
 import '../utils/phone_utils.dart';
+import '../services/platform_bridge.dart';
 import '../widgets/glass_surface.dart';
 import 'prompt_page.dart';
 import 'record_list_page.dart';
@@ -257,11 +258,13 @@ class _HomePageState extends State<HomePage> {
           child: Text('导入 Excel 名单', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
         ),
         const SizedBox(height: 10),
-        const Center(
+        Center(
           child: Text(
-            '自动识别表格中的手机号列，\n点击号码即可跳转系统拨号页并自动填充。',
+            PlatformBridge.canDial
+                ? '自动识别表格中的手机号列，\n点击号码即可跳转系统拨号页并自动填充。'
+                : '自动识别表格中的手机号列，\n点击号码即可复制（电脑端没有拨号功能）。',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, height: 1.6, color: Colors.black45),
+            style: const TextStyle(fontSize: 13, height: 1.6, color: Colors.black45),
           ),
         ),
         const SizedBox(height: 32),
@@ -296,21 +299,24 @@ class _HomePageState extends State<HomePage> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
+          const Row(
             children: <Widget>[
               Icon(Icons.tips_and_updates_outlined, size: 18, color: Color(0xFFF5A623)),
               SizedBox(width: 6),
               Text('使用说明', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
             ],
           ),
-          SizedBox(height: 10),
-          _TipLine(text: '支持 .xlsx / .xls / .csv / .txt（csv、txt 需为逗号或制表符分隔）'),
-          _TipLine(text: '表头含「手机 / 电话 / 手机号码 / phone」等关键词会被优先识别'),
-          _TipLine(text: '号码支持 13800138000、138 0013 8000、+86 13800138000 等写法'),
-          _TipLine(text: '跳转的是系统拨号页，号码已填好，点拨打键即可呼出'),
+          const SizedBox(height: 10),
+          const _TipLine(text: '支持 .xlsx / .xls / .csv / .txt（csv、txt 需为逗号或制表符分隔）'),
+          const _TipLine(text: '表头含「手机 / 电话 / 手机号码 / phone」等关键词会被优先识别'),
+          const _TipLine(text: '号码支持 13800138000、138 0013 8000、+86 13800138000 等写法'),
+          if (PlatformBridge.canDial)
+            const _TipLine(text: '跳转的是系统拨号页，号码已填好，点拨打键即可呼出')
+          else
+            const _TipLine(text: '电脑端没有拨号功能，点击号码会复制号码'),
         ],
       ),
     );

@@ -13,6 +13,7 @@ import '../models/active_lead.dart';
 import 'asr_recognizer.dart';
 import 'call_log_store.dart';
 import 'call_state_watcher.dart';
+import 'platform_bridge.dart';
 import 'lan_link.dart';
 import 'live2d_service.dart';
 import 'tts_synthesizer.dart';
@@ -332,6 +333,11 @@ class PromptLink extends ChangeNotifier {
     _script = prefs.getString(_kScript) ?? defaultScript;
     _autoTrigger = prefs.getBool(_kAutoTrigger) ?? false;
     _asPlayer = prefs.getBool(_kAsPlayer) ?? false;
+    // 桌面端（PC）没有系统拨号能力，只能当播放端
+    if (PlatformBridge.isDesktop) {
+      _autoTrigger = false;
+      _asPlayer = true;
+    }
     _rate = prefs.getDouble(_kRate) ?? 0.5;
     final savedAudio = prefs.getString(_kAudioPath);
     if (savedAudio != null && File(savedAudio).existsSync()) _audioPath = savedAudio;
@@ -366,7 +372,7 @@ class PromptLink extends ChangeNotifier {
       _log('已按配置启动拨号端服务（等待接通检测）');
       // 前台保活：避免进程被回收导致无障碍授权被系统移除
       await CallStateWatcher.requestNotificationPermission();
-      await CallStateWatcher.startKeepAlive();
+      await PlatformBridge.startKeepAlive();
     }
     if (_asPlayer) {
       _log('已按配置启动播放端服务（等待播报指令）');
@@ -557,12 +563,14 @@ class PromptLink extends ChangeNotifier {
     try {
       // Android 11+ 分区存储：没有「所有文件访问权限」就读不了用户选的目录，
       // 所以在打开目录选择器之前先检查并引导开启
-      if (!await CallStateWatcher.hasAllFilesAccess()) {
+      // Android 11+ 需要「所有文件访问权限」才能读取外部目录；
+      // 桌面端没有这个限制
+      if (PlatformBridge.isAndroid && !await CallStateWatcher.hasAllFilesAccess()) {
         _log('需要「所有文件访问权限」才能读取文件夹，正在跳转到系统设置…', important: true);
         await CallStateWatcher.requestAllFilesAccess();
         return false;
       }
-      final dirPath = await CallStateWatcher.pickDirectory();
+      final dirPath = await PlatformBridge.pickDirectory();
       if (dirPath == null) return false;
       _log('正在从文件夹导入数字人模型…', important: true);
       notifyListeners();
@@ -902,7 +910,7 @@ class PromptLink extends ChangeNotifier {
     if (!_autoTrigger && _callStateSubscribed) {
       _callStateSubscribed = false;
       _armed = false;
-      await CallStateWatcher.stopKeepAlive();
+      await PlatformBridge.stopKeepAlive();
     }
   }
 
@@ -915,7 +923,7 @@ class PromptLink extends ChangeNotifier {
   }
 
   Future<bool> refreshAccessibility() async {
-    _accessibilityEnabled = await CallStateWatcher.isEnabled();
+    _accessibilityEnabled = await PlatformBridge.isCallDetectionEnabled();
     notifyListeners();
     return _accessibilityEnabled;
   }
@@ -982,6 +990,12 @@ class PromptLink extends ChangeNotifier {
 
   /// 手动触发一次播报（测试用）
   Future<void> triggerManually() async {
+    // 桌面端没有「另一台播放端」，点立即播报就本机播
+    if (PlatformBridge.isDesktop) {
+      _log('手动触发播报（本机）', important: true);
+      await speak(_script);
+      return;
+    }
     _broadcastAnswered('手动触发');
     _log('手动触发播报', important: true);
   }
