@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/active_lead.dart';
 import '../models/sheet_data.dart';
@@ -41,6 +42,11 @@ class _RecordListPageState extends State<RecordListPage> {
   final Set<String> _called = <String>{};
   String _query = '';
 
+  /// 紧凑模式（默认开启）：一屏能看到更多行
+  bool _compact = true;
+
+  static const String _compactKey = 'record_list_compact';
+
   /// 最近拨打的行（持续高亮，直到刷新列表 / 重新进入本页）
   int? _highlightRow;
 
@@ -48,6 +54,19 @@ class _RecordListPageState extends State<RecordListPage> {
   void initState() {
     super.initState();
     _called.addAll(widget.called);
+    _loadCompactPref();
+  }
+
+  /// 读取上次选择的显示密度
+  Future<void> _loadCompactPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getBool(_compactKey);
+      if (value == null || !mounted) return;
+      setState(() => _compact = value);
+    } catch (_) {
+      // 忽略
+    }
   }
 
   @override
@@ -221,6 +240,19 @@ class _RecordListPageState extends State<RecordListPage> {
         title: Text(sheet.name.isEmpty ? '号码列表' : sheet.name),
         actions: <Widget>[
           IconButton(
+            tooltip: _compact ? '切换为详细模式' : '切换为紧凑模式',
+            icon: Icon(_compact ? Icons.view_agenda_outlined : Icons.density_small),
+            onPressed: () async {
+              setState(() => _compact = !_compact);
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool(_RecordListPageState._compactKey, _compact);
+              } catch (_) {
+                // 忽略
+              }
+            },
+          ),
+          IconButton(
             tooltip: '刷新列表',
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -253,18 +285,23 @@ class _RecordListPageState extends State<RecordListPage> {
       body: Column(
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: TextField(
               controller: _controller,
               onChanged: (value) => setState(() => _query = value),
               textInputAction: TextInputAction.search,
+              style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
                 hintText: '搜索姓名 / 号码 / 其他字段',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                hintStyle: const TextStyle(fontSize: 13),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                prefixIcon: const Icon(Icons.search, size: 18),
+                prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 30),
                 suffixIcon: _query.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
+                        icon: const Icon(Icons.clear, size: 16),
                         onPressed: () {
                           _controller.clear();
                           setState(() => _query = '');
@@ -274,13 +311,13 @@ class _RecordListPageState extends State<RecordListPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: Row(
               children: <Widget>[
                 Expanded(
                   child: Text(
                     '共 ${sheet.rowCount} 条，当前显示 ${rows.length} 条',
-                    style: const TextStyle(fontSize: 12, color: Colors.black45),
+                    style: const TextStyle(fontSize: 11.5, color: Colors.black45),
                   ),
                 ),
                 Text(
@@ -289,7 +326,7 @@ class _RecordListPageState extends State<RecordListPage> {
                       : sheet.phoneColumns.length == 1
                           ? '号码列：${sheet.headerAt(sheet.phoneColumn!)}'
                           : '号码列：${sheet.phoneColumns.map(sheet.headerAt).join(' / ')}',
-                  style: const TextStyle(fontSize: 12, color: Colors.black45),
+                  style: const TextStyle(fontSize: 11.5, color: Colors.black45),
                 ),
               ],
             ),
@@ -330,6 +367,7 @@ class _RecordListPageState extends State<RecordListPage> {
                             fields: details,
                             called: anyCalled,
                             highlighted: _highlightRow == row,
+                            compact: _compact,
                             onTap: () => _chooseAndDial(phones, row),
                             onPhoneTap: (entry) => _dialEntry(entry, row),
                           );
