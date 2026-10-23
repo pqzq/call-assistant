@@ -331,6 +331,18 @@ class _PromptPageState extends State<PromptPage> {
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _link.interruptSpeaking,
+                icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                label: const Text('停止', style: TextStyle(fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  foregroundColor: const Color(0xFFD03B3B),
+                  side: const BorderSide(color: Color(0x33D03B3B)),
+                ),
+              ),
               if (!_link.accessibilityEnabled) ...<Widget>[
                 const SizedBox(width: 8),
                 OutlinedButton.icon(

@@ -875,9 +875,23 @@ class PromptLink extends ChangeNotifier {
     _log('手动触发播报', important: true);
   }
 
+  /// 打断播报：停掉本机正在播放的内容，并通知播放端停止
+  Future<void> interruptSpeaking() async {
+    await stopSpeaking();
+    if (_link.isRunning) {
+      _link.broadcast(LanMessage(
+        type: LanMessageType.stop,
+        deviceId: _deviceId,
+        deviceName: _deviceName,
+        role: _roleName,
+      ));
+    }
+    _log('已停止播报', important: true);
+  }
+
   // ---------------- 播放端 ----------------
 
-  void _onLanMessage(LanMessage message, LanPeer peer) {
+  Future<void> _onLanMessage(LanMessage message, LanPeer peer) async {
     final isSelf = message.deviceId == _deviceId;
     // 单机自测时允许处理自己的广播（模拟另一台手机）
     if (isSelf && !_singleDeviceTest) return;
@@ -925,6 +939,12 @@ class PromptLink extends ChangeNotifier {
         final text = message.script.trim().isEmpty ? _script : message.script;
         _log('收到播报指令（来自 ${peer.displayName}）：${message.rowLabel}', important: true);
         speak(text);
+        break;
+
+      case LanMessageType.stop:
+        if (!_asPlayer) return;
+        await stopSpeaking();
+        _log('收到停止播报指令', important: true);
         break;
 
       default:
@@ -1015,6 +1035,8 @@ class PromptLink extends ChangeNotifier {
 
   /// 播放开场白：优先用音频文件，其次系统 TTS
   Future<void> speak(String text) async {
+    // 先打断正在播的内容（避免叠音，也实现「打断播报」）
+    await stopSpeaking();
     if (hasAudio) {
       await playAudio();
       return;

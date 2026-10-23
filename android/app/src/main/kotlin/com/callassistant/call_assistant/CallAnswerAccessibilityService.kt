@@ -24,7 +24,13 @@ class CallAnswerAccessibilityService : AccessibilityService() {
         private val CONNECTED_WORDS = listOf("通话中", "已接通", "正在通话", "通话时长")
 
         /** 仍在呼叫中的界面文案（出现这些时不算接通） */
-        private val DIALING_WORDS = listOf("正在呼叫", "呼叫中", "正在拨号", "正在等待接通", "正在接通")
+        private val DIALING_WORDS = listOf(
+            "正在呼叫", "呼叫中", "正在拨号", "正在等待接通", "正在接通",
+            "已拨出", "正在连接", "呼叫已发出"
+        )
+
+        /** 通话中的「挂断」按钮（呼叫中界面也有，所以只能辅助，不能单独作为接通判据） */
+        private val HANGUP_WORDS = listOf("挂断", "结束通话", "挂断电话", "结束本次通话")
 
         /** 通话结束的界面文案 */
         private val ENDED_WORDS = listOf("通话结束", "已挂断", "通话已结束")
@@ -34,6 +40,10 @@ class CallAnswerAccessibilityService : AccessibilityService() {
 
         private var connected = false
         private var lastConnectedEmitAt = 0L
+
+        /** 上一次看到的计时值（用来区分「时钟」和「通话计时器」） */
+        private var lastTimerValue: String? = null
+        private var lastTimerAt = 0L
     }
 
     override fun onServiceConnected() {
@@ -84,18 +94,46 @@ class CallAnswerAccessibilityService : AccessibilityService() {
         if (texts.isEmpty()) return
 
         val joined = texts.joinToString(" | ")
-        val hasTimer = texts.any { TIMER_REGEX.containsMatchIn(it) }
+        val timerText = texts.firstOrNull { TIMER_REGEX.containsMatchIn(it) }
         val hasConnectedWord = CONNECTED_WORDS.any { joined.contains(it) }
         val hasDialingWord = DIALING_WORDS.any { joined.contains(it) }
         val hasEndedWord = ENDED_WORDS.any { joined.contains(it) }
+        val hasHangup = HANGUP_WORDS.any { joined.contains(it) }
+
+        // 计时器判据：拨号界面里也有时间显示（时钟），只有"在走动"的计时器才说明已接通
+        var timerRunning = false
+        if (timerText != null) {
+            val value = TIMER_REGEX.find(timerText)?.value
+            val now = System.currentTimeMillis()
+            if (lastTimerValue != null && value != null && value != lastTimerValue && now - lastTimerAt >= 700) {
+                timerRunning = true
+            }
+            lastTimerValue = value
+            lastTimerAt = now
+        } else {
+            lastTimerValue = null
+        }
 
         when {
             hasEndedWord -> emitState(false, "通话结束")
-            (hasTimer || hasConnectedWord) && !hasDialingWord -> {
+
+            // 明确还在呼叫中（界面写着「正在拨号/正在呼叫」）：不算接通。
+            // 注意：呼叫中界面同样有红色挂断键，所以「挂断」不能作为接通判据。
+            hasDialingWord -> {
+                if (connected) emitState(false, "尚未接通")
+            }
+
+            // 界面文案明确写着通话中/已接通
+            hasConnectedWord -> {
                 val detail = texts.firstOrNull { TIMER_REGEX.containsMatchIn(it) }
                     ?: texts.firstOrNull { text -> CONNECTED_WORDS.any { text.contains(it) } }
                     ?: "通话中"
                 emitState(true, detail, pkg)
+            }
+
+            // 兜底：计时器确实在走动（排除拨号页里的时钟/静态时间）
+            timerRunning -> {
+                emitState(true, timerText ?: "通话中", pkg)
             }
         }
     }

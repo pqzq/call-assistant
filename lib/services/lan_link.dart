@@ -20,6 +20,9 @@ class LanMessageType {
 
   /// 拨号端通知：对方已接通，请播放开场白
   static const String answered = 'answered';
+
+  /// 拨号端通知：停止当前播报（打断）
+  static const String stop = 'stop';
 }
 
 /// 局域网消息
