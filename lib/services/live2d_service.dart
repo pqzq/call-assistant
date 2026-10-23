@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -145,8 +146,13 @@ class Live2dService {
   /// 导入用户自备的模型包（zip，内含模型描述文件及其依赖文件）
   /// 返回导入后的模型相对路径
   Future<String?> importModelArchive(File archiveFile, {String? name}) async {
+    // 同上：先确保资源目录已初始化
+    await ensureStarted();
     final root = _webRoot;
-    if (root == null) return null;
+    if (root == null) {
+      lastImportError = '本地资源目录未初始化，请先开启一次数字人';
+      return null;
+    }
 
     final bytes = await archiveFile.readAsBytes();
     final Archive archive;
@@ -210,13 +216,76 @@ class Live2dService {
   /// 最近一次导入失败的原因（供界面提示，避免一律报「没有找到 .model3.json」）
   String? lastImportError;
 
+  /// 把 SAF 返回的路径转成真实的文件系统路径。
+  ///
+  /// 文件选择器返回的可能是：
+  /// - `/document/primary:Download`（DocumentsUI 的 documentId 形式）
+  /// - `content://com.android.externalstorage.documents/primary%3ADownload`
+  /// - `primary:Download`
+  /// 这些都不是 dart:io 能用的路径，需要映射到 `/storage/emulated/0/...`。
+  static String resolveRealPath(String raw) {
+    var path = raw.trim();
+    // content:// URI -> documentId
+    final docMatch = RegExp(r'/document/(.+)$').firstMatch(path);
+    if (docMatch != null) {
+      path = Uri.decodeComponent(docMatch.group(1)!);
+    } else if (path.startsWith('content://')) {
+      // 兜底：取最后一个 / 后面的部分
+      final tail = path.split('/').last;
+      path = Uri.decodeComponent(tail);
+    }
+    // documentId 形如 primary:Download 或 XXXX-XXXX:Download
+    if (path.contains(':')) {
+      final parts = path.split(':');
+      final volume = parts.first;
+      final rest = parts.length > 1 ? parts.sublist(1).join(':') : '';
+      if (volume == 'primary') {
+        return '/storage/emulated/0/$rest';
+      }
+      return '/storage/$volume/$rest';
+    }
+    return path;
+  }
+
+  /// 用 shell 列目录（dart:io 在部分 ROM 上会被分区存储拦掉，shell 更宽松）
+  static List<String> _tryListViaShell(String path) {
+    try {
+      final result = Process.runSync('ls', <String>['-1', path]);
+      if (result.exitCode != 0) return const <String>[];
+      final out = (result.stdout as String).trim();
+      if (out.isEmpty) return const <String>[];
+      return out.split('\n');
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
   /// 从文件夹导入模型：递归寻找 *.model3.json，并把该模型目录（含贴图/动作/表情）
   /// 整体复制到 models/ 下。返回导入后的模型相对路径。
   Future<String?> importModelFolder(Directory folder, {String? name}) async {
+    // 先确保资源目录已初始化：没开过数字人时 _webRoot 还是空的，
+    // 否则会在检查文件之前就直接返回，表现为「明明有 model3.json 却提示不存在」
+    await ensureStarted();
     final root = _webRoot;
-    if (root == null) return null;
+    if (root == null) {
+      lastImportError = '本地资源目录未初始化，请先开启一次数字人';
+      return null;
+    }
     lastImportError = null;
+    // SAF 返回的可能是 documentId 形式，需要转成真实路径
+    final realPath = resolveRealPath(folder.path);
+    debugPrint('[Live2D] 导入目录: 原始=${folder.path} 转换后=$realPath');
+    if (realPath != folder.path) {
+      folder = Directory(realPath);
+    }
     if (!folder.existsSync()) {
+      // 目录「存在但列不出来」是分区存储下的典型表现：existsSync 通过，
+      // 但 listSync 会抛权限错误。这里用 shell 再确认一次。
+      final listed = _tryListViaShell(folder.path);
+      if (listed.isEmpty) {
+        lastImportError = '无法访问该目录（路径：${folder.path}）';
+        return null;
+      }
       lastImportError = '目录不存在或无法访问';
       return null;
     }
@@ -283,13 +352,13 @@ class Live2dService {
     if (models.isEmpty) {
       // 给出能定位问题的原因，而不是笼统的「没有找到」
       if (unreadable > 0) {
-        lastImportError = '无法读取该目录（可能缺少存储权限），'
+        lastImportError = '无法读取该目录（Android 11+ 需要「所有文件访问权限」），'
             '建议改用「导入模型包（zip）」';
       } else if (jsonCandidates.isNotEmpty) {
         lastImportError = '目录里有 ${jsonCandidates.length} 个 json，但都不是模型描述文件'
             '（需要 *.model3.json）';
       } else {
-        lastImportError = '该目录里没有找到 .model3.json';
+        lastImportError = '该目录里没有找到 .model3.json（路径：${folder.path}）';
       }
       return null;
     }

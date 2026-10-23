@@ -233,6 +233,7 @@ class _PromptPageState extends State<PromptPage> {
             children: <Widget>[
               _modelButton('切换模型', Icons.swap_horiz, _switchModel),
               _modelButton('导入 zip', Icons.folder_open, _importModel),
+              _modelButton('导入文件夹', Icons.folder_copy_outlined, _importModelFromFolder),
               _modelButton('演示模式', Icons.fullscreen, _openDemo),
               _modelButton('复位位置', Icons.my_location, _link.resetAvatarPosition),
             ],
@@ -275,9 +276,21 @@ class _PromptPageState extends State<PromptPage> {
     if (!mounted) return;
     if (ok) {
       AppToast.show(context, '模型已从文件夹导入', icon: Icons.check_circle_outline);
-    } else {
-      AppToast.error(context, _link.lastImportError ?? '导入失败');
+      return;
     }
+    final reason = _link.lastImportError;
+    final needPermission = reason == null && !await CallStateWatcher.hasAllFilesAccess();
+    if (!mounted) return;
+    if (needPermission) {
+      // 权限没开：引导去系统设置开启后再试
+      AppToast.show(
+        context,
+        '请在系统设置里开启「所有文件访问权限」，然后重新导入',
+        icon: Icons.open_in_new,
+      );
+      return;
+    }
+    AppToast.error(context, reason ?? '导入失败');
   }
 
   /// 切换已有模型

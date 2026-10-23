@@ -548,7 +548,14 @@ class PromptLink extends ChangeNotifier {
   /// 从文件夹导入数字人模型（递归找 .model3.json 并复制整个模型目录）
   Future<bool> importAvatarModelFromFolder() async {
     try {
-      final dirPath = await FilePicker.platform.getDirectoryPath(dialogTitle: '选择模型文件夹');
+      // Android 11+ 分区存储：没有「所有文件访问权限」就读不了用户选的目录，
+      // 所以在打开目录选择器之前先检查并引导开启
+      if (!await CallStateWatcher.hasAllFilesAccess()) {
+        _log('需要「所有文件访问权限」才能读取文件夹，正在跳转到系统设置…', important: true);
+        await CallStateWatcher.requestAllFilesAccess();
+        return false;
+      }
+      final dirPath = await CallStateWatcher.pickDirectory();
       if (dirPath == null) return false;
       _log('正在从文件夹导入数字人模型…', important: true);
       notifyListeners();

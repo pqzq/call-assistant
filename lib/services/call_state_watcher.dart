@@ -103,6 +103,38 @@ class CallStateWatcher {
     }
   }
 
+  /// 选一个文件夹，返回真实文件系统路径（取消返回 null）
+  ///
+  /// 走系统 SAF（ACTION_OPEN_DOCUMENT_TREE）并在原生侧解析 documentId，
+  /// 比 file_picker 在部分 ROM（MIUI/HyperOS）上返回的路径可靠。
+  static Future<String?> pickDirectory() async {
+    try {
+      return await _methodChannel.invokeMethod<String>('pickDirectory');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 是否已获得「所有文件访问权限」（Android 11+ 读取外部目录需要）
+  static Future<bool> hasAllFilesAccess() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('hasAllFilesAccess');
+      return result ?? true;
+    } catch (_) {
+      return true; // 老系统或通道不可用时按已授权处理
+    }
+  }
+
+  /// 跳转到系统「所有文件访问权限」设置页
+  static Future<bool> requestAllFilesAccess() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('requestAllFilesAccess');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 打开系统无障碍设置页
   static Future<bool> openAccessibilitySettings() async {
     try {
