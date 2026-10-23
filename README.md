@@ -227,7 +227,8 @@ flutter build apk --release
   - 扫描会跟随符号链接、最多 8 层，并有一次性递归遍历兜底
   - 失败时给出**具体原因**（目录读不到 / 有 json 但不是模型描述文件 / 确实没有），不再一律报「没有找到 .model3.json」
   - **Android 11+ 分区存储**：需要「所有文件访问权限」（MANAGE_EXTERNAL_STORAGE）。没授权时点击「导入文件夹」会直接跳转到系统授权页，开启后再导入即可
-  - 目录选择走**系统 SAF**（ACTION_OPEN_DOCUMENT_TREE）并在原生侧把 documentId 解析成真实路径（MIUI/HyperOS 的 oot: 卷名也做了兼容），不依赖各 ROM 行为不一致的文件选择器
+  - 目录选择走**系统 SAF**（ACTION_OPEN_DOCUMENT_TREE）并在原生侧把 documentId 解析成真实路径（MIUI/HyperOS 的 
+oot: 卷名也做了兼容），不依赖各 ROM 行为不一致的文件选择器
   - 找不到模型时会说明原因（目录读不到 / 有 json 但不是模型描述文件 / 确实没有）
 
 ### 数字人模型的移除
@@ -295,6 +296,7 @@ PC 端定位为**播放端**：替代第二台手机，接收手机拨号端发�
 | --- | --- | --- |
 | `flutter_tts` 在 Windows 上调 SAPI | 机器没装语音引擎时**原生层崩溃**（整个 App 闪退，try/catch 拦不住） | 桌面端**完全禁用**系统 TTS，统一走端侧合成（导入 TTS 模型即可） |
 | 缺 `webview_flutter_windows` | 数字人一片空白，报 `WebViewPlatform.instance != null` | pubspec 显式声明 `webview_flutter_windows`，并确认它出现在 `windows/flutter/generated_plugins.cmake` 里 |
+| `webview_flutter_windows` 1.x **不是** `webview_flutter` 的平台实现 | 它是**独立的 WebView2 组件**（`Webview` / `WebviewController`），`WebViewController` 那套 API 在 Windows 上完全不可用 | 数字人组件按平台分两套实现：Android 用 `webview_flutter`，Windows 用 `webview_flutter_windows` 的 `loadUrl` / `executeScript` / `loadingState` |
 | 缺 WebView2 Runtime | 数字人不加载（浏览器进程起不来，**不会**触发任何错误回调，只会一直白屏） | 安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)；App 内也有「下载 WebView2 Runtime」按钮 |
 
 
