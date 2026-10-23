@@ -223,4 +223,29 @@ void main() {
       expect(toggled.hasStatusColumn, isTrue);
       expect(toggled.statusAt(0), '未接听');
     });
+  });
+  group('导出 xlsx', () {
+    test('导出的字节能被重新解析，且包含拨打情况列及其数据', () {
+      final sheet = ExcelService.demoSheets().first.withStatusAt(0, '拨打成功');
+      final bytes = ExcelService.exportToXlsx(sheet);
+      expect(bytes.isNotEmpty, isTrue);
+
+      final parsed = ExcelService.parse(bytes, fileName: '导出.xlsx').first;
+      // 表头含拨打情况
+      expect(parsed.headers.last, statusColumnName);
+      // 数据行完整
+      expect(parsed.rowCount, sheet.rowCount);
+      // 拨打情况已填充到最后一列
+      expect(parsed.statusAt(0), '拨打成功');
+      expect(parsed.statusAt(1), isEmpty);
+      // 原有数据没丢
+      expect(parsed.cellAt(0, 1), '中国移动客服');
+    });
+
+    test('自定义文本也能导出', () {
+      final sheet =
+          ExcelService.demoSheets().first.withStatusAt(2, '客户说下周一再联系');
+      final parsed = ExcelService.parse(ExcelService.exportToXlsx(sheet), fileName: 'a.xlsx').first;
+      expect(parsed.statusAt(2), '客户说下周一再联系');
+    });
   });}

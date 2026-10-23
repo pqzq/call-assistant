@@ -15,9 +15,35 @@ class ExcelParseException implements Exception {
   String toString() => message;
 }
 
-/// Excel 导入 + 手机号列自动识别
+/// Excel 导入 / 导出 + 手机号列自动识别
 class ExcelService {
   const ExcelService._();
+
+  /// 导出为 xlsx 二进制（表头 + 全部数据行，拨打情况在最后一列并已填充）
+  static Uint8List exportToXlsx(ImportedSheet sheet) {
+    final excel = Excel.createExcel();
+    // 默认会有一张 Sheet1，先删掉，避免出现空表
+    for (final name in excel.tables.keys.toList()) {
+      excel.delete(name);
+    }
+    final target = excel[sheet.name.isEmpty ? '名单' : sheet.name];
+
+    // 表头
+    target.appendRow(<CellValue?>[
+      for (final header in sheet.headers) TextCellValue(header),
+    ]);
+
+    // 数据行（含末尾的拨打情况列）
+    for (var row = 0; row < sheet.rowCount; row++) {
+      target.appendRow(<CellValue?>[
+        for (var col = 0; col < sheet.columnCount; col++)
+          TextCellValue(sheet.cellAt(row, col)),
+      ]);
+    }
+
+    final bytes = excel.encode();
+    return bytes == null ? Uint8List(0) : Uint8List.fromList(bytes);
+  }
 
   /// 参与手机号列识别的最大数据行数
   static const int maxScanRows = 300;

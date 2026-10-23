@@ -97,34 +97,10 @@ class RecordCard extends StatelessWidget {
           // 长按查看该行完整信息
           onLongPress: onMoreTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                // 拨号按钮移到左边（与双列模式一致）
-                GestureDetector(
-                  onTap: hasPhone ? onTap : null,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: hasPhone
-                          ? (highlighted ? theme.colorScheme.primary : const Color(0xFFE7F0FF))
-                          : Colors.black12,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.call,
-                      size: 20,
-                      color: hasPhone
-                          ? (highlighted ? Colors.white : const Color(0xFF2F6BFF))
-                          : Colors.black26,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,13 +207,10 @@ class RecordCard extends StatelessWidget {
           // 长按查看该行完整信息（短按仍是拨号）
           onLongPress: onMoreTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+            padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                // 拨号按钮移到左边，省出的横向空间给号码（可以加大字号）
-                _compactCallButton(theme, hasPhone),
-                const SizedBox(width: 7),
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -444,32 +417,6 @@ class RecordCard extends StatelessWidget {
       ],
     );
   }
-  /// 紧凑模式的拨号按钮（左侧，点击直接拨号/弹选择器）
-  Widget _compactCallButton(ThemeData theme, bool hasPhone) {
-    return GestureDetector(
-      onTap: hasPhone ? onTap : null,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 30,
-        height: 30,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: hasPhone
-              ? (highlighted ? theme.colorScheme.primary : const Color(0xFFE7F0FF))
-              : Colors.black12,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          Icons.call,
-          size: 17,
-          color: hasPhone
-              ? (highlighted ? Colors.white : const Color(0xFF2F6BFF))
-              : Colors.black26,
-        ),
-      ),
-    );
-  }
-
   Widget _buildPhoneRow(PhoneEntry phone) {
     final disabled = !phone.valid;
     final color = disabled ? Colors.black38 : const Color(0xFF2F6BFF);

@@ -136,9 +136,16 @@ class ImportedSheet {
     return cellAt(row, column);
   }
 
-  /// 确保末尾有「拨打情况」列：没有就追加一列（列名 + 每行补空值）
+  /// 确保有「拨打情况」列：已有同名列就复用，没有才在末尾追加。
+  ///
+  /// 复用很重要：导出的 xlsx 里已经带这一列，再导入时不能重复追加，
+  /// 否则会出现两列「拨打情况」，数据反而读不到。
   ImportedSheet ensureStatusColumn() {
     if (statusColumn != null) return this;
+    final existing = headers.indexWhere((h) => h.trim() == statusColumnName);
+    if (existing >= 0) {
+      return copyWith(statusColumn: existing);
+    }
     final newHeaders = <String>[...headers, statusColumnName];
     final newRows = <List<String>>[
       for (final row in rows) <String>[...row, ''],

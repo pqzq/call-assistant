@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:file_picker/file_picker.dart';
+
 import '../models/active_lead.dart';
 import '../models/sheet_data.dart';
 import '../services/call_log_store.dart';
+import '../services/excel_service.dart';
 import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
@@ -273,6 +276,71 @@ class _RecordListPageState extends State<RecordListPage> {
     _toast('已复制全部号码');
   }
 
+  /// 导出为 xlsx：表头 + 全部数据行，拨打情况在最后一列并已填充
+  Future<void> _exportXlsx() async {
+    try {
+      final bytes = ExcelService.exportToXlsx(_sheet);
+      if (bytes.isEmpty) {
+        if (!mounted) return;
+        AppToast.error(context, '导出失败：生成的文件为空');
+        return;
+      }
+      final stamp = DateTime.now().toString().replaceAll(RegExp(r'[:. ]'), '-').substring(0, 19);
+      final base = _sheet.name.isEmpty ? '名单' : _sheet.name;
+      final fileName = '${base}_拨打情况_$stamp.xlsx';
+      final saved = await FilePicker.platform.saveFile(
+        dialogTitle: '保存导出的表格',
+        fileName: fileName,
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      if (saved == null) return; // 用户取消
+      AppToast.show(context, '已导出：$fileName');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.error(context, '导出失败：$e');
+    }
+  }
+
+  /// 清空所有行的拨打情况（含本地存储）
+  Future<void> _clearAllStatus() async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('清空拨打情况', style: TextStyle(fontSize: 17)),
+            content: const Text('将清空当前表格所有行的拨打情况，确定继续？'),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('清空'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    var next = _sheet;
+    for (var row = 0; row < next.rowCount; row++) {
+      next = next.withStatusAt(row, '');
+    }
+    setState(() => _sheet = next);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (var row = 0; row < next.rowCount; row++) {
+        await prefs.remove(_statusKey(row));
+      }
+    } catch (_) {
+      // 忽略
+    }
+    if (!mounted) return;
+    AppToast.show(context, '已清空所有拨打情况');
+  }
+
   @override
   Widget build(BuildContext context) {
     final sheet = _sheet;
@@ -325,9 +393,15 @@ class _RecordListPageState extends State<RecordListPage> {
                 setState(_called.clear);
                 widget.onClearCalled();
                 _toast('已清空呼叫标记');
+              } else if (value == 'export') {
+                _exportXlsx();
+              } else if (value == 'clearStatus') {
+                _clearAllStatus();
               }
             },
             itemBuilder: (context) => const <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(value: 'export', child: Text('导出为 xlsx（含拨打情况）')),
+              PopupMenuItem<String>(value: 'clearStatus', child: Text('清空所有拨打情况')),
               PopupMenuItem<String>(value: 'refresh', child: Text('刷新列表（清除高亮）')),
               PopupMenuItem<String>(value: 'copy', child: Text('复制全部号码')),
               PopupMenuItem<String>(value: 'clear', child: Text('清空呼叫标记')),
@@ -417,10 +491,11 @@ class _RecordListPageState extends State<RecordListPage> {
       builder: (sheetContext) => SafeArea(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.85,
           ),
           child: ListView(
-            shrinkWrap: true,
+            // 不要 shrinkWrap：内容超高时要在 ConstrainedBox 里滚动，
+            // 否则 Wrap 换行出来的第二行（自定义填写/清空）会被裁掉还滚不动
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             children: <Widget>[
               Text(
@@ -602,8 +677,8 @@ class _RecordListPageState extends State<RecordListPage> {
           crossAxisCount: 2,
           mainAxisSpacing: 6,
           crossAxisSpacing: 6,
-          // 高度只够「姓名 + 两个号码 + 拨打情况」展示，尽量一屏多看几行
-          mainAxisExtent: 104,
+          // 高度只够「姓名 + 号码 + 拨打情况」展示，尽量一屏多看几行
+          mainAxisExtent: 92,
         ),
         itemCount: rows.length,
         itemBuilder: buildItem,
@@ -683,10 +758,10 @@ class _StatusSection extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         const Text(
-          '写入结果会填到表格末尾的「拨打情况」列，下次导入同名表格会自动带回来。',
-          style: TextStyle(fontSize: 11, height: 1.5, color: Colors.black38),
+          '结果写入表格末尾的「拨打情况」列，下次导入同名表格会自动带回来。',
+          style: TextStyle(fontSize: 11, height: 1.4, color: Colors.black38),
         ),
       ],
     );
