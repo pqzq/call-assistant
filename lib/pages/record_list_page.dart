@@ -7,6 +7,7 @@ import '../services/call_log_store.dart';
 import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
+import '../widgets/app_toast.dart';
 
 class RecordListPage extends StatefulWidget {
   const RecordListPage({
@@ -190,9 +191,7 @@ class _RecordListPageState extends State<RecordListPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
+    AppToast.show(context, message);
   }
 
   Future<void> _copyAll() async {

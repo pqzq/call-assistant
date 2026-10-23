@@ -162,12 +162,13 @@ void main() {
 
     // 刷新 -> 清除高亮
     await tester.tap(find.byTooltip('刷新列表'));
+    await tester.pump();
+    // 提示是居中浮层、会自动消失，断言要趁它还在
+    expect(find.text('列表已刷新'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(_rowCardColor(tester, 1), isNot(RecordCard.highlightColor));
     expect(_rowCardColor(tester, 2), isNot(RecordCard.highlightColor));
     expect(find.text('正在拨打'), findsNothing);
-    // 已呼叫标记不受刷新影响
-    expect(find.text('列表已刷新'), findsOneWidget);
   });
 
   testWidgets('返回首页再进入列表时高亮已重置', (tester) async {

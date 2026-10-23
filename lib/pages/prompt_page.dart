@@ -5,6 +5,7 @@ import '../services/call_state_watcher.dart';
 import '../services/prompt_link.dart';
 import '../widgets/glass_surface.dart';
 import 'demo_page.dart';
+import '../widgets/app_toast.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
 class PromptPage extends StatefulWidget {
@@ -56,9 +57,7 @@ class _PromptPageState extends State<PromptPage> {
 
   Future<void> _showModelPicker(List<String> models) async {
     if (models.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可用模型'), behavior: SnackBarBehavior.floating),
-      );
+      AppToast.error(context, '没有可用模型');
       return;
     }
     final chosen = await showModalBottomSheet<String>(
@@ -260,12 +259,11 @@ class _PromptPageState extends State<PromptPage> {
   Future<void> _importModel() async {
     final ok = await _link.importAvatarModel();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok ? '数字人模型已导入' : '导入失败，详见日志'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    if (ok) {
+      AppToast.show(context, '数字人模型已导入', icon: Icons.check_circle_outline);
+    } else {
+      AppToast.error(context, '导入失败，详见日志');
+    }
   }
 
   /// 切换已有模型
@@ -578,12 +576,11 @@ class _PromptPageState extends State<PromptPage> {
                   onPressed: () async {
                     final ok = await _link.importTtsModel();
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(ok ? '模型导入成功' : '模型导入失败，详见日志'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    if (ok) {
+                      AppToast.show(context, '模型导入成功');
+                    } else {
+                      AppToast.error(context, '模型导入失败，详见日志');
+                    }
                   },
                   icon: const Icon(Icons.unarchive_outlined, size: 18),
                   label: const Text('导入模型包'),
@@ -596,12 +593,11 @@ class _PromptPageState extends State<PromptPage> {
                       ? () async {
                           final ok = await _link.synthesizeOpening();
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(ok ? '已生成并设为播报音频' : '合成失败，详见日志'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
+                          if (ok) {
+                            AppToast.show(context, '已生成并设为播报音频');
+                          } else {
+                            AppToast.error(context, '合成失败，详见日志');
+                          }
                         }
                       : null,
                   icon: _link.synthesizing
@@ -696,9 +692,7 @@ class _PromptPageState extends State<PromptPage> {
                     final ok = await _link.pickAudio();
                     if (!mounted) return;
                     if (!ok) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('未选择音频文件'), behavior: SnackBarBehavior.floating),
-                      );
+                      AppToast.error(context, '未选择音频文件');
                     }
                   },
                   icon: const Icon(Icons.folder_open, size: 18),
@@ -899,9 +893,7 @@ class _PromptPageState extends State<PromptPage> {
     final uri = Uri.parse(url);
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法打开链接'), behavior: SnackBarBehavior.floating),
-      );
+      AppToast.error(context, '无法打开链接');
     }
   }
 

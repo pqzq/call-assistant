@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/prompt_link.dart';
 import '../widgets/live2d_avatar.dart';
+import '../widgets/app_toast.dart';
 
 /// 演示模式：全屏数字人 + 字幕，播报开场白。
 /// 适合给客户/领导演示、录屏出素材。
@@ -97,9 +98,7 @@ class _DemoPageState extends State<DemoPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
+    AppToast.show(context, message);
   }
 
   Future<void> _pickModel() async {

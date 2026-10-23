@@ -99,6 +99,15 @@ flutter build apk --release
         {type:answered, script:"开场白"}      → flutter_tts 朗读开场白
 ```
 
+### 提示样式（居中浮层）
+
+全局提示不再用底部 SnackBar，改为**居中浮层**（`lib/widgets/app_toast.dart`）：
+
+- 居中显示，不遮挡底部操作区（悬浮玻璃按钮所在的位置）
+- 主题色渐变（`#4A82FF → #2F6BFF`）+ 图标 + 白字；错误提示用红色系，一眼可辨
+- 自动淡入淡出 + 轻微缩放，**不打断操作**（`IgnorePointer`，点击可以穿透）
+- 生命周期用单个 `AnimationController` 走完「入场 → 停留 → 退场」，不用 Timer（否则 widget 测试的 `pumpAndSettle` 会一直等下去）
+
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

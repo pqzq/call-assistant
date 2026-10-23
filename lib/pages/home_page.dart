@@ -13,6 +13,7 @@ import '../utils/phone_utils.dart';
 import '../widgets/glass_surface.dart';
 import 'prompt_page.dart';
 import 'record_list_page.dart';
+import '../widgets/app_toast.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -78,9 +79,7 @@ class _HomePageState extends State<HomePage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
+    AppToast.show(context, message);
   }
 
   Future<void> _importExcel() async {
