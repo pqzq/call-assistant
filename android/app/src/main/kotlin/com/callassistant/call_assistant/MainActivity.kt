@@ -31,6 +31,8 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, bridgeChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAccessibilityEnabled" -> result.success(isAccessibilityEnabled())
+                // 默认设备名用机型，避免 Dart 端拿到 "localhost"
+                "deviceModel" -> result.success(android.os.Build.MODEL ?: "")
                 "openAccessibilitySettings" -> {
                     try {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

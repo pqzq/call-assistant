@@ -73,6 +73,16 @@ class CallStateWatcher {
     }
   }
 
+  /// 设备机型（用作默认设备名），取不到时返回空串
+  static Future<String> deviceModel() async {
+    try {
+      final result = await _methodChannel.invokeMethod<String>('deviceModel');
+      return (result ?? '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
   /// 跳转系统无障碍设置页
   static Future<void> openSettings() async {
     try {

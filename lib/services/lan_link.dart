@@ -111,6 +111,9 @@ class LanLink {
 
   final int port;
 
+  /// 本机设备 id：广播会回环到自己，需要过滤掉
+  String? localDeviceId;
+
   RawDatagramSocket? _socket;
   final Map<String, LanPeer> _peers = <String, LanPeer>{};
 
@@ -133,6 +136,8 @@ class LanLink {
         if (datagram == null) return;
         final message = LanMessage.fromBytes(datagram.data);
         if (message == null) return;
+        // 忽略自己发出的广播（UDP 广播会回环给发送方，否则会把自己当成对端）
+        if (localDeviceId != null && message.deviceId == localDeviceId) return;
         final peer = LanPeer(
           deviceId: message.deviceId,
           deviceName: message.deviceName,

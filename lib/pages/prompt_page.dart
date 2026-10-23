@@ -62,6 +62,8 @@ class _PromptPageState extends State<PromptPage> {
           const SizedBox(height: 12),
           _buildRoleCard(),
           const SizedBox(height: 12),
+          _buildAudioCard(),
+          const SizedBox(height: 12),
           _buildScriptCard(),
           const SizedBox(height: 12),
           _buildLogCard(),
@@ -214,6 +216,97 @@ class _PromptPageState extends State<PromptPage> {
     );
   }
 
+  Widget _buildAudioCard() {
+    final hasAudio = _link.hasAudio;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.audio_file_outlined, size: 18, color: Color(0xFF2F6BFF)),
+              const SizedBox(width: 8),
+              const Text('开场白音频（推荐）', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: hasAudio ? const Color(0xFFE7F7EE) : const Color(0xFFFDECEC),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  hasAudio ? '已设置' : '未设置',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: hasAudio ? const Color(0xFF17A05A) : const Color(0xFFD03B3B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '很多定制系统（小米 HyperOS 等）的系统 TTS 不对第三方应用开放。用一段真人录音播放更稳、更自然，也免去引擎依赖。',
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+          ),
+          if (hasAudio) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                const Icon(Icons.music_note, size: 14, color: Color(0xFF17A05A)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _link.audioFileName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final ok = await _link.pickAudio();
+                    if (!mounted) return;
+                    if (!ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('未选择音频文件'), behavior: SnackBarBehavior.floating),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.folder_open, size: 18),
+                  label: Text(hasAudio ? '重新选择' : '选择音频文件'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _link.speak(_scriptController.text),
+                  icon: const Icon(Icons.play_arrow, size: 18),
+                  label: const Text('本机试听'),
+                ),
+              ),
+            ],
+          ),
+          if (hasAudio)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _link.clearAudio,
+                child: const Text('清除音频', style: TextStyle(fontSize: 12)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildScriptCard() {
     return _card(
       child: Column(
@@ -223,7 +316,7 @@ class _PromptPageState extends State<PromptPage> {
             children: <Widget>[
               Icon(Icons.record_voice_over_outlined, size: 18, color: Color(0xFF2F6BFF)),
               SizedBox(width: 8),
-              Text('开场白', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              Text('开场白文本（TTS 兜底）', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ],
           ),
           const SizedBox(height: 10),
@@ -273,10 +366,14 @@ class _PromptPageState extends State<PromptPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            _link.ttsReady ? '本机 TTS 就绪' : '本机 TTS 未就绪（系统可能未安装语音引擎）',
+            _link.hasAudio
+                ? '已设置音频，播报时优先播放音频'
+                : _link.ttsReady
+                    ? '本机 TTS 就绪（未设置音频时用它朗读）'
+                    : '本机 TTS 不可用（系统引擎未对第三方开放），请设置开场白音频',
             style: TextStyle(
               fontSize: 11,
-              color: _link.ttsReady ? const Color(0xFF17A05A) : const Color(0xFFD03B3B),
+              color: (_link.hasAudio || _link.ttsReady) ? const Color(0xFF17A05A) : const Color(0xFFD03B3B),
             ),
           ),
         ],

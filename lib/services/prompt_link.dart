@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:audioplayers/audioplayers.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'call_state_watcher.dart';
@@ -33,6 +36,7 @@ class PromptLink extends ChangeNotifier {
   static const String _kAutoTrigger = 'prompt_auto_trigger';
   static const String _kAsPlayer = 'prompt_as_player';
   static const String _kRate = 'prompt_rate';
+  static const String _kAudioPath = 'prompt_audio_path';
 
   static const String defaultScript =
       '您好，我是本次项目的对接人，占用您一分钟时间，跟您同步一个事情，方便吗？';
@@ -42,6 +46,7 @@ class PromptLink extends ChangeNotifier {
 
   final LanLink _link = LanLink();
   final FlutterTts _tts = FlutterTts();
+  final AudioPlayer _player = AudioPlayer();
 
   String _deviceId = '';
   String _deviceName = '';
@@ -51,6 +56,9 @@ class PromptLink extends ChangeNotifier {
   bool _asPlayer = true;
   bool _ttsReady = false;
   bool _initialized = false;
+
+  /// 开场白音频文件路径（优先于 TTS；很多定制 ROM 的系统 TTS 不对第三方开放）
+  String? _audioPath;
   bool _accessibilityEnabled = false;
   bool _listening = false;
   String? _lastError;
@@ -70,6 +78,13 @@ class PromptLink extends ChangeNotifier {
   bool get autoTrigger => _autoTrigger;
   bool get asPlayer => _asPlayer;
   bool get ttsReady => _ttsReady;
+  String? get audioPath => _audioPath;
+  bool get hasAudio => _audioPath != null && File(_audioPath!).existsSync();
+  String get audioFileName {
+    final path = _audioPath;
+    if (path == null) return '';
+    return path.split(Platform.pathSeparator).last;
+  }
   bool get accessibilityEnabled => _accessibilityEnabled;
   bool get listening => _listening;
   bool get armed => _armed;
@@ -88,11 +103,22 @@ class PromptLink extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString(_kDeviceId) ?? _newDeviceId();
     await prefs.setString(_kDeviceId, _deviceId);
-    _deviceName = prefs.getString(_kDeviceName) ?? Platform.localHostname;
+    _link.localDeviceId = _deviceId;
+
+    var name = prefs.getString(_kDeviceName) ?? '';
+    // Platform.localHostname 在 Android 上恒为 localhost，改用机型名
+    if (name.isEmpty || name == 'localhost') {
+      final model = await CallStateWatcher.deviceModel();
+      name = model.isEmpty ? '设备 ${_deviceId.substring(0, 4)}' : model;
+      await prefs.setString(_kDeviceName, name);
+    }
+    _deviceName = name;
     _script = prefs.getString(_kScript) ?? defaultScript;
     _autoTrigger = prefs.getBool(_kAutoTrigger) ?? true;
     _asPlayer = prefs.getBool(_kAsPlayer) ?? true;
     _rate = prefs.getDouble(_kRate) ?? 0.5;
+    final savedAudio = prefs.getString(_kAudioPath);
+    if (savedAudio != null && File(savedAudio).existsSync()) _audioPath = savedAudio;
     notifyListeners();
 
     await _initTts();
@@ -113,11 +139,75 @@ class PromptLink extends ChangeNotifier {
       await _tts.setVolume(1.0);
       await _tts.setPitch(1.0);
       await _tts.awaitSpeakCompletion(true);
-      _ttsReady = true;
+      // 很多定制 ROM（如 HyperOS）的系统 TTS 只对系统应用开放，这里做一次真实可用性校验
+      final available = await _tts.isLanguageAvailable('zh-CN');
+      _ttsReady = available == true || available == 1;
     } catch (_) {
       _ttsReady = false;
     }
     notifyListeners();
+  }
+
+  /// 选择开场白音频文件（复制到应用目录，避免被系统清理）
+  Future<bool> pickAudio() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const <String>['mp3', 'wav', 'm4a', 'aac', 'ogg'],
+      );
+      if (result == null || result.files.isEmpty) return false;
+      final picked = result.files.single;
+      final srcPath = picked.path;
+      if (srcPath == null) {
+        _log('无法读取所选文件');
+        return false;
+      }
+      final dir = await getApplicationDocumentsDirectory();
+      final dot = srcPath.lastIndexOf('.');
+      final ext = dot >= 0 ? srcPath.substring(dot) : '.mp3';
+      final target = File('${dir.path}/opening_${DateTime.now().millisecondsSinceEpoch}$ext');
+      await File(srcPath).copy(target.path);
+      _audioPath = target.path;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kAudioPath, target.path);
+      _log('已选择开场白音频：${picked.name}', important: true);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _log('选择音频失败：$e');
+      return false;
+    }
+  }
+
+  Future<void> clearAudio() async {
+    final path = _audioPath;
+    _audioPath = null;
+    try {
+      if (path != null && File(path).existsSync()) await File(path).delete();
+    } catch (_) {
+      // 忽略
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kAudioPath);
+    } catch (_) {
+      // 忽略
+    }
+    _log('已清除开场白音频');
+    notifyListeners();
+  }
+
+  /// 播放已选的开场白音频
+  Future<void> playAudio() async {
+    final path = _audioPath;
+    if (path == null) return;
+    try {
+      await _player.stop();
+      await _player.play(DeviceFileSource(path));
+      _log('开始播放音频：$audioFileName');
+    } catch (e) {
+      _log('播放音频失败：$e');
+    }
   }
 
   Future<void> _startLink() async {
@@ -289,8 +379,12 @@ class PromptLink extends ChangeNotifier {
     }
   }
 
-  /// 朗读文本（播放端）
+  /// 播放开场白：优先用音频文件，其次系统 TTS
   Future<void> speak(String text) async {
+    if (hasAudio) {
+      await playAudio();
+      return;
+    }
     final content = text.trim();
     if (content.isEmpty) return;
     if (!_ttsReady) {
@@ -315,6 +409,11 @@ class PromptLink extends ChangeNotifier {
     } catch (_) {
       // 忽略
     }
+    try {
+      await _player.stop();
+    } catch (_) {
+      // 忽略
+    }
   }
 
   // ---------------- 日志 ----------------
@@ -334,6 +433,7 @@ class PromptLink extends ChangeNotifier {
   void dispose() {
     _link.close();
     _tts.stop();
+    _player.dispose();
     super.dispose();
   }
 }
