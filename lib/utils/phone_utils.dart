@@ -3,6 +3,9 @@ enum PhoneKind {
   /// 手机号，直接拨打
   mobile,
 
+  /// 短号/服务号（10086 / 10010 / 10000），直接拨打
+  service,
+
   /// 固话且已自带区号（02188886666 / 0571-88889999）
   landlineWithAreaCode,
 
@@ -49,6 +52,10 @@ class PhoneUtils {
 
   /// 本地座机，7~8 位且不以 0 开头（88886666 / 51234567）
   static final RegExp _localLandline = RegExp(r'^[2-9]\d{6,7}$');
+
+  /// 短号/服务号，5~6 位且不以 0 开头（10086 移动 / 10010 联通 / 10000 电信 / 12345）
+  /// 下限取 5 位是为了避开年份、编号这类 4 位数字（2024、1001）
+  static final RegExp _serviceNumber = RegExp(r'^[1-9]\d{4,5}$');
 
   /// 其他国家/地区号码（8~15 位）
   static final RegExp _generic = RegExp(r'^\d{8,15}$');
@@ -122,6 +129,7 @@ class PhoneUtils {
     if (normalized == null) return PhoneKind.unknown;
     if (normalized.startsWith('+')) return PhoneKind.international;
     if (_cnMobile.hasMatch(normalized)) return PhoneKind.mobile;
+    if (_serviceNumber.hasMatch(normalized)) return PhoneKind.service;
     if (_cnLandlineWithAreaCode.hasMatch(normalized)) return PhoneKind.landlineWithAreaCode;
     if (_localLandline.hasMatch(normalized)) return PhoneKind.landlineLocal;
     return PhoneKind.unknown;
@@ -151,6 +159,7 @@ class PhoneUtils {
     if (normalized == null) return false;
     final digits = normalized.startsWith('+') ? normalized.substring(1) : normalized;
     if (_cnMobile.hasMatch(digits)) return true;
+    if (_serviceNumber.hasMatch(digits)) return true;
     if (_cnLandlineWithAreaCode.hasMatch(digits)) return true;
     if (_localLandline.hasMatch(digits)) return true;
     return _generic.hasMatch(digits);
@@ -190,6 +199,8 @@ class PhoneUtils {
     switch (kind) {
       case PhoneKind.mobile:
         return '手机';
+      case PhoneKind.service:
+        return '服务号';
       case PhoneKind.landlineWithAreaCode:
         return '固话';
       case PhoneKind.landlineLocal:

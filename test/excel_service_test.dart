@@ -127,7 +127,11 @@ void main() {
     expect(mobile.name, '客户名单');
     expect(mobile.phoneColumn, 3); // 主号码列仍是「手机号码」
     expect(mobile.phoneColumns, <int>[3, 4]); // 手机号码 + 办公电话
-    expect(mobile.rowCount, 8);
+    expect(mobile.rowCount, 11);
+    // 前三行是三大运营商客服号（公开服务电话，拨通不会有骚扰）
+    expect(mobile.cellAt(0, 3), '10086');
+    expect(mobile.cellAt(1, 3), '10010');
+    expect(mobile.cellAt(2, 3), '10000');
 
     final landline = sheets[1];
     expect(landline.name, '固话名单');
@@ -143,19 +147,25 @@ void main() {
     });
 
     test('phonesAt 按列顺序返回多个号码，座机补区号', () {
+      // 第 1 行是运营商客服号（服务号）
       final phones = sheet.phonesAt(0, '021');
       expect(phones.length, 2);
       expect(phones[0].label, '手机号码');
-      expect(phones[0].display, '13800138000');
-      expect(phones[0].kind, PhoneKind.mobile);
+      expect(phones[0].display, '10086');
+      expect(phones[0].kind, PhoneKind.service);
       expect(phones[0].note, isNull);
       expect(phones[1].label, '办公电话');
       expect(phones[1].display, '010-88886666');
       expect(phones[1].note, isNull);
 
-      // 第 6 行办公电话是本地座机，需补区号
-      final local = sheet.phonesAt(5, '021');
-      expect(local[1].display, '021-88886669');
+      // 「张伟」那行（第 4 行）是手机号
+      final mobile = sheet.phonesAt(3, '021');
+      expect(mobile[0].display, '13800138000');
+      expect(mobile[0].kind, PhoneKind.mobile);
+
+      // 「陈晨」那行（第 8 行）办公电话是本地座机，需补区号
+      final local = sheet.phonesAt(7, '021');
+      expect(local[1].display, '021-88886668');
       expect(local[1].note, '已补区号 021');
       expect(local[1].kind, PhoneKind.landlineLocal);
     });

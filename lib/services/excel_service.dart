@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
@@ -21,7 +22,7 @@ class ExcelService {
   /// 参与手机号列识别的最大数据行数
   static const int maxScanRows = 300;
 
-  static List<ImportedSheet> parse(Uint8List bytes) {
+  static List<ImportedSheet> parse(Uint8List bytes, {String? fileName}) {
     if (bytes.isEmpty) {
       throw const ExcelParseException('文件内容为空');
     }
@@ -29,11 +30,22 @@ class ExcelService {
       throw const ExcelParseException('文件过大（超过 80MB），请拆分后再导入');
     }
 
+    // 1. 先按文本尝试（csv / tsv），很多「Excel 另存为」出来的其实是文本
+    final csvSheets = _tryParseDelimited(bytes, fileName);
+    if (csvSheets != null) return csvSheets;
+
+    // 2. 按 Excel（xlsx / xls）解析
     final Excel excel;
     try {
       excel = Excel.decodeBytes(bytes);
-    } catch (_) {
-      throw const ExcelParseException('无法解析该文件，请确认是 .xlsx 格式（xls / csv 请先另存为 .xlsx）');
+    } catch (e) {
+      // 把底层原因带出来，方便判断是格式问题还是文件损坏
+      final reason = _shortReason(e);
+      throw ExcelParseException(
+        '无法解析该文件（$reason）。\n'
+        '支持 .xlsx / .xls；若为 .csv 或 .txt，请确认是逗号/制表符分隔的纯文本，'
+        '或先用 Excel 另存为「Excel 工作簿(*.xlsx)」再导入。',
+      );
     }
 
     final tables = excel.tables;
@@ -53,6 +65,84 @@ class ExcelService {
       throw const ExcelParseException('没有读取到表格数据，请确认文件内容不为空');
     }
     return nonEmpty;
+  }
+
+  /// 尝试按分隔文本（csv / tsv）解析；不是文本或没有可识别内容时返回 null
+  static List<ImportedSheet>? _tryParseDelimited(Uint8List bytes, String? fileName) {
+    // xlsx/xls 都是 zip 或二进制，不可能是可读文本
+    if (bytes.length > 2 && bytes[0] == 0x50 && bytes[1] == 0x4B) return null; // PK.. (zip)
+    if (bytes.length > 8 && bytes[0] == 0xD0 && bytes[1] == 0xCF) return null; // OLE (xls)
+
+    String text;
+    try {
+      text = const Utf8Decoder(allowMalformed: true).convert(bytes);
+    } catch (_) {
+      return null;
+    }
+    // 必须包含可打印字符且有分隔符，否则不当作 csv
+    final lines = const LineSplitter().convert(text);
+    if (lines.isEmpty) return null;
+    var printable = 0;
+    for (final line in lines) {
+      if (line.trim().isNotEmpty) printable++;
+    }
+    if (printable < 2) return null;
+
+    final sample = lines.firstWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+    final comma = sample.contains(',');
+    final tab = sample.contains('\t');
+    if (!comma && !tab) return null;
+
+    final rows = <List<String>>[];
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      rows.add(_splitDelimited(line, tab && !comma ? '\t' : ','));
+    }
+    if (rows.isEmpty) return null;
+
+    final name = (fileName == null || fileName.trim().isEmpty)
+        ? '导入的表格'
+        : fileName.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '');
+    return <ImportedSheet>[_buildSheet(name, rows)];
+  }
+
+  /// 解析一行分隔文本（支持双引号包裹与转义）
+  static List<String> _splitDelimited(String line, String separator) {
+    final cells = <String>[];
+    final buffer = StringBuffer();
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      final ch = line[i];
+      if (inQuotes) {
+        if (ch == '"') {
+          if (i + 1 < line.length && line[i + 1] == '"') {
+            buffer.write('"');
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          buffer.write(ch);
+        }
+      } else if (ch == '"') {
+        inQuotes = true;
+      } else if (ch == separator) {
+        cells.add(buffer.toString().trim());
+        buffer.clear();
+      } else {
+        buffer.write(ch);
+      }
+    }
+    cells.add(buffer.toString().trim());
+    return cells;
+  }
+
+  /// 提取底层异常里最有价值的一句
+  static String _shortReason(Object error) {
+    var text = error.toString().replaceAll('\n', ' ').trim();
+    text = text.replaceFirst(RegExp(r'^(Exception|Invalid argument|FormatException)\s*:?\s*'), '');
+    if (text.length > 80) text = '${text.substring(0, 80)}…';
+    return text.isEmpty ? '格式无法识别' : text;
   }
 
   static ImportedSheet _buildSheet(String name, List<List<String>> raw) {
@@ -237,17 +327,23 @@ class ExcelService {
   }
 
   /// 内置示例数据，方便在没有表格时先体验一遍。
+  ///
+  /// 前几行放三大运营商的客服热线（10086/10010/10000）：这些号码是**公开服务电话**，
+  /// 接通后是语音提示，既能完整跑通「接通 → 播报」链路，也不会打扰到真人。
   static List<ImportedSheet> demoSheets() {
     const mobileHeaders = <String>['序号', '姓名', '部门', '手机号码', '办公电话', '备注'];
     const mobileRows = <List<String>>[
-      <String>['1', '张伟', '销售一部', '13800138000', '010-88886666', '首次咨询'],
-      <String>['2', '李静', '销售二部', '13900139001', '010-88886667', '已发资料'],
-      <String>['3', '王强', '市场部', '13700137002', '0571-88889999', '有意向'],
-      <String>['4', '赵敏', '客服部', '13600136003', '', '待回访'],
-      <String>['5', '陈晨', '技术部', '13500135004', '88886668', '转 123'],
-      <String>['6', '刘洋', '销售一部', '18611118606', '88886669', '重点客户'],
-      <String>['7', '孙丽', '人事部', '18922218907', '021-66668888', ''],
-      <String>['8', '周杰', '技术部', '13433313408', '0755-88889900', '对接中'],
+      <String>['1', '中国移动客服', '客服热线', '10086', '010-88886666', '公开客服电话，接通为语音提示'],
+      <String>['2', '中国联通客服', '客服热线', '10010', '010-88886667', '公开客服电话，接通为语音提示'],
+      <String>['3', '中国电信客服', '客服热线', '10000', '010-88886668', '公开客服电话，接通为语音提示'],
+      <String>['4', '张伟', '销售一部', '13800138000', '010-88886669', '首次咨询'],
+      <String>['5', '李静', '销售二部', '13900139001', '010-88886670', '已发资料'],
+      <String>['6', '王强', '市场部', '13700137002', '0571-88889999', '有意向'],
+      <String>['7', '赵敏', '客服部', '13600136003', '', '待回访'],
+      <String>['8', '陈晨', '技术部', '13500135004', '88886668', '转 123'],
+      <String>['9', '刘洋', '销售一部', '18611118606', '88886669', '重点客户'],
+      <String>['10', '孙丽', '人事部', '18922218907', '021-66668888', ''],
+      <String>['11', '周杰', '技术部', '13433313408', '0755-88889900', '对接中'],
     ];
     const landlineHeaders = <String>['姓名', '部门', '办公座机', '备注'];
     const landlineRows = <List<String>>[

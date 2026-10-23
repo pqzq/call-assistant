@@ -161,6 +161,82 @@ class Live2dService {
     return 'models/$dirName/${modelPath.substring(prefix.length)}';
   }
 
+  /// 从文件夹导入模型：递归寻找 *.model3.json，并把该模型目录（含贴图/动作/表情）
+  /// 整体复制到 models/ 下。返回导入后的模型相对路径。
+  Future<String?> importModelFolder(Directory folder, {String? name}) async {
+    final root = _webRoot;
+    if (root == null) return null;
+    if (!folder.existsSync()) return null;
+
+    // 递归查找 model3.json（优先最浅的那个，避免选到子目录里的重复模型）
+    final models = <File>[];
+    void scan(Directory dir, int depth) {
+      if (depth > 6 || models.length > 20) return;
+      List<FileSystemEntity> children;
+      try {
+        children = dir.listSync(followLinks: false);
+      } catch (_) {
+        return;
+      }
+      for (final entity in children) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.model3.json')) {
+          models.add(entity);
+        }
+      }
+      for (final entity in children) {
+        if (entity is Directory) {
+          final name = entity.path.split(Platform.pathSeparator).last;
+          if (name.startsWith('.') || name == '__MACOSX') continue;
+          scan(entity, depth + 1);
+        }
+      }
+    }
+
+    scan(folder, 0);
+    if (models.isEmpty) return null;
+    models.sort((a, b) => a.path.length.compareTo(b.path.length));
+    final modelFile = models.first;
+
+    // 模型根目录 = model3.json 所在目录
+    final modelDir = modelFile.parent;
+    final dirName = (name ?? modelDir.path.split(Platform.pathSeparator).last)
+        .replaceAll(RegExp(r'[^\w\-. 一-龥]'), '_')
+        .trim();
+    final safeName = dirName.isEmpty ? 'model' : dirName;
+
+    final targetDir = Directory('${root.path}/models/$safeName');
+    if (targetDir.existsSync()) targetDir.deleteSync(recursive: true);
+    targetDir.createSync(recursive: true);
+
+    // 复制整个模型目录（相对 model3.json 的引用都在其中）
+    var copied = 0;
+    void copyTree(Directory from, Directory to) {
+      for (final entity in from.listSync(followLinks: false)) {
+        final baseName = entity.path.split(Platform.pathSeparator).last;
+        if (entity is File) {
+          final target = File('${to.path}/$baseName');
+          try {
+            target.writeAsBytesSync(entity.readAsBytesSync());
+            copied++;
+          } catch (_) {
+            // 跳过读不了的文件
+          }
+        } else if (entity is Directory) {
+          if (baseName.startsWith('.') || baseName == '__MACOSX') continue;
+          final target = Directory('${to.path}/$baseName');
+          target.createSync(recursive: true);
+          copyTree(entity, target);
+        }
+      }
+    }
+
+    copyTree(modelDir, targetDir);
+    if (copied == 0) return null;
+
+    final relativeModel = 'models/$safeName/${modelFile.path.split(Platform.pathSeparator).last}';
+    return relativeModel;
+  }
+
   /// 删除已导入的模型目录
   Future<void> deleteImportedModel(String modelRelativePath) async {
     final root = _webRoot;

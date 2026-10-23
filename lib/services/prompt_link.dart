@@ -545,6 +545,27 @@ class PromptLink extends ChangeNotifier {
     }
   }
 
+  /// 从文件夹导入数字人模型（递归找 .model3.json 并复制整个模型目录）
+  Future<bool> importAvatarModelFromFolder() async {
+    try {
+      final dirPath = await FilePicker.platform.getDirectoryPath(dialogTitle: '选择模型文件夹');
+      if (dirPath == null) return false;
+      _log('正在从文件夹导入数字人模型…', important: true);
+      notifyListeners();
+      final model = await Live2dService.instance.importModelFolder(Directory(dirPath));
+      if (model == null) {
+        _log('导入失败：文件夹里没有找到 .model3.json');
+        return false;
+      }
+      await setAvatarModel(model);
+      _log('数字人模型已从文件夹导入：$model', important: true);
+      return true;
+    } catch (e) {
+      _log('从文件夹导入数字人模型失败：$e');
+      return false;
+    }
+  }
+
   DateTime? _mouthClock;
 
   /// 播放音频时启动嘴型驱动（有包络用包络，没有就用程序化动画）

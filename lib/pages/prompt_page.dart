@@ -102,6 +102,8 @@ class _PromptPageState extends State<PromptPage> {
             onSelected: (value) async {
               if (value == 'import') {
                 await _importModel();
+              } else if (value == 'importDir') {
+                await _importModelFromFolder();
               } else if (value == 'models') {
                 await _switchModel();
               } else if (value == 'demo') {
@@ -110,6 +112,7 @@ class _PromptPageState extends State<PromptPage> {
             },
             itemBuilder: (context) => const <PopupMenuEntry<String>>[
               PopupMenuItem<String>(value: 'import', child: Text('导入模型包（zip）')),
+              PopupMenuItem<String>(value: 'importDir', child: Text('从文件夹导入模型')),
               PopupMenuItem<String>(value: 'models', child: Text('切换已有模型')),
               PopupMenuItem<String>(value: 'demo', child: Text('演示模式（全屏）')),
             ],
@@ -266,6 +269,17 @@ class _PromptPageState extends State<PromptPage> {
     }
   }
 
+  /// 从文件夹导入模型
+  Future<void> _importModelFromFolder() async {
+    final ok = await _link.importAvatarModelFromFolder();
+    if (!mounted) return;
+    if (ok) {
+      AppToast.show(context, '模型已从文件夹导入', icon: Icons.check_circle_outline);
+    } else {
+      AppToast.error(context, '导入失败，文件夹里没有 .model3.json');
+    }
+  }
+
   /// 切换已有模型
   Future<void> _switchModel() async {
     final models = await _link.availableAvatarModels();
@@ -343,7 +357,8 @@ class _PromptPageState extends State<PromptPage> {
                   side: const BorderSide(color: Color(0x33D03B3B)),
                 ),
               ),
-              if (!_link.accessibilityEnabled) ...<Widget>[
+              // 只有「拨号端」才需要通话检测，未开启拨号端时不显示这个按钮
+              if (_link.autoTrigger && !_link.accessibilityEnabled) ...<Widget>[
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () async {

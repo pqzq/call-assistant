@@ -431,6 +431,8 @@ class RecordCard extends StatelessWidget {
     switch (kind) {
       case PhoneKind.mobile:
         return Icons.phone_iphone;
+      case PhoneKind.service:
+        return Icons.support_agent;
       case PhoneKind.landlineWithAreaCode:
       case PhoneKind.landlineLocal:
         return Icons.phone_in_talk_outlined;

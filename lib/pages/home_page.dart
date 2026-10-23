@@ -88,7 +88,8 @@ class _HomePageState extends State<HomePage> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const <String>['xlsx', 'xls'],
+        // csv / txt 一并放行：ExcelService 会先尝试按分隔文本解析
+        allowedExtensions: const <String>['xlsx', 'xls', 'csv', 'txt'],
         allowMultiple: false,
         withData: true,
       );
@@ -103,7 +104,7 @@ class _HomePageState extends State<HomePage> {
         throw const ExcelParseException('读取不到文件内容，请换一个文件试试');
       }
 
-      final sheets = ExcelService.parse(bytes);
+      final sheets = ExcelService.parse(bytes, fileName: picked.name);
       final index = _pickBestSheetIndex(sheets);
       if (!mounted) return;
       setState(() {
@@ -306,7 +307,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           SizedBox(height: 10),
-          _TipLine(text: '仅支持 .xlsx（Excel 2007 及以上），.xls / .csv 请先另存为 .xlsx'),
+          _TipLine(text: '支持 .xlsx / .xls / .csv / .txt（csv、txt 需为逗号或制表符分隔）'),
           _TipLine(text: '表头含「手机 / 电话 / 手机号码 / phone」等关键词会被优先识别'),
           _TipLine(text: '号码支持 13800138000、138 0013 8000、+86 13800138000 等写法'),
           _TipLine(text: '跳转的是系统拨号页，号码已填好，点拨打键即可呼出'),
@@ -316,37 +317,51 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDashboard(ImportedSheet sheet) {
-    return Stack(
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: <Widget>[
-        ListView(
-          // 底部留白：给悬浮玻璃按钮让位
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
+        // 双列多行：来源卡 / 统计卡 并排
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            _buildSourceCard(sheet),
-            const SizedBox(height: 12),
-            _buildPhoneColumnCard(sheet),
-            const SizedBox(height: 12),
-            _buildAreaCodeCard(),
-            const SizedBox(height: 12),
-            _buildStatsCard(sheet),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: _importExcel,
-              icon: const Icon(Icons.upload_file),
-              label: const Text('导入其他表格'),
-            ),
+            Expanded(child: _buildSourceCard(sheet)),
+            const SizedBox(width: 10),
+            Expanded(child: _buildStatsCard(sheet)),
           ],
         ),
-        // 悬浮液态玻璃主按钮
-        Positioned(
-          left: 24,
-          right: 24,
-          bottom: 18,
-          child: GlassActionButton(
-            onPressed: _openList,
-            icon: Icons.call,
-            label: '开始拨号',
-          ),
+        const SizedBox(height: 10),
+        // 固话区号独占一行（内部 chip 才能排开，不会把行撑得过高）
+        _buildAreaCodeCard(),
+        const SizedBox(height: 10),
+        _buildPhoneColumnCard(sheet),
+        const SizedBox(height: 14),
+        // 「导入其他表格」与「开始拨号」放一起
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _importExcel,
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('导入其他表格', style: TextStyle(fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(46),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _openList,
+                icon: const Icon(Icons.call, size: 18),
+                label: const Text('开始拨号', style: TextStyle(fontSize: 13)),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(46),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -584,11 +599,24 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildStatsCard(ImportedSheet sheet) {
     return _card(
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _Stat(label: '数据行', value: '${sheet.rowCount}'),
-          _Stat(label: '总列数', value: '${sheet.columnCount}'),
-          _Stat(label: '已呼叫', value: '${_called.length}'),
+          const Row(
+            children: <Widget>[
+              Icon(Icons.bar_chart_outlined, size: 18, color: Color(0xFF2F6BFF)),
+              SizedBox(width: 8),
+              Text('统计', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              _Stat(label: '数据行', value: '${sheet.rowCount}'),
+              _Stat(label: '总列数', value: '${sheet.columnCount}'),
+              _Stat(label: '已呼叫', value: '${_called.length}'),
+            ],
+          ),
         ],
       ),
     );

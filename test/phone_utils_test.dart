@@ -44,6 +44,15 @@ void main() {
       expect(PhoneUtils.looksLikePhone('1'), isFalse);
       expect(PhoneUtils.looksLikePhone('2024'), isFalse);
     });
+
+    test('运营商客服号（5~6 位）算号码', () {
+      expect(PhoneUtils.looksLikePhone('10086'), isTrue);
+      expect(PhoneUtils.looksLikePhone('10010'), isTrue);
+      expect(PhoneUtils.looksLikePhone('10000'), isTrue);
+      expect(PhoneUtils.looksLikePhone('12345'), isTrue);
+      expect(PhoneUtils.kindOf('10086'), PhoneKind.service);
+      expect(PhoneUtils.dialTarget('10086'), '10086');
+    });
   });
 
   group('PhoneUtils.hasPhoneKeyword', () {

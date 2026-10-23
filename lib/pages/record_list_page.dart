@@ -9,6 +9,7 @@ import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
 import '../widgets/app_toast.dart';
+import 'prompt_page.dart';
 
 class RecordListPage extends StatefulWidget {
   const RecordListPage({
@@ -239,6 +240,16 @@ class _RecordListPageState extends State<RecordListPage> {
       appBar: AppBar(
         title: Text(sheet.name.isEmpty ? '号码列表' : sheet.name),
         actions: <Widget>[
+          // 双机联动快捷跳转（放在排版按钮左边）
+          IconButton(
+            tooltip: '双机联动播报',
+            icon: const Icon(Icons.record_voice_over_outlined),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const PromptPage()),
+              );
+            },
+          ),
           IconButton(
             tooltip: _compact ? '切换为详细模式' : '切换为紧凑模式',
             icon: Icon(_compact ? Icons.view_agenda_outlined : Icons.density_small),
@@ -460,6 +471,8 @@ class _NumberPickerSheet extends StatelessWidget {
     switch (kind) {
       case PhoneKind.mobile:
         return Icons.phone_iphone;
+      case PhoneKind.service:
+        return Icons.support_agent;
       case PhoneKind.landlineWithAreaCode:
       case PhoneKind.landlineLocal:
         return Icons.phone_in_talk_outlined;
