@@ -248,4 +248,52 @@ void main() {
       final parsed = ExcelService.parse(ExcelService.exportToXlsx(sheet), fileName: 'a.xlsx').first;
       expect(parsed.statusAt(2), '客户说下周一再联系');
     });
+  });
+  group('号码列识别不被非号码列干扰', () {
+    test('「编号」列（10001/10002 这类）不会被当成号码列', () {
+      final excel = Excel.createExcel();
+      final sheet = excel['名单'];
+      sheet.appendRow(<CellValue?>[
+        TextCellValue('姓名'),
+        TextCellValue('编号'),
+        TextCellValue('手机号码'),
+      ]);
+      for (var i = 0; i < 6; i++) {
+        sheet.appendRow(<CellValue?>[
+          TextCellValue('客户$i'),
+          TextCellValue('${10001 + i}'),
+          TextCellValue('1380013800$i'),
+        ]);
+      }
+      final parsed = ExcelService.parse(Uint8List.fromList(excel.encode()!), fileName: 'a.xlsx').first;
+      // 只选中手机号码列，编号列不能被选中
+      expect(parsed.phoneColumns, <int>[2]);
+      expect(parsed.phoneColumns.contains(1), isFalse);
+    });
+
+    test('「客服电话」列里的 10086 可以被识别', () {
+      final excel = Excel.createExcel();
+      final sheet = excel['名单'];
+      sheet.appendRow(<CellValue?>[
+        TextCellValue('姓名'),
+        TextCellValue('客服电话'),
+      ]);
+      sheet.appendRow(<CellValue?>[TextCellValue('甲'), TextCellValue('10086')]);
+      sheet.appendRow(<CellValue?>[TextCellValue('乙'), TextCellValue('13800138000')]);
+      final parsed = ExcelService.parse(Uint8List.fromList(excel.encode()!), fileName: 'a.xlsx').first;
+      expect(parsed.phoneColumns, <int>[1]);
+    });
+
+    test('只有服务号、没有标准号码的列不会被选中', () {
+      final excel = Excel.createExcel();
+      final sheet = excel['名单'];
+      sheet.appendRow(<CellValue?>[
+        TextCellValue('姓名'),
+        TextCellValue('联系电话'),
+      ]);
+      sheet.appendRow(<CellValue?>[TextCellValue('甲'), TextCellValue('10086')]);
+      sheet.appendRow(<CellValue?>[TextCellValue('乙'), TextCellValue('10010')]);
+      final parsed = ExcelService.parse(Uint8List.fromList(excel.encode()!), fileName: 'a.xlsx').first;
+      expect(parsed.phoneColumns, isEmpty);
+    });
   });}

@@ -207,7 +207,7 @@ class RecordCard extends StatelessWidget {
           // 长按查看该行完整信息（短按仍是拨号）
           onLongPress: onMoreTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
+            padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[

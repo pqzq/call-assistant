@@ -307,19 +307,28 @@ class ExcelService {
     final candidates = <PhoneCandidate>[];
     for (var c = 0; c < width; c++) {
       final header = c < headers.length ? headers[c] : '';
-      var matched = 0;
+      final byHeader = PhoneUtils.hasPhoneKeyword(header);
+      var matched = 0; // 标准格式号码（手机/固话/国际）
+      var serviceMatched = 0; // 5~6 位服务号（10086 等）
       var total = 0;
       for (final row in scan) {
         final value = c < row.length ? row[c].trim() : '';
         if (value.isEmpty) continue;
         total++;
-        if (PhoneUtils.looksLikePhone(value)) matched++;
+        if (PhoneUtils.looksLikePhone(value)) {
+          matched++;
+        } else if (PhoneUtils.looksLikeServiceNumber(value)) {
+          serviceMatched++;
+        }
       }
+      // 服务号只在「表头命中电话关键词 且 该列还有标准格式号码」时才采信，
+      // 否则「编号 10001 / 10002」这类列会被误当成号码列
+      final effectiveMatched = (byHeader && matched > 0) ? matched + serviceMatched : matched;
       candidates.add(PhoneCandidate(
         column: c,
-        matched: matched,
+        matched: effectiveMatched,
         total: total,
-        byHeader: PhoneUtils.hasPhoneKeyword(header),
+        byHeader: byHeader,
       ));
     }
     candidates.sort((a, b) => b.score.compareTo(a.score));

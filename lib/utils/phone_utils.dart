@@ -153,13 +153,27 @@ class PhoneUtils {
     return text;
   }
 
+  /// 判断是不是 5~6 位服务号（10086 / 10010 / 10000 / 12345 等）。
+  ///
+  /// 单独拆出来是因为这类数字太"像"编号：只有当**列头命中电话关键词**
+  /// 且该列还有标准格式号码时，识别逻辑才采信它（见 ExcelService._detectCandidates）。
+  static bool looksLikeServiceNumber(String? raw) {
+    final normalized = normalize(raw);
+    if (normalized == null) return false;
+    if (normalized.startsWith('+')) return false;
+    return _serviceNumber.hasMatch(normalized);
+  }
+
   /// 判断一段文本是否像电话号码（用于自动识别手机号列）。
+  ///
+  /// 注意：5~6 位服务号（10086 等）**不算**在这里面 —— 它们和「编号 10001」
+  /// 长得一样，混进来会让编号列被误当成号码列。服务号由
+  /// `looksLikeServiceNumber` 单独判断，并由列级规则决定是否采信。
   static bool looksLikePhone(String? raw) {
     final normalized = normalize(raw);
     if (normalized == null) return false;
     final digits = normalized.startsWith('+') ? normalized.substring(1) : normalized;
     if (_cnMobile.hasMatch(digits)) return true;
-    if (_serviceNumber.hasMatch(digits)) return true;
     if (_cnLandlineWithAreaCode.hasMatch(digits)) return true;
     if (_localLandline.hasMatch(digits)) return true;
     return _generic.hasMatch(digits);

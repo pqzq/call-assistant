@@ -489,14 +489,17 @@ class _RecordListPageState extends State<RecordListPage> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetContext).size.height * 0.85,
-          ),
-          child: ListView(
-            // 不要 shrinkWrap：内容超高时要在 ConstrainedBox 里滚动，
-            // 否则 Wrap 换行出来的第二行（自定义填写/清空）会被裁掉还滚不动
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        // 整体下沉：顶部留出更多空间，弹窗从屏幕更下方升起
+        child: Padding(
+          padding: EdgeInsets.only(top: MediaQuery.of(sheetContext).size.height * 0.28),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.72,
+            ),
+            child: ListView(
+              // 不要 shrinkWrap：内容超高时要在 ConstrainedBox 里滚动，
+              // 否则 Wrap 换行出来的第二行（自定义填写/清空）会被裁掉还滚不动
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             children: <Widget>[
               Text(
                 name.isEmpty ? '第 ${row + 1} 行' : name,
@@ -598,6 +601,7 @@ class _RecordListPageState extends State<RecordListPage> {
                 label: const Text('拨打该行号码'),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -672,13 +676,14 @@ class _RecordListPageState extends State<RecordListPage> {
     if (_compact) {
       // 双列网格：一次能看到两倍的记录
       return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
+        // 左右留白收紧 -> 每列更宽，号码不容易换行
+        padding: const EdgeInsets.fromLTRB(4, 2, 4, 24),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          mainAxisSpacing: 6,
-          crossAxisSpacing: 6,
+          mainAxisSpacing: 5,
+          crossAxisSpacing: 4,
           // 高度只够「姓名 + 号码 + 拨打情况」展示，尽量一屏多看几行
-          mainAxisExtent: 92,
+          mainAxisExtent: 84,
         ),
         itemCount: rows.length,
         itemBuilder: buildItem,
