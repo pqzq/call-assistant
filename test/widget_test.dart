@@ -18,6 +18,9 @@ Future<void> _loadDemo(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// 名单列表容器：紧凑模式是 GridView，详细模式是 ListView
+Finder _listFinder() => find.byWidgetPredicate((w) => w is ListView || w is GridView);
+
 Future<void> _scrollTo(WidgetTester tester, Finder target) async {
   if (target.evaluate().isEmpty) {
     await tester.scrollUntilVisible(target, 120, scrollable: find.byType(Scrollable).first);
@@ -112,7 +115,7 @@ void main() {
     expect(find.text('已补区号 021'), findsAtLeastNWidgets(2));
 
     // 滚到底：已自带区号的号码保持原样
-    await tester.drag(find.byType(ListView).last, const Offset(0, -900));
+    await tester.drag(_listFinder().last, const Offset(0, -900));
     await tester.pumpAndSettle();
     expect(find.text('021-66668889'), findsOneWidget);
     expect(find.text('0571-88889900'), findsOneWidget);

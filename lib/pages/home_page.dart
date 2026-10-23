@@ -317,51 +317,60 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDashboard(ImportedSheet sheet) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+    return Stack(
       children: <Widget>[
-        // 双列多行：来源卡 / 统计卡 并排
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        ListView(
+          // 底部留白：给悬浮玻璃按钮让位
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
           children: <Widget>[
-            Expanded(child: _buildSourceCard(sheet)),
-            const SizedBox(width: 10),
-            Expanded(child: _buildStatsCard(sheet)),
+            // 工作表 / 统计：两卡顶部对齐（标题行齐平）
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(child: _buildSourceCard(sheet)),
+                const SizedBox(width: 10),
+                Expanded(child: _buildStatsCard(sheet)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // 电话号码列放在固话区号上面
+            _buildPhoneColumnCard(sheet),
+            const SizedBox(height: 10),
+            _buildAreaCodeCard(),
           ],
         ),
-        const SizedBox(height: 10),
-        // 固话区号独占一行（内部 chip 才能排开，不会把行撑得过高）
-        _buildAreaCodeCard(),
-        const SizedBox(height: 10),
-        _buildPhoneColumnCard(sheet),
-        const SizedBox(height: 14),
-        // 「导入其他表格」与「开始拨号」放一起
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _busy ? null : _importExcel,
-                icon: const Icon(Icons.upload_file, size: 18),
-                label: const Text('导入其他表格', style: TextStyle(fontSize: 13)),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(46),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+        // 悬浮的液态玻璃操作条
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 16,
+          child: GlassSurface(
+            borderRadius: 28,
+            blur: 22,
+            opacity: 0.86,
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: _GlassAction(
+                    icon: Icons.upload_file,
+                    label: '导入其他表格',
+                    primary: false,
+                    onTap: _busy ? null : _importExcel,
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _openList,
-                icon: const Icon(Icons.call, size: 18),
-                label: const Text('开始拨号', style: TextStyle(fontSize: 13)),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(46),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _GlassAction(
+                    icon: Icons.call,
+                    label: '开始拨号',
+                    primary: true,
+                    onTap: _openList,
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ],
     );
@@ -669,6 +678,66 @@ class _TipLine extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 悬浮玻璃条里的操作按钮
+class _GlassAction extends StatelessWidget {
+  const _GlassAction({
+    required this.icon,
+    required this.label,
+    required this.primary,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// 主操作（实心品牌色），次操作为描边
+  final bool primary;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final foreground = primary ? Colors.white : const Color(0xFF2F6BFF);
+    return Material(
+      color: primary ? const Color(0xFF2F6BFF) : Colors.white.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: primary
+                ? null
+                : Border.all(color: const Color(0x332F6BFF), width: 1),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(
+                icon,
+                size: 18,
+                color: enabled ? foreground : foreground.withValues(alpha: 0.45),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? foreground : foreground.withValues(alpha: 0.45),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -16,6 +16,7 @@ class RecordCard extends StatelessWidget {
     required this.onPhoneTap,
     this.highlighted = false,
     this.compact = false,
+    this.narrow = false,
   });
 
   /// 在表格中的行号（从 1 开始）
@@ -37,6 +38,9 @@ class RecordCard extends StatelessWidget {
   /// 紧凑模式：一行信息尽量塞进一行，行高约 50（标准模式约 120）
   final bool compact;
 
+  /// 窄卡片（双列网格用）：号码改成竖排，避免窄卡片里换行太多
+  final bool narrow;
+
   /// 点击卡片整体（号码多于一个时会弹出选择器）
   final VoidCallback onTap;
 
@@ -51,7 +55,7 @@ class RecordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (compact) return _buildCompact(context);
+    if (compact) return _buildCompact(context, narrow: narrow);
     final theme = Theme.of(context);
     final hasPhone = phones.isNotEmpty;
 
@@ -156,7 +160,7 @@ class RecordCard extends StatelessWidget {
   }
 
   /// 紧凑模式：整行压到约 50 高，一屏能多看一倍的记录
-  Widget _buildCompact(BuildContext context) {
+  Widget _buildCompact(BuildContext context, {bool narrow = false}) {
     final theme = Theme.of(context);
     final hasPhone = phones.isNotEmpty;
     final borderColor = highlighted
@@ -226,7 +230,7 @@ class RecordCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 1),
-                      _compactPhones(),
+                      _compactPhones(narrow: narrow),
                       _compactSummary(),
                     ],
                   ),
@@ -265,7 +269,8 @@ class RecordCard extends StatelessWidget {
   }
 
   /// 紧凑模式：号码横排显示，可直接点击拨打
-  Widget _compactPhones() {
+  /// narrow = true（双列网格）时改为竖排，避免窄卡片里换行太多
+  Widget _compactPhones({bool narrow = false}) {
     if (phones.isEmpty) {
       return const Text(
         '无号码',
@@ -273,6 +278,64 @@ class RecordCard extends StatelessWidget {
       );
     }
     final visible = phones.take(2).toList();
+
+    Widget numberText(PhoneEntry phone) => Text(
+          phone.display,
+          style: TextStyle(
+            fontSize: 13,
+            height: 1.1,
+            fontWeight: FontWeight.w600,
+            color: called ? Colors.black38 : const Color(0xFF1B62F0),
+            decoration: called ? TextDecoration.lineThrough : null,
+            decorationColor: Colors.black26,
+          ),
+        );
+
+    Widget labelText(PhoneEntry phone) => Text(
+          phone.label,
+          style: const TextStyle(fontSize: 9.5, color: Colors.black38),
+        );
+
+    if (narrow) {
+      // 窄卡：每个号码两行（标签在上、号码在下）
+      // 号码用 FittedBox 自动缩放，避免长号码被挤成两行
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (final phone in visible)
+            GestureDetector(
+              onTap: () => onPhoneTap(phone),
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  labelText(phone),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: numberText(phone),
+                    ),
+                  ),
+                  if (phone.note != null && phone.note!.isNotEmpty)
+                    Text(
+                      phone.note!,
+                      style: const TextStyle(fontSize: 9, color: Color(0xFF17A05A)),
+                    ),
+                ],
+              ),
+            ),
+          if (phones.length > visible.length)
+            Text(
+              '+${phones.length - visible.length} 个号码',
+              style: const TextStyle(fontSize: 10, color: Colors.black38),
+            ),
+        ],
+      );
+    }
+
     return Wrap(
       spacing: 8,
       runSpacing: 0,
@@ -285,22 +348,9 @@ class RecordCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(
-                  phone.label,
-                  style: const TextStyle(fontSize: 9.5, color: Colors.black38),
-                ),
+                labelText(phone),
                 const SizedBox(width: 3),
-                Text(
-                  phone.display,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.1,
-                    fontWeight: FontWeight.w600,
-                    color: called ? Colors.black38 : const Color(0xFF1B62F0),
-                    decoration: called ? TextDecoration.lineThrough : null,
-                    decorationColor: Colors.black26,
-                  ),
-                ),
+                numberText(phone),
                 if (phone.note != null && phone.note!.isNotEmpty) ...<Widget>[
                   const SizedBox(width: 4),
                   Text(

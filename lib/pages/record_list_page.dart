@@ -355,38 +355,63 @@ class _RecordListPageState extends State<RecordListPage> {
                         title: '没有匹配的记录',
                         message: '换个关键词试试，或检查表格内容是否为空。',
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(top: 4, bottom: 24),
-                        itemCount: rows.length,
-                        itemBuilder: (context, index) {
-                          final row = rows[index];
-                          final fields = _fieldsOf(row);
-                          final titleIndex = _titleIndexOf(fields);
-                          final details = <CellField>[
-                            for (var i = 0; i < fields.length; i++)
-                              if (i != titleIndex) fields[i],
-                          ];
-                          final phones = sheet.phonesAt(row, widget.areaCode);
-                          final anyCalled = phones.any(
-                            (p) => p.dialTarget != null && _called.contains(p.dialTarget),
-                          );
-                          return RecordCard(
-                            key: ValueKey<String>('row_$row'),
-                            rowNumber: row + 1,
-                            title: _titleText(titleIndex >= 0 ? fields[titleIndex] : null, row),
-                            phones: phones,
-                            fields: details,
-                            called: anyCalled,
-                            highlighted: _highlightRow == row,
-                            compact: _compact,
-                            onTap: () => _chooseAndDial(phones, row),
-                            onPhoneTap: (entry) => _dialEntry(entry, row),
-                          );
-                        },
-                      ),
+                    : _buildList(rows),
           ),
         ],
       ),
+    );
+  }
+
+  /// 紧凑模式用两列网格（一次能看到更多记录），详细模式保持单列
+  Widget _buildList(List<int> rows) {
+    final sheet = widget.sheet;
+
+    Widget buildItem(BuildContext context, int index) {
+      final row = rows[index];
+      final fields = _fieldsOf(row);
+      final titleIndex = _titleIndexOf(fields);
+      final details = <CellField>[
+        for (var i = 0; i < fields.length; i++)
+          if (i != titleIndex) fields[i],
+      ];
+      final phones = sheet.phonesAt(row, widget.areaCode);
+      final anyCalled = phones.any(
+        (p) => p.dialTarget != null && _called.contains(p.dialTarget),
+      );
+      return RecordCard(
+        key: ValueKey<String>('row_$row'),
+        rowNumber: row + 1,
+        title: _titleText(titleIndex >= 0 ? fields[titleIndex] : null, row),
+        phones: phones,
+        fields: details,
+        called: anyCalled,
+        highlighted: _highlightRow == row,
+        compact: _compact,
+        narrow: _compact,
+        onTap: () => _chooseAndDial(phones, row),
+        onPhoneTap: (entry) => _dialEntry(entry, row),
+      );
+    }
+
+    if (_compact) {
+      // 双列网格：一次能看到两倍的记录
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+          mainAxisExtent: 122,
+        ),
+        itemCount: rows.length,
+        itemBuilder: buildItem,
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 4, bottom: 24),
+      itemCount: rows.length,
+      itemBuilder: buildItem,
     );
   }
 }
