@@ -23,17 +23,20 @@ class Live2dService {
   HttpServer? _server;
   Directory? _webRoot;
   String? _baseUrl;
-  bool _preparing = false;
+  /// 正在进行的启动流程（并发调用共享，避免第二个调用直接拿到 null）
+  Future<String?>? _preparingFuture;
 
   bool get isRunning => _server != null;
   String? get baseUrl => _baseUrl;
   Directory? get webRoot => _webRoot;
 
   /// 准备资源目录 + 启动本地服务，返回 baseUrl
-  Future<String?> ensureStarted() async {
-    if (_baseUrl != null) return _baseUrl;
-    if (_preparing) return null;
-    _preparing = true;
+  Future<String?> ensureStarted() {
+    if (_baseUrl != null) return Future<String?>.value(_baseUrl);
+    return _preparingFuture ??= _startService();
+  }
+
+  Future<String?> _startService() async {
     try {
       await _prepareWebRoot();
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -44,7 +47,7 @@ class Live2dService {
     } catch (_) {
       return null;
     } finally {
-      _preparing = false;
+      _preparingFuture = null;
     }
   }
 

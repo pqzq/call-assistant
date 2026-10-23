@@ -90,8 +90,11 @@ class PromptLink extends ChangeNotifier {
   String _deviceName = '';
   String _script = defaultScript;
   double _rate = 0.5;
-  bool _autoTrigger = true;
-  bool _asPlayer = true;
+  bool _autoTrigger = false;
+
+  /// 是否已订阅通话状态（避免重复订阅）
+  bool _callStateSubscribed = false;
+  bool _asPlayer = false;
   bool _ttsReady = false;
   bool _initialized = false;
   bool _avatarEnabled = false;
@@ -298,8 +301,8 @@ class PromptLink extends ChangeNotifier {
     }
     _deviceName = name;
     _script = prefs.getString(_kScript) ?? defaultScript;
-    _autoTrigger = prefs.getBool(_kAutoTrigger) ?? true;
-    _asPlayer = prefs.getBool(_kAsPlayer) ?? true;
+    _autoTrigger = prefs.getBool(_kAutoTrigger) ?? false;
+    _asPlayer = prefs.getBool(_kAsPlayer) ?? false;
     _rate = prefs.getDouble(_kRate) ?? 0.5;
     final savedAudio = prefs.getString(_kAudioPath);
     if (savedAudio != null && File(savedAudio).existsSync()) _audioPath = savedAudio;
@@ -320,8 +323,27 @@ class PromptLink extends ChangeNotifier {
     await _initTts();
     await refreshAccessibility();
     await refreshTtsModel();
-    await _startLink();
-    CallStateWatcher.stream().listen(_onCallState);
+
+    // 按上次保存的配置决定要初始化哪些服务：
+    // - 任一角色开启 -> 需要局域网通道（拨号端广播 / 播放端接收）
+    // - 拨号端开启 -> 还需要订阅通话状态（无障碍检测接通）
+    // - 数字人开启 -> 需要释放 Live2D 资源并启动本地服务，否则 WebView 会拿到 404
+    if (_autoTrigger || _asPlayer) {
+      await _startLink();
+    }
+    if (_autoTrigger) {
+      CallStateWatcher.stream().listen(_onCallState);
+      _callStateSubscribed = true;
+      _log('已按配置启动拨号端服务（等待接通检测）');
+    }
+    if (_asPlayer) {
+      _log('已按配置启动播放端服务（等待播报指令）');
+    }
+    if (_avatarEnabled) {
+      _log('正在初始化数字人资源…');
+      await Live2dService.instance.ensureStarted();
+      _log('数字人资源已就绪');
+    }
   }
 
   String _newDeviceId() {
@@ -697,17 +719,38 @@ class PromptLink extends ChangeNotifier {
     _autoTrigger = value;
     if (!value) _armed = false;
     notifyListeners();
-    _announce();
+    // 固化配置 + 按需启停服务
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kAutoTrigger, value);
+    await _syncServices();
+    _announce();
+    _log(value ? '已开启拨号端（接通后自动通知播放端）' : '已关闭拨号端');
   }
 
   Future<void> setAsPlayer(bool value) async {
     _asPlayer = value;
     notifyListeners();
-    _announce();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kAsPlayer, value);
+    await _syncServices();
+    _announce();
+    _log(value ? '已开启播放端（收到指令后朗读开场白）' : '已关闭播放端');
+  }
+
+  /// 根据当前角色配置启停后台服务（局域网通道 / 通话状态监听）
+  Future<void> _syncServices() async {
+    final needLink = _autoTrigger || _asPlayer;
+    if (needLink && !_link.isRunning) {
+      await _startLink();
+    }
+    if (_autoTrigger && !_callStateSubscribed) {
+      CallStateWatcher.stream().listen(_onCallState);
+      _callStateSubscribed = true;
+    }
+    if (!_autoTrigger && _callStateSubscribed) {
+      _callStateSubscribed = false;
+      _armed = false;
+    }
   }
 
   Future<void> setDeviceName(String value) async {

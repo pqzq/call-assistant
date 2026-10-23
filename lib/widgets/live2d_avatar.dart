@@ -173,8 +173,10 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       height: widget.height,
       width: double.infinity,
       decoration: BoxDecoration(
-        // 加载中用半透明白，避免浮窗上出现一块实心色块
-        color: isError ? const Color(0xFFFDECEC) : Colors.white.withValues(alpha: 0.5),
+        // 加载/失败都用半透明，避免浮窗上出现一块实心色块
+        color: isError
+            ? const Color(0xFFFDECEC).withValues(alpha: 0.75)
+            : Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(14),
       ),
       alignment: Alignment.center,

@@ -19,11 +19,11 @@ class FloatingAvatarHost extends StatefulWidget {
   static const double barWidth = 36;
 
   /// 角色组（角色 + 操作栏）占屏幕宽度的比例
-  static const double groupRatio = 0.5;
+  static const double groupRatio = 0.8;
 
   /// 角色组宽度上下限
-  static const double groupMinWidth = 200;
-  static const double groupMaxWidth = 320;
+  static const double groupMinWidth = 240;
+  static const double groupMaxWidth = 460;
 
   /// 贴边时（缩小）尺寸
   static const double dockedWidth = 116;
