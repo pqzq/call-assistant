@@ -6,7 +6,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/active_lead.dart';
@@ -340,7 +339,25 @@ class PromptLink extends ChangeNotifier {
     }
     _rate = prefs.getDouble(_kRate) ?? 0.5;
     final savedAudio = prefs.getString(_kAudioPath);
-    if (savedAudio != null && File(savedAudio).existsSync()) _audioPath = savedAudio;
+    if (savedAudio != null && File(savedAudio).existsSync()) {
+      // 旧版本存的是带时间戳的文件，迁移到固定的开场白文件后删掉旧的
+      final fixed = await TtsSynthesizer.openingAudioFile();
+      if (savedAudio != fixed.path) {
+        try {
+          await File(savedAudio).copy(fixed.path);
+          final env = File('$savedAudio.env.json');
+          if (env.existsSync()) await env.copy('${fixed.path}.env.json');
+          await File(savedAudio).delete();
+          if (env.existsSync()) await env.delete();
+          _audioPath = fixed.path;
+          await prefs.setString(_kAudioPath, fixed.path);
+        } catch (_) {
+          _audioPath = savedAudio;
+        }
+      } else {
+        _audioPath = savedAudio;
+      }
+    }
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
     _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
@@ -488,11 +505,38 @@ class PromptLink extends ChangeNotifier {
   }
 
   /// 把指定音频文件设为播报音频
+  ///
+  /// 开场白音频**固定为一个文件**（documents/opening_audio.wav）：
+  /// - 端侧合成直接写到它
+  /// - 导入外部音频时复制过去覆盖
+  /// 这里再做一次「搬移」，兼容旧版本留下的带时间戳的文件。
   Future<void> useAudioFile(String path) async {
-    _audioPath = path;
-    _envelope = await TtsSynthesizer.instance.loadEnvelope(path);
+    var target = path;
+    final fixed = await TtsSynthesizer.openingAudioFile();
+    if (path != fixed.path && File(path).existsSync()) {
+      try {
+        await File(path).copy(fixed.path);
+        // 包络文件一起搬（嘴型数据）
+        final env = File('$path.env.json');
+        if (env.existsSync()) {
+          await env.copy('${fixed.path}.env.json');
+        }
+        target = fixed.path;
+        // 旧文件删掉，避免残留
+        try {
+          await File(path).delete();
+          if (env.existsSync()) await env.delete();
+        } catch (_) {
+          // 忽略
+        }
+      } catch (_) {
+        target = path;
+      }
+    }
+    _audioPath = target;
+    _envelope = await TtsSynthesizer.instance.loadEnvelope(target);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kAudioPath, path);
+    await prefs.setString(_kAudioPath, target);
     notifyListeners();
   }
 
@@ -771,10 +815,9 @@ class PromptLink extends ChangeNotifier {
         _log('无法读取所选文件');
         return false;
       }
-      final dir = await getApplicationDocumentsDirectory();
-      final dot = srcPath.lastIndexOf('.');
-      final ext = dot >= 0 ? srcPath.substring(dot) : '.mp3';
-      final target = File('${dir.path}/opening_${DateTime.now().millisecondsSinceEpoch}$ext');
+      // 固定存成同一个文件（覆盖替换），不再每次生成带时间戳的新文件
+      final target = await TtsSynthesizer.openingAudioFile();
+      await target.parent.create(recursive: true);
       await File(srcPath).copy(target.path);
       _audioPath = target.path;
       final prefs = await SharedPreferences.getInstance();
@@ -792,7 +835,12 @@ class PromptLink extends ChangeNotifier {
     final path = _audioPath;
     _audioPath = null;
     try {
-      if (path != null && File(path).existsSync()) await File(path).delete();
+      if (path != null && File(path).existsSync()) {
+        await File(path).delete();
+        // 包络文件一起清掉
+        final env = File('$path.env.json');
+        if (env.existsSync()) await env.delete();
+      }
     } catch (_) {
       // 忽略
     }

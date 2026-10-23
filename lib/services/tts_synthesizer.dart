@@ -100,6 +100,15 @@ class TtsSynthesizer {
   }
 
   /// 合成语音，返回 wav 路径 + 振幅包络（用于驱动 Live2D 嘴型）
+  /// 开场白音频的固定文件名（每次生成都覆盖同一个文件）
+  static const String openingAudioFileName = 'opening_audio.wav';
+
+  /// 开场白音频的固定路径（应用项目目录 documents 下）
+  static Future<File> openingAudioFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$openingAudioFileName');
+  }
+
   Future<SynthesisResult?> synthesize({required String text, double speed = 1.0}) async {
     final content = text.trim();
     if (content.isEmpty) return null;
@@ -110,16 +119,38 @@ class TtsSynthesizer {
     final audio = tts.generate(text: content, sid: 0, speed: speed);
     if (audio.samples.isEmpty || audio.sampleRate <= 0) return null;
 
-    final dir = await getApplicationDocumentsDirectory();
-    final stamp = DateTime.now().millisecondsSinceEpoch;
-    final file = File('${dir.path}/opening_tts_$stamp.wav');
+    // 固定写同一个文件（覆盖），不再每次生成带时间戳的新文件
+    final file = await openingAudioFile();
+    await file.parent.create(recursive: true);
     await file.writeAsBytes(_encodeWav(audio.samples, audio.sampleRate));
 
     // 每 50ms 一个 RMS 值，归一化到 0~1，供播放时驱动嘴型
     final envelope = _buildEnvelope(audio.samples, audio.sampleRate, 50);
     await File('${file.path}.env.json').writeAsString(_encodeEnvelope(envelope, audio.sampleRate));
 
+    await _cleanOldOpeningFiles();
+
     return SynthesisResult(wavPath: file.path, envelope: envelope, stepMs: 50);
+  }
+
+  /// 清理历史遗留的带时间戳的开场白文件
+  Future<void> _cleanOldOpeningFiles() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        final name = entity.path.split(Platform.pathSeparator).last;
+        if (name.startsWith('opening_tts_') && name.endsWith('.wav')) {
+          try {
+            entity.deleteSync();
+          } catch (_) {
+            // 忽略
+          }
+        }
+      }
+    } catch (_) {
+      // 忽略
+    }
   }
 
   /// 读取 wav 旁边的包络文件（重启后仍可用）

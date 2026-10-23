@@ -371,9 +371,11 @@ flutter build windows --release        # 产物在 build/windows/x64/runner/Rele
 
 **为什么改**：Windows 的 WebView2 是**原生控件**（hybrid composition），浮在 Flutter 内容之上时会出现一串问题 —— 透明背景要等控件创建后设置才生效、resize 后背景色会被重置、Flutter 的裁剪对原生控件无效导致贴边露灰条。改成固定分栏后，数字人就是普通布局的一部分，行为稳定。
 
-- 左栏宽度 360px（`DesktopSplitView.panelWidth`），顶部是标题 + 开关
+- 左栏宽度固定为**窗口宽度的 2/5**（DesktopSplitView.panelRatio，限制在 260~640px）
 - 中间是 Live2D 角色（白底卡片内渲染，**没有裁剪/透明问题**）
-- 下面是提词气泡（客户信息 + 话术提词）+ 上一步/下一步
+- 下面是提词气泡（客户信息 + 话术提词，最大高度为**窗口高度的 40%**）
+- 再下面是「上一步 / 下一步」和**「切换模型」快捷入口**（与手机端共用 ModelPickerSheet）
+
 - **手机端保持原来的浮窗**（可拖动、可贴边收起）
 
 实现上把「数字人 + 提词气泡」抽成 `lib/widgets/avatar_stage.dart`（`AvatarStage` / `AvatarBubble`），手机浮窗和桌面分栏共用一份渲染逻辑。
@@ -387,6 +389,32 @@ flutter build windows --release        # 产物在 build/windows/x64/runner/Rele
 | resize 后背景色被重置 | 展开→贴边后背景又变回默认灰色 | 用 `LayoutBuilder` 感知宽度变化，变了就重设一次透明 |
 | `dispose` 没释放原生控件 | 关掉数字人后还残留一块**擦不掉的灰色矩形** | `dispose` 里显式 `controller.dispose()` |
 | 背景色只能全透明 | 插件把任何 alpha>0 的值都当成不透明 | 传 `Color(0x00000000)`，页面侧 `html, body { background: transparent }` |
+### 开场白音频：固定一个文件
+
+开场白音频**始终是同一个文件**（应用项目目录 `documents/opening_audio.wav`）：
+
+- **端侧合成**（sherpa-onnx）直接写到这个文件，每次生成**覆盖**上一次的
+- **导入外部音频**（mp3 / wav / m4a / aac / ogg）时复制过去，同样是覆盖
+- 清除时连同 `.env.json`（嘴型包络）一起删掉
+- 旧版本留下的 `opening_tts_<时间戳>.wav` 会在下次合成时自动清理，路径也会在启动时迁移到固定文件
+
+好处：不会越攒越多临时文件，偏好设置里存的路径永远是同一个，也方便用户自己从应用目录取走。
+
+### Windows 字体发虚的修复
+
+Windows 的 Flutter 默认用 **Impeller** 渲染器，在部分显卡驱动上**文字（尤其中文）渲染发虚**。
+
+修复方式是在引擎层直接关掉 Impeller（`windows/runner/main.cpp`）：
+
+```cpp
+flutter::DartProject project(L"data");
+// Impeller 在部分 Windows 显卡驱动上文字渲染发虚，改用 Skia
+project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+```
+
+- 写进代码里，**不需要每次构建都加 `--no-enable-impeller`**（release 构建 tool 也不支持这个参数）
+- Android / iOS 不受影响（Impeller 在移动端表现良好）
+- 代价：Skia 在部分场景下性能略低于 Impeller，桌面端够用
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

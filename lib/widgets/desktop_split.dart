@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/prompt_link.dart';
 import 'avatar_stage.dart';
+import 'model_picker_sheet.dart';
 
 /// 桌面端分栏布局：左边数字人舞台，右边主操作界面。
 ///
@@ -14,11 +15,17 @@ class DesktopSplitView extends StatelessWidget {
   /// 右侧的主界面
   final Widget child;
 
-  /// 左栏默认宽度
-  static const double panelWidth = 360;
+  /// 左栏占窗口宽度的比例（2/5）
+  static const double panelRatio = 0.4;
 
   /// 左栏最小宽度
   static const double minPanelWidth = 260;
+
+  /// 左栏最大宽度
+  static const double maxPanelWidth = 640;
+
+  /// 提词气泡最大高度占窗口高度的比例
+  static const double bubbleHeightRatio = 0.4;
 
   @override
   Widget build(BuildContext context) {
@@ -26,12 +33,27 @@ class DesktopSplitView extends StatelessWidget {
     return ListenableBuilder(
       listenable: link,
       builder: (context, _) {
-        return Row(
-          children: <Widget>[
-            _AvatarPanel(link: link),
-            const VerticalDivider(width: 1, thickness: 1, color: Color(0xFFE3E8F0)),
-            Expanded(child: child),
-          ],
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            // 左栏固定为窗口宽度的 2/5
+            final panelWidth = (constraints.maxWidth * panelRatio)
+                .clamp(minPanelWidth, maxPanelWidth)
+                .toDouble();
+            // 必须有 Material 祖先：左栏用了 Switch / BottomSheet 等 Material 组件
+            return Material(
+              type: MaterialType.transparency,
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: panelWidth,
+                    child: _AvatarPanel(link: link, panelWidth: panelWidth),
+                  ),
+                  const VerticalDivider(width: 1, thickness: 1, color: Color(0xFFE3E8F0)),
+                  Expanded(child: child),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -40,27 +62,29 @@ class DesktopSplitView extends StatelessWidget {
 
 /// 左边的数字人面板
 class _AvatarPanel extends StatelessWidget {
-  const _AvatarPanel({required this.link});
+  const _AvatarPanel({required this.link, required this.panelWidth});
 
   final PromptLink link;
+  final double panelWidth;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final width = DesktopSplitView.panelWidth;
-    // 数字人区域高度：跟随窗口高度，留出上下空间
     final media = MediaQuery.of(context);
-    final avatarHeight = (media.size.height * 0.52).clamp(220.0, 520.0);
+    // 数字人区域高度：跟随窗口高度，留出上下空间
+    final avatarHeight = (media.size.height * 0.52).clamp(220.0, 620.0);
+    // 话术框最大高度：窗口高度的 40%
+    final bubbleHeight = (media.size.height * DesktopSplitView.bubbleHeightRatio)
+        .clamp(180.0, 520.0);
 
     return Container(
-      width: width,
+      width: panelWidth,
       color: const Color(0xFFF7F9FC),
       child: Column(
         children: <Widget>[
-          _panelHeader(theme),
+          _panelHeader(context),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -79,7 +103,7 @@ class _AvatarPanel extends StatelessWidget {
                             link: link,
                             avatarHeight: avatarHeight,
                             showBubble: false,
-                            avatarBoxWidth: width - 32,
+                            avatarBoxWidth: panelWidth - 32,
                           )
                         : const _AvatarOffHint(),
                   ),
@@ -87,11 +111,13 @@ class _AvatarPanel extends StatelessWidget {
                   // 提词气泡
                   AvatarBubble(
                     link: link,
-                    maxHeight: 220,
+                    maxHeight: bubbleHeight,
                     solid: true,
                   ),
                   const SizedBox(height: 12),
                   _ActionRow(link: link),
+                  const SizedBox(height: 12),
+                  _ModelShortcut(link: link),
                 ],
               ),
             ),
@@ -102,7 +128,7 @@ class _AvatarPanel extends StatelessWidget {
   }
 
   /// 面板顶部：标题 + 开关
-  Widget _panelHeader(ThemeData theme) {
+  Widget _panelHeader(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
       decoration: const BoxDecoration(
@@ -136,21 +162,15 @@ class _AvatarOffHint extends StatelessWidget {
       children: <Widget>[
         Icon(Icons.face_retouching_natural, size: 40, color: Colors.black.withValues(alpha: 0.18)),
         const SizedBox(height: 10),
-        const Text(
-          '数字人未开启',
-          style: TextStyle(fontSize: 13, color: Colors.black38),
-        ),
+        const Text('数字人未开启', style: TextStyle(fontSize: 13, color: Colors.black38)),
         const SizedBox(height: 2),
-        const Text(
-          '打开上方开关即可显示',
-          style: TextStyle(fontSize: 11, color: Colors.black26),
-        ),
+        const Text('打开上方开关即可显示', style: TextStyle(fontSize: 11, color: Colors.black26)),
       ],
     );
   }
 }
 
-/// 话术上下步 + 气泡收起
+/// 话术上下步
 class _ActionRow extends StatelessWidget {
   const _ActionRow({required this.link});
 
@@ -179,6 +199,29 @@ class _ActionRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 切换模型快捷入口
+class _ModelShortcut extends StatelessWidget {
+  const _ModelShortcut({required this.link});
+
+  final PromptLink link;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: () async {
+        final models = await link.availableAvatarModels();
+        if (!context.mounted) return;
+        final chosen = await ModelPickerSheet.show(context, link: link, models: models);
+        if (chosen == null || !context.mounted) return;
+        await link.setAvatarModel(chosen);
+      },
+      icon: const Icon(Icons.swap_horiz, size: 18),
+      label: const Text('切换模型', style: TextStyle(fontSize: 13)),
+      style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
     );
   }
 }

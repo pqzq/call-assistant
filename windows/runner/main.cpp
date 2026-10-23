@@ -19,6 +19,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
 
+  // 禁用 Impeller，改用 Skia 渲染器。
+  //
+  // Impeller 在部分 Windows 显卡驱动上**文字渲染发虚**（尤其是中文字体），
+  // Skia 的字形光栅化要清晰得多。这里直接在引擎层关掉，
+  // 比每次构建都加 --no-enable-impeller 更省事（release 构建 tool 也不支持该参数）。
+  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
 
