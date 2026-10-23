@@ -5,6 +5,7 @@ import '../services/call_state_watcher.dart';
 import '../services/live2d_service.dart';
 import '../services/prompt_link.dart';
 import '../widgets/glass_surface.dart';
+import '../widgets/confirm_dialog.dart';
 import 'demo_page.dart';
 import '../widgets/app_toast.dart';
 
@@ -114,24 +115,14 @@ class _PromptPageState extends State<PromptPage> {
   }
 
   /// 删除确认（只允许删用户导入的模型）
-  Future<bool?> _confirmDeleteModel(String model) {
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('移除模型', style: TextStyle(fontSize: 17)),
-        content: Text('确定移除「${_modelLabel(model)}」吗？\n该模型占用的文件会一并删除。'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD03B3B)),
-            child: const Text('移除'),
-          ),
-        ],
-      ),
+  Future<bool> _confirmDeleteModel(String model) {
+    return ConfirmDialog.show(
+      context,
+      title: '移除模型',
+      message: '确定移除「${_modelLabel(model)}」吗？\n该模型占用的文件会一并删除。',
+      confirmText: '移除',
+      destructive: true,
+      icon: Icons.delete_outline,
     );
   }
 

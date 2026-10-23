@@ -13,6 +13,7 @@ import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/confirm_dialog.dart';
 import 'prompt_page.dart';
 
 class RecordListPage extends StatefulWidget {
@@ -321,31 +322,14 @@ class _RecordListPageState extends State<RecordListPage> {
 
   /// 清空所有行的拨打情况（含本地存储）
   Future<void> _clearAllStatus() async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('清空拨打情况', style: TextStyle(fontSize: 17)),
-            content: const Text('将清空当前表格所有行的拨打情况，确定继续？'),
-            actions: <Widget>[
-              // 清空在左、取消在右，两个按钮同样大小
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(96, 44),
-                ),
-                child: const Text('清空'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(96, 44),
-                ),
-                child: const Text('取消'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final ok = await ConfirmDialog.show(
+      context,
+      title: '清空拨打情况',
+      message: '将清空当前表格所有行的拨打情况，确定继续？',
+      confirmText: '清空',
+      destructive: true,
+      icon: Icons.delete_sweep_outlined,
+    );
     if (!ok) return;
 
     var next = _sheet;
@@ -513,18 +497,21 @@ class _RecordListPageState extends State<RecordListPage> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
-        // 整体下沉：弹窗只占屏幕下 2/3
+        // 内容自适应高度：内容少时弹窗就矮，不会留大片空白；
+        // 内容多时最多占 80% 并可滚动
         child: Padding(
-          padding: EdgeInsets.only(top: MediaQuery.of(sheetContext).size.height / 3),
+          padding: const EdgeInsets.only(top: 36),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(sheetContext).size.height * 0.66,
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
             ),
-            child: ListView(
-              // 不要 shrinkWrap：内容超高时要在 ConstrainedBox 里滚动，
-              // 否则 Wrap 换行出来的第二行（自定义填写/清空）会被裁掉还滚不动
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            children: <Widget>[
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
               Text(
                 name.isEmpty ? '第 ${row + 1} 行' : name,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
@@ -580,28 +567,39 @@ class _RecordListPageState extends State<RecordListPage> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
               ),
               const SizedBox(height: 6),
-              for (final field in fields)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      SizedBox(
-                        width: 86,
-                        child: Text(
-                          field.label,
-                          style: const TextStyle(fontSize: 13, color: Colors.black45),
-                        ),
+              // 双列排布，字段多时也不会把弹窗撑得很高
+              Wrap(
+                spacing: 12,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final field in fields)
+                    SizedBox(
+                      width: (MediaQuery.of(sheetContext).size.width - 52) / 2,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          SizedBox(
+                            width: 54,
+                            child: Text(
+                              field.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12.5, color: Colors.black45),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              field.value,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12.5, color: Colors.black87, height: 1.35),
+                            ),
+                          ),
+                        ],
                       ),
-                      Expanded(
-                        child: Text(
-                          field.value,
-                          style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 8),
               // 拨打情况：快捷选项 + 自定义填写，写回表格末尾的「拨打情况」列
               _StatusSection(
@@ -624,7 +622,9 @@ class _RecordListPageState extends State<RecordListPage> {
                 icon: const Icon(Icons.call, size: 18),
                 label: const Text('拨打该行号码'),
               ),
-            ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -650,13 +650,29 @@ class _RecordListPageState extends State<RecordListPage> {
           ),
         ),
         actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('保存'),
+          // 取消与保存同一行、同样大小，确认按钮更醒目
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    foregroundColor: const Color(0xFF5B6B84),
+                    side: const BorderSide(color: Color(0xFFD7DEE9)),
+                  ),
+                  child: const Text('取消'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                  child: const Text('保存'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -738,29 +754,11 @@ class _StatusSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            const Text(
-              '拨打情况',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
-            ),
-            if (current.isNotEmpty) ...<Widget>[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6EE),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  current,
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF17A05A)),
-                ),
-              ),
-            ],
-          ],
+        const Text(
+          '拨打情况',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Wrap(
           spacing: 8,
           runSpacing: 8,

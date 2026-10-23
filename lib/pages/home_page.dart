@@ -490,9 +490,14 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('关闭'),
+          // 关闭按钮与内容对齐、样式醒目
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+              child: const Text('关闭'),
+            ),
           ),
         ],
       ),
