@@ -74,7 +74,7 @@ void main() {
     await _loadDemo(tester);
     await _openList(tester);
 
-    expect(find.text('共 11 条，当前显示 11 条'), findsOneWidget);
+    expect(find.text('共 11 条 · 长按看详情'), findsOneWidget);
     expect(find.text('号码列：手机号码 / 办公电话'), findsOneWidget);
     // 卡片上同时展示两个号码，并带列名
     expect(find.text('手机号码'), findsWidgets);
@@ -109,7 +109,7 @@ void main() {
     await _switchToLandlineSheet(tester);
     await _openList(tester);
 
-    expect(find.text('共 6 条，当前显示 6 条'), findsOneWidget);
+    expect(find.text('共 6 条 · 长按看详情'), findsOneWidget);
     expect(find.text('号码列：办公座机'), findsOneWidget);
     expect(find.text('021-88886666'), findsOneWidget);
     expect(find.text('已补区号 021'), findsAtLeastNWidgets(2));

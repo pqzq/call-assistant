@@ -326,8 +326,10 @@ class _RecordListPageState extends State<RecordListPage> {
             child: Row(
               children: <Widget>[
                 Expanded(
-                  child: Text(
-                    '共 ${sheet.rowCount} 条，当前显示 ${rows.length} 条',
+                  child:                   Text(
+                    '共 ${sheet.rowCount} 条 · 长按看详情',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 11.5, color: Colors.black45),
                   ),
                 ),

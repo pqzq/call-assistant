@@ -90,6 +90,8 @@ class RecordCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: hasPhone ? onTap : null,
+          // 长按查看该行完整信息
+          onLongPress: onMoreTap,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
             child: Row(
@@ -191,6 +193,8 @@ class RecordCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: hasPhone ? onTap : null,
+          // 长按查看该行完整信息（短按仍是拨号）
+          onLongPress: onMoreTap,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
             child: Row(
@@ -310,13 +314,13 @@ class RecordCard extends StatelessWidget {
             GestureDetector(
               onTap: () => onPhoneTap(phone),
               behavior: HitTestBehavior.opaque,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   labelText(phone),
-                  SizedBox(
-                    width: double.infinity,
+                  const SizedBox(width: 4),
+                  Flexible(
+                    fit: FlexFit.loose,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
@@ -375,7 +379,7 @@ class RecordCard extends StatelessWidget {
   }
 
   /// 紧凑模式：其它字段摘要（部门/备注等，最多两条，一行省略）
-  /// 整行可点 → 弹出该行完整信息（小按钮太小不好点）
+  /// 纯展示：查看完整信息在卡片上**长按**触发（短按仍是拨号）
   Widget _compactSummary() {
     if (fields.isEmpty) {
       return const Text('', style: TextStyle(fontSize: 10, height: 1.1));
@@ -386,22 +390,17 @@ class RecordCard extends StatelessWidget {
         .map((field) => '${field.label}: ${field.value}')
         .where((item) => item.trim().isNotEmpty && !item.endsWith(': '))
         .join(' · ');
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onMoreTap,
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10.5, height: 1.2, color: Colors.black38),
-            ),
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10.5, height: 1.2, color: Colors.black38),
           ),
-          const Icon(Icons.more_horiz, size: 14, color: Color(0xFF8A94A6)),
-        ],
-      ),
+        ),
+      ],
     );
   }
   /// 紧凑模式的拨号按钮
