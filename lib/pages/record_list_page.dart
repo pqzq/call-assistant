@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/active_lead.dart';
 import '../models/sheet_data.dart';
+import '../services/call_log_store.dart';
 import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
@@ -111,6 +113,29 @@ class _RecordListPageState extends State<RecordListPage> {
     return text.length > 24 ? '${text.substring(0, 24)}…' : text;
   }
 
+  /// 把当前行整理成提词用的客户信息（含上次拨打时间）
+  Future<void> _attachLead(int row, String phone) async {
+    final fields = _fieldsOf(row);
+    final titleIndex = _titleIndexOf(fields);
+    final name = titleIndex >= 0 ? fields[titleIndex].value.trim() : '第 ${row + 1} 行';
+    final extras = <CellField>[
+      for (var i = 0; i < fields.length; i++)
+        if (i != titleIndex) fields[i],
+    ];
+    Map<String, DateTime> times = <String, DateTime>{};
+    try {
+      times = await CallLogStore.loadTimes();
+    } catch (_) {
+      // 忽略
+    }
+    await PromptLink.instance.setActiveLead(ActiveLead(
+      name: name.isEmpty ? '第 ${row + 1} 行' : name,
+      phone: phone,
+      extras: extras,
+      lastCalled: times[phone],
+    ));
+  }
+
   /// 联动日志用的行描述：标题 + 号码
   String _rowLabelOf(int row) {
     final fields = _fieldsOf(row);
@@ -129,6 +154,8 @@ class _RecordListPageState extends State<RecordListPage> {
     _markDialing(row);
     setState(() => _called.add(target));
     HapticFeedback.lightImpact();
+    // 浮动提词气泡：把当前客户与上次联系时间带过去
+    await _attachLead(row, target);
     // 双机联动：拨号后进入「等待接通」状态，接通即通知播放端
     PromptLink.instance.armAfterDial(rowLabel: _rowLabelOf(row), phone: target);
     final ok = await widget.onCall(target);

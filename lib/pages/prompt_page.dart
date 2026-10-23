@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/call_state_watcher.dart';
 import '../services/prompt_link.dart';
+import 'demo_page.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
 class PromptPage extends StatefulWidget {
@@ -111,11 +112,16 @@ class _PromptPageState extends State<PromptPage> {
                 final models = await _link.availableAvatarModels();
                 if (!mounted) return;
                 _showModelPicker(models);
+              } else if (value == 'demo') {
+                Navigator.of(this.context).push(
+                  MaterialPageRoute<void>(builder: (_) => const DemoPage()),
+                );
               }
             },
             itemBuilder: (context) => const <PopupMenuEntry<String>>[
               PopupMenuItem<String>(value: 'import', child: Text('导入模型包（zip）')),
               PopupMenuItem<String>(value: 'models', child: Text('切换已有模型')),
+              PopupMenuItem<String>(value: 'demo', child: Text('演示模式（全屏）')),
             ],
           ),
           IconButton(

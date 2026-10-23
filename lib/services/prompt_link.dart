@@ -9,10 +9,36 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/active_lead.dart';
+import 'call_log_store.dart';
 import 'call_state_watcher.dart';
 import 'lan_link.dart';
 import 'live2d_service.dart';
 import 'tts_synthesizer.dart';
+
+/// 数字人/联动状态
+enum AvatarStatus {
+  disabled,
+  ready,
+  armed,
+  speaking,
+  error;
+
+  String get label {
+    switch (this) {
+      case AvatarStatus.disabled:
+        return '数字人未启用';
+      case AvatarStatus.ready:
+        return '待拨号';
+      case AvatarStatus.armed:
+        return '等待接通';
+      case AvatarStatus.speaking:
+        return '播报中';
+      case AvatarStatus.error:
+        return '异常';
+    }
+  }
+}
 
 /// 联动日志
 class PromptLog {
@@ -43,6 +69,7 @@ class PromptLink extends ChangeNotifier {
   static const String _kAvatarModel = 'prompt_avatar_model';
   static const String _kAvatarPosX = 'prompt_avatar_pos_x';
   static const String _kAvatarPosY = 'prompt_avatar_pos_y';
+  static const String _kCollapsed = 'prompt_avatar_collapsed';
 
   /// 浮动数字人默认位置（屏幕可用区域的归一化坐标）
   static const double defaultAvatarX = 0.82;
@@ -71,6 +98,18 @@ class PromptLink extends ChangeNotifier {
   String _avatarModel = Live2dService.defaultModel;
   double _avatarPosX = defaultAvatarX;
   double _avatarPosY = defaultAvatarY;
+
+  /// 是否正在播报（供状态条显示，避免用 mouth 高频刷新）
+  bool _speaking = false;
+
+  /// 当前跟进的客户（提词气泡数据）
+  ActiveLead? _activeLead;
+  int _stepIndex = 0;
+
+  /// 提词气泡是否收起
+  bool _collapsed = false;
+
+  bool _disposed = false;
   List<double>? _envelope;
   Timer? _mouthTimer;
 
@@ -105,6 +144,106 @@ class PromptLink extends ChangeNotifier {
   /// 浮动数字人位置（0~1，相对可用区域）
   double get avatarPosX => _avatarPosX;
   double get avatarPosY => _avatarPosY;
+
+  /// 提词气泡是否收起
+  bool get collapsed => _collapsed;
+
+  /// 当前跟进的客户
+  ActiveLead? get activeLead => _activeLead;
+
+  /// 开场白按句拆分成的步骤（提词用）
+  List<String> get scriptSteps => splitScript(_script);
+
+  int get stepIndex => _stepIndex;
+
+  String? get currentStep {
+    final steps = scriptSteps;
+    if (steps.isEmpty) return null;
+    final index = _stepIndex.clamp(0, steps.length - 1);
+    return steps[index];
+  }
+
+  /// 当前状态（供数字人状态条显示）
+  AvatarStatus get avatarStatus {
+    if (!_avatarEnabled) return AvatarStatus.disabled;
+    if (_lastError != null) return AvatarStatus.error;
+    if (_speaking) return AvatarStatus.speaking;
+    if (_armed) return AvatarStatus.armed;
+    return AvatarStatus.ready;
+  }
+
+  /// 估算一次播报的时长（演示页按它推进字幕）
+  Duration get estimatedSpeakDuration {
+    final envelope = _envelope;
+    if (envelope != null && envelope.isNotEmpty) {
+      return Duration(milliseconds: envelope.length * 50);
+    }
+    final length = _script.trim().length;
+    return Duration(milliseconds: (length * 170).clamp(1200, 60000));
+  }
+
+  /// 把话术按中文标点拆成若干步（提词器用）
+  static List<String> splitScript(String script) {
+    final text = script.replaceAll('\r\n', '\n').trim();
+    if (text.isEmpty) return const <String>[];
+    final parts = <String>[];
+    final buffer = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      buffer.write(char);
+      final isBreak = char == '。' || char == '！' || char == '？' || char == '\n' || char == '；';
+      if (isBreak) {
+        final piece = buffer.toString().trim();
+        if (piece.isNotEmpty) parts.add(piece);
+        buffer.clear();
+      }
+    }
+    final rest = buffer.toString().trim();
+    if (rest.isNotEmpty) parts.add(rest);
+    return parts;
+  }
+
+  void selectStep(int index) {
+    final steps = scriptSteps;
+    if (steps.isEmpty) return;
+    final next = index.clamp(0, steps.length - 1);
+    if (next == _stepIndex) return;
+    _stepIndex = next;
+    notifyListeners();
+  }
+
+  void nextStep() => selectStep(_stepIndex + 1);
+
+  void previousStep() => selectStep(_stepIndex - 1);
+
+  Future<void> setCollapsed(bool value) async {
+    if (_collapsed == value) return;
+    _collapsed = value;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kCollapsed, value);
+    } catch (_) {
+      // 忽略
+    }
+  }
+
+  /// 拨号/切换行时设置当前客户，同时把话术步骤归零
+  Future<void> setActiveLead(ActiveLead lead) async {
+    _activeLead = lead;
+    _stepIndex = 0;
+    notifyListeners();
+    // 记录本次拨打时间
+    if (lead.phone != null) {
+      await CallLogStore.recordCall(lead.phone!);
+    }
+  }
+
+  void clearActiveLead() {
+    _activeLead = null;
+    _stepIndex = 0;
+    notifyListeners();
+  }
 
   /// 0~1 的嘴型幅度，Live2D 组件监听它
   final ValueNotifier<double> mouth = ValueNotifier<double>(0);
@@ -156,6 +295,7 @@ class PromptLink extends ChangeNotifier {
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
     _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
     _avatarPosY = prefs.getDouble(_kAvatarPosY) ?? defaultAvatarY;
+    _collapsed = prefs.getBool(_kCollapsed) ?? false;
     notifyListeners();
 
     // 嘴型跟随音频播放位置
@@ -353,6 +493,10 @@ class PromptLink extends ChangeNotifier {
     if (!_avatarEnabled) return;
     _mouthTimer?.cancel();
     _mouthClock = DateTime.now();
+    if (!_speaking) {
+      _speaking = true;
+      notifyListeners();
+    }
     final envelope = _envelope;
     _mouthTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
       final clock = _mouthClock;
@@ -377,6 +521,10 @@ class PromptLink extends ChangeNotifier {
     if (!_avatarEnabled) return;
     _mouthTimer?.cancel();
     _mouthClock = DateTime.now();
+    if (!_speaking) {
+      _speaking = true;
+      notifyListeners();
+    }
     final estimated = (text.length * 170).clamp(1200, 60000);
     _mouthTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
       final clock = _mouthClock;
@@ -414,6 +562,10 @@ class PromptLink extends ChangeNotifier {
     _mouthTimer = null;
     _mouthClock = null;
     if (mouth.value != 0) mouth.value = 0;
+    if (_speaking) {
+      _speaking = false;
+      if (!_disposed) notifyListeners();
+    }
   }
 
   /// 选择开场白音频文件（复制到应用目录，避免被系统清理）
@@ -569,6 +721,7 @@ class PromptLink extends ChangeNotifier {
     _armedAt = DateTime.now();
     _armedLabel = rowLabel;
     _armedPhone = phone;
+    _stepIndex = 0; // 新一通电话，话术从头开始
     _log('已拨号，等待接通：$rowLabel $phone');
     notifyListeners();
   }
@@ -704,6 +857,7 @@ class PromptLink extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _mouthTimer?.cancel();
     _link.close();
     _tts.stop();
