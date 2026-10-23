@@ -10,6 +10,7 @@ import '../services/dialer_service.dart';
 import '../services/excel_service.dart';
 import '../services/settings_store.dart';
 import '../utils/phone_utils.dart';
+import 'prompt_page.dart';
 import 'record_list_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -195,6 +196,15 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('话务助手'),
         actions: <Widget>[
+          IconButton(
+            tooltip: '双机联动播报',
+            icon: const Icon(Icons.record_voice_over_outlined),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const PromptPage()),
+              );
+            },
+          ),
           if (sheet != null)
             IconButton(
               tooltip: '重新导入',

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'pages/home_page.dart';
+import 'services/prompt_link.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 双机联动：提前初始化（恢复设置、启动局域网监听、订阅通话状态）
+  PromptLink.instance.init();
   runApp(const CallAssistantApp());
 }
 

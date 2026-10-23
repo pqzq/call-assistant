@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/sheet_data.dart';
+import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
 
@@ -110,6 +111,15 @@ class _RecordListPageState extends State<RecordListPage> {
     return text.length > 24 ? '${text.substring(0, 24)}…' : text;
   }
 
+  /// 联动日志用的行描述：标题 + 号码
+  String _rowLabelOf(int row) {
+    final fields = _fieldsOf(row);
+    final titleIndex = _titleIndexOf(fields);
+    final title = titleIndex >= 0 ? fields[titleIndex].value : '第 ${row + 1} 行';
+    final phone = PhoneUtils.dialTarget(widget.sheet.rawPhoneAt(row), areaCode: widget.areaCode);
+    return phone == null ? title : '$title $phone';
+  }
+
   Future<void> _dialEntry(PhoneEntry entry, int row) async {
     final target = entry.dialTarget;
     if (target == null) {
@@ -119,6 +129,8 @@ class _RecordListPageState extends State<RecordListPage> {
     _markDialing(row);
     setState(() => _called.add(target));
     HapticFeedback.lightImpact();
+    // 双机联动：拨号后进入「等待接通」状态，接通即通知播放端
+    PromptLink.instance.armAfterDial(rowLabel: _rowLabelOf(row), phone: target);
     final ok = await widget.onCall(target);
     if (!ok) {
       _toast('未找到可用的拨号应用');
