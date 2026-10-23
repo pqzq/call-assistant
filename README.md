@@ -156,7 +156,7 @@ flutter build apk --release
 - **背景完全透明**：没有底板、没有阴影，只画角色本身，页面文字可以透过角色周围正常阅读
 - 按住数字人**底部的小胶囊拖动条**即可拖到屏幕任意位置（自动夹在可视区域内），松手后位置写入本地，**重启仍保持**
 - 胶囊右侧的 **✕** 直接关闭（等同关掉联动开关）；卡片里的「复位」按钮回到默认右上位置
-- 尺寸固定 150×190（+34 控制条），占屏小
+- 尺寸固定 300×380（+40 控制条），便于看清模型细节；想调小改 `FloatingAvatarHost.avatarWidth/avatarHeight`
 - 平台视图（WebView）会吃掉自身范围内的触摸，所以拖动条与 ✕ 都放在视图**外面**；角色身体覆盖到某个按钮时，把它拖开即可
 - 实现上两个坑：① `Live2dAvatar` 不能自带底色、也不能套 `IgnorePointer`（会让 Android 层把这一带触摸直接派给 WebView，连控制条都点不动）；② 必须保留 `ClipRect` 约束平台视图的触摸区域
 
@@ -172,9 +172,24 @@ flutter build apk --release
 
 **模型**
 
-- 内置 **Live2D 官方样例 Hiyori**（`assets/live2d/hiyori/`），仅用于测试验证，**商用请替换**
-- 自备模型：打包成 zip（内含 `*.model3.json` 及贴图/动作文件）→ 页面右上角数字人菜单 →「导入模型包（zip）」→ 释放到 `Android/data/<包名>/files/live2d/models/<名字>/`
-- 可在同一菜单里「切换已有模型」
+内置 **8 个 Live2D 官方样例模型**（`assets/live2d/`，共约 22MB），右上角数字人菜单 →「切换已有模型」即可逐个试：
+
+| 目录 | 模型 | 体积 | 备注 |
+| --- | --- | --- | --- |
+| `haru/` | Haru | 3.1 MB | 带 8 个表情（expressions） |
+| `hiyori/` | Hiyori | 4.7 MB | **默认**，10 个动作 |
+| `mao/` | Mao | 4.1 MB | 带表情 |
+| `mark/` | Mark | 0.7 MB | 体量最小，风格化角色 |
+| `natori/` | Natori | 3.3 MB | 带表情（`exp/`） |
+| `ren/` | Ren | 2.4 MB | 带表情 |
+| `rice/` | Rice | 3.0 MB | 小动物风格 |
+| `wanko/` | Wanko | 0.7 MB | 1024 贴图 |
+
+> **授权提醒**：这些都是 Live2D 官方样例模型，**仅允许测试/非商业用途**，对外发布必须替换成自有或已购买授权的模型。
+
+- 自备模型：打包成 zip（内含 `*.model3.json` 及贴图/动作/表情文件）→ 数字人菜单 →「导入模型包（zip）」→ 释放到 `Android/data/<包名>/files/live2d/models/<名字>/`
+- 首次启动会把 assets 里的运行时与模型解压到应用目录（约 22MB，`Live2dService.assetVersion` 控制是否重新释放）
+- 想换默认模型：改 `Live2dService.defaultModel`（如 `haru/Haru.model3.json`）
 
 **实测（小米 2410DPN6CC / Android 17）**
 
@@ -229,11 +244,12 @@ flutter build apk --release
 
 | 文件名 | 体积 | 适用设备 |
 | --- | --- | --- |
-| `call-assistant-1.0.0-arm64-v8a.apk` | ~49.1 MB | 绝大多数现代手机（**推荐**） |
-| `call-assistant-1.0.0-armeabi-v7a.apk` | ~38.7 MB | 32 位老旧机型（Android 5~7 时代） |
+| `call-assistant-1.0.0-arm64-v8a.apk` | ~63.6 MB | 绝大多数现代手机（**推荐**） |
+| `call-assistant-1.0.0-armeabi-v7a.apk` | ~53.2 MB | 32 位老旧机型（Android 5~7 时代） |
 
 - 用 `--split-per-abi` 拆分后每个包只含一套 so；`x86_64` 仅用于模拟器，不发布
-- 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）与 Live2D 数字人运行时+样例模型（约 5.4MB assets）；通用包会到 130MB，所以**必须按 ABI 拆分**
+- 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）与 Live2D 运行时 + **8 个官方样例模型（约 22MB assets）**；通用包会到 145MB，所以**必须按 ABI 拆分**
+- 只想带一个模型时：从 `pubspec.yaml` 的 `assets:` 里删掉其它模型目录，并同步清理 `assets/live2d/` 下对应文件夹（每个模型约 0.7~4.7MB）
 - 两个包共用同一签名密钥，可互相覆盖安装
 
 > 标签推送时 `ci` job 会被跳过（不重复构建），只跑 `release`；普通 push 只做 CI 校验，不产出安装包。

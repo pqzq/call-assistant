@@ -42,6 +42,15 @@ class _PromptPageState extends State<PromptPage> {
     if (mounted) setState(() {});
   }
 
+  /// 从 haru/Haru.model3.json 里取出「Haru」作展示名
+  String _modelLabel(String path) {
+    final file = path.split('/').last;
+    final name = file.replaceAll('.model3.json', '');
+    if (name.isNotEmpty) return name;
+    final dir = path.split('/');
+    return dir.length > 1 ? dir[dir.length - 2] : path;
+  }
+
   Future<void> _showModelPicker(List<String> models) async {
     if (models.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -62,7 +71,13 @@ class _PromptPageState extends State<PromptPage> {
             ),
             for (final model in models)
               ListTile(
-                title: Text(model, maxLines: 1, overflow: TextOverflow.ellipsis),
+                title: Text(_modelLabel(model), maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  model,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: Colors.black38),
+                ),
                 trailing: model == _link.avatarModel ? const Icon(Icons.check, size: 18) : null,
                 onTap: () => Navigator.of(sheetContext).pop(model),
               ),

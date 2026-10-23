@@ -14,12 +14,12 @@ class FloatingAvatarHost extends StatefulWidget {
 
   final Widget child;
 
-  /// 数字人可视区域尺寸
-  static const double avatarWidth = 150;
-  static const double avatarHeight = 190;
+  /// 数字人可视区域尺寸（150×190 的两倍，方便看清模型细节）
+  static const double avatarWidth = 300;
+  static const double avatarHeight = 380;
 
   /// 底部控制条高度（拖动 / 关闭）
-  static const double barHeight = 34;
+  static const double barHeight = 40;
 
   @override
   State<FloatingAvatarHost> createState() => _FloatingAvatarHostState();
