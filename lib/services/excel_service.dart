@@ -192,6 +192,7 @@ class ExcelService {
         if (candidate.autoSelect) candidate.column,
     ];
 
+    // 末尾自动追加「拨打情况」列：拨完可在长按面板里直接标记结果
     return ImportedSheet(
       name: name,
       headers: headers,
@@ -200,7 +201,7 @@ class ExcelService {
       phoneColumns: selected,
       phoneCandidates: candidates.where((c) => c.matched > 0).toList(),
       hasHeader: hasHeader,
-    );
+    ).ensureStatusColumn();
   }
 
   /// 表头定位：先找带「手机/电话/姓名…」关键词的行，再退回第一个「不像数据」的行。
@@ -376,6 +377,6 @@ class ExcelService {
       phoneColumns: selected,
       phoneCandidates: candidates.where((c) => c.matched > 0).toList(),
       hasHeader: true,
-    );
+    ).ensureStatusColumn();
   }
 }

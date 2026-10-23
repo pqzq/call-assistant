@@ -51,11 +51,53 @@ class _RecordListPageState extends State<RecordListPage> {
   /// 最近拨打的行（持续高亮，直到刷新列表 / 重新进入本页）
   int? _highlightRow;
 
+  /// 本地表格副本：写入「拨打情况」后用它刷新界面
+  late ImportedSheet _sheet;
+
   @override
   void initState() {
     super.initState();
     _called.addAll(widget.called);
+    _sheet = widget.sheet.ensureStatusColumn();
     _loadCompactPref();
+    _loadStatusPrefs();
+  }
+
+  /// 读取上次保存的拨打情况（按 表格名|行号 存储）
+  Future<void> _loadStatusPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      var changed = false;
+      var next = _sheet;
+      for (var row = 0; row < next.rowCount; row++) {
+        final value = prefs.getString(_statusKey(row));
+        if (value == null || value.isEmpty) continue;
+        next = next.withStatusAt(row, value);
+        changed = true;
+      }
+      if (changed && mounted) setState(() => _sheet = next);
+    } catch (_) {
+      // 忽略
+    }
+  }
+
+  String _statusKey(int row) => 'record_status|${_sheet.name}|$row';
+
+  /// 写入拨打情况（同时落地到本地，下次进入仍在）
+  Future<void> _setStatus(int row, String value) async {
+    setState(() => _sheet = _sheet.withStatusAt(row, value));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (value.isEmpty) {
+        await prefs.remove(_statusKey(row));
+      } else {
+        await prefs.setString(_statusKey(row), value);
+      }
+    } catch (_) {
+      // 忽略
+    }
+    if (!mounted) return;
+    AppToast.show(context, value.isEmpty ? '已清空拨打情况' : '已标记：$value');
   }
 
   /// 读取上次选择的显示密度
@@ -87,7 +129,7 @@ class _RecordListPageState extends State<RecordListPage> {
   }
 
   List<int> _visibleRows() {
-    final sheet = widget.sheet;
+    final sheet = _sheet;
     final keyword = _query.trim().toLowerCase();
     if (keyword.isEmpty) {
       return List<int>.generate(sheet.rowCount, (index) => index);
@@ -106,7 +148,7 @@ class _RecordListPageState extends State<RecordListPage> {
 
   /// 非号码列的其它字段（所有选中的号码列都要排除）
   List<CellField> _fieldsOf(int row) {
-    final sheet = widget.sheet;
+    final sheet = _sheet;
     final fields = <CellField>[];
     for (var column = 0; column < sheet.columnCount; column++) {
       if (sheet.isPhoneColumn(column)) continue;
@@ -162,7 +204,7 @@ class _RecordListPageState extends State<RecordListPage> {
     final fields = _fieldsOf(row);
     final titleIndex = _titleIndexOf(fields);
     final title = titleIndex >= 0 ? fields[titleIndex].value : '第 ${row + 1} 行';
-    final phone = PhoneUtils.dialTarget(widget.sheet.rawPhoneAt(row), areaCode: widget.areaCode);
+    final phone = PhoneUtils.dialTarget(_sheet.rawPhoneAt(row), areaCode: widget.areaCode);
     return phone == null ? title : '$title $phone';
   }
 
@@ -215,7 +257,7 @@ class _RecordListPageState extends State<RecordListPage> {
   }
 
   Future<void> _copyAll() async {
-    final sheet = widget.sheet;
+    final sheet = _sheet;
     final buffer = StringBuffer();
     for (var row = 0; row < sheet.rowCount; row++) {
       final phones = sheet.phonesAt(row, widget.areaCode).where((p) => p.valid).toList();
@@ -233,7 +275,7 @@ class _RecordListPageState extends State<RecordListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final sheet = widget.sheet;
+    final sheet = _sheet;
     final rows = _visibleRows();
 
     return Scaffold(
@@ -459,6 +501,19 @@ class _RecordListPageState extends State<RecordListPage> {
                   ),
                 ),
               const SizedBox(height: 8),
+              // 拨打情况：快捷选项 + 自定义填写，写回表格末尾的「拨打情况」列
+              _StatusSection(
+                current: _sheet.statusAt(row),
+                onPick: (value) {
+                  Navigator.of(sheetContext).pop();
+                  _setStatus(row, value);
+                },
+                onCustom: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _promptCustomStatus(row);
+                },
+              ),
+              const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () {
                   Navigator.of(sheetContext).pop();
@@ -473,9 +528,42 @@ class _RecordListPageState extends State<RecordListPage> {
       ),
     );
   }
+
+  /// 自定义填写拨打情况
+  Future<void> _promptCustomStatus(int row) async {
+    final controller = TextEditingController(text: _sheet.statusAt(row));
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('填写拨打情况', style: TextStyle(fontSize: 17)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 2,
+          minLines: 1,
+          decoration: const InputDecoration(
+            hintText: '例如：客户说下周一再联系',
+            isDense: true,
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (value == null || value.isEmpty) return;
+    await _setStatus(row, value);
+  }
   /// 紧凑模式用两列网格（一次能看到更多记录），详细模式保持单列
   Widget _buildList(List<int> rows) {
-    final sheet = widget.sheet;
+    final sheet = _sheet;
 
     Widget buildItem(BuildContext context, int index) {
       final row = rows[index];
@@ -499,6 +587,7 @@ class _RecordListPageState extends State<RecordListPage> {
         highlighted: _highlightRow == row,
         compact: _compact,
         narrow: _compact,
+        status: _sheet.statusAt(row),
         onTap: () => _chooseAndDial(phones, row),
         onPhoneTap: (entry) => _dialEntry(entry, row),
         onMoreTap: () => _showRowDetail(row, fields, phones),
@@ -513,7 +602,8 @@ class _RecordListPageState extends State<RecordListPage> {
           crossAxisCount: 2,
           mainAxisSpacing: 6,
           crossAxisSpacing: 6,
-          mainAxisExtent: 122,
+          // 高度只够「姓名 + 两个号码 + 拨打情况」展示，尽量一屏多看几行
+          mainAxisExtent: 104,
         ),
         itemCount: rows.length,
         itemBuilder: buildItem,
@@ -529,6 +619,80 @@ class _RecordListPageState extends State<RecordListPage> {
 }
 
 /// 多号码时的拨号选择面板
+/// 拨打情况设置：快捷选项 + 自定义填写
+class _StatusSection extends StatelessWidget {
+  const _StatusSection({
+    required this.current,
+    required this.onPick,
+    required this.onCustom,
+  });
+
+  final String current;
+  final ValueChanged<String> onPick;
+  final VoidCallback onCustom;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            const Text(
+              '拨打情况',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
+            ),
+            if (current.isNotEmpty) ...<Widget>[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F6EE),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  current,
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF17A05A)),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final preset in statusPresets)
+              ChoiceChip(
+                label: Text(preset, style: const TextStyle(fontSize: 13)),
+                selected: current == preset,
+                selectedColor: const Color(0xFFE3ECFF),
+                onSelected: (_) => onPick(preset),
+              ),
+            ActionChip(
+              avatar: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('自定义填写', style: TextStyle(fontSize: 13)),
+              onPressed: onCustom,
+            ),
+            if (current.isNotEmpty)
+              ActionChip(
+                avatar: const Icon(Icons.clear, size: 16),
+                label: const Text('清空', style: TextStyle(fontSize: 13)),
+                onPressed: () => onPick(''),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '写入结果会填到表格末尾的「拨打情况」列，下次导入同名表格会自动带回来。',
+          style: TextStyle(fontSize: 11, height: 1.5, color: Colors.black38),
+        ),
+      ],
+    );
+  }
+}
+
 class _NumberPickerSheet extends StatelessWidget {
   const _NumberPickerSheet({
     required this.title,

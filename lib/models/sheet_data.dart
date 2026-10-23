@@ -36,6 +36,12 @@ class PhoneEntry {
 }
 
 /// 导入后的单个工作表数据模型。
+/// 拨打情况列的列名
+const String statusColumnName = '拨打情况';
+
+/// 拨打情况的快捷选项（最后一项「自定义」会弹输入框）
+const List<String> statusPresets = <String>['拨打成功', '未接听', '已关机'];
+
 class ImportedSheet {
   const ImportedSheet({
     required this.name,
@@ -45,6 +51,7 @@ class ImportedSheet {
     required this.phoneColumns,
     required this.phoneCandidates,
     required this.hasHeader,
+    this.statusColumn,
   });
 
   /// 工作表名称
@@ -67,6 +74,9 @@ class ImportedSheet {
 
   /// 是否存在表头行
   final bool hasHeader;
+
+  /// 「拨打情况」列索引（null 表示还没加这一列）
+  final int? statusColumn;
 
   /// 主号码列（兼容单列场景）
   int? get phoneColumn => phoneColumns.isEmpty ? null : phoneColumns.first;
@@ -116,6 +126,70 @@ class ImportedSheet {
     return result;
   }
 
+  /// 是否有「拨打情况」列
+  bool get hasStatusColumn => statusColumn != null;
+
+  /// 读取某行的拨打情况（没有该列时返回空串）
+  String statusAt(int row) {
+    final column = statusColumn;
+    if (column == null) return '';
+    return cellAt(row, column);
+  }
+
+  /// 确保末尾有「拨打情况」列：没有就追加一列（列名 + 每行补空值）
+  ImportedSheet ensureStatusColumn() {
+    if (statusColumn != null) return this;
+    final newHeaders = <String>[...headers, statusColumnName];
+    final newRows = <List<String>>[
+      for (final row in rows) <String>[...row, ''],
+    ];
+    return copyWith(
+      headers: newHeaders,
+      rows: newRows,
+      statusColumn: newHeaders.length - 1,
+    );
+  }
+
+  /// 写入某行的拨打情况，返回新的 sheet（保持不可变，便于触发刷新）
+  ImportedSheet withStatusAt(int row, String value) {
+    final column = statusColumn;
+    if (column == null || row < 0 || row >= rows.length) return this;
+    final newRows = <List<String>>[
+      for (var i = 0; i < rows.length; i++)
+        if (i == row)
+          <String>[
+            for (var c = 0; c < columnCount; c++)
+              if (c == column) value else cellAt(i, c),
+          ]
+        else
+          rows[i],
+    ];
+    return copyWith(rows: newRows);
+  }
+
+  /// 复制并可选替换字段
+  ImportedSheet copyWith({
+    String? name,
+    List<String>? headers,
+    List<List<String>>? rows,
+    int? headerRow,
+    List<int>? phoneColumns,
+    List<PhoneCandidate>? phoneCandidates,
+    bool? hasHeader,
+    int? statusColumn,
+  }) {
+    return ImportedSheet(
+      name: name ?? this.name,
+      headers: headers ?? this.headers,
+      rows: rows ?? this.rows,
+      headerRow: headerRow ?? this.headerRow,
+      phoneColumns: phoneColumns ?? this.phoneColumns,
+      phoneCandidates: phoneCandidates ?? this.phoneCandidates,
+      hasHeader: hasHeader ?? this.hasHeader,
+      statusColumn: statusColumn ?? this.statusColumn,
+    );
+  }
+
   /// 设置号码列（自动去重、过滤非法列）
   ImportedSheet withPhoneColumns(List<int> columns) {
     final valid = <int>[];
@@ -124,15 +198,7 @@ class ImportedSheet {
         valid.add(column);
       }
     }
-    return ImportedSheet(
-      name: name,
-      headers: headers,
-      rows: rows,
-      headerRow: headerRow,
-      phoneColumns: valid,
-      phoneCandidates: phoneCandidates,
-      hasHeader: hasHeader,
-    );
+    return copyWith(phoneColumns: valid);
   }
 
   /// 勾选/取消勾选某一列

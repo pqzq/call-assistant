@@ -66,7 +66,7 @@ void main() {
       expect(sheet.name, '客户名单');
       expect(sheet.hasHeader, isTrue);
       expect(sheet.headerRow, 1);
-      expect(sheet.headers, <String>['序号', '姓名', '部门', '手机号码', '备注']);
+      expect(sheet.headers, <String>['序号', '姓名', '部门', '手机号码', '备注', '拨打情况']);
       expect(sheet.rowCount, 5);
       // 「手机号码」列（第 4 列）应被自动选中
       expect(sheet.phoneColumn, 3);
@@ -102,7 +102,7 @@ void main() {
       ).first;
 
       expect(parsed.hasHeader, isFalse);
-      expect(parsed.headers, <String>['A', 'B', 'C']);
+      expect(parsed.headers, <String>['A', 'B', 'C', '拨打情况']);
       expect(parsed.rowCount, 2);
       expect(parsed.phoneColumn, 1);
     });
@@ -188,4 +188,39 @@ void main() {
       expect(updated.phoneColumns, <int>[3]);
     });
   });
-}
+
+  group('拨打情况列', () {
+    test('导入时自动追加「拨打情况」列且为空', () {
+      final sheet = ExcelService.demoSheets().first;
+      expect(sheet.hasStatusColumn, isTrue);
+      expect(sheet.headers.last, statusColumnName);
+      expect(sheet.statusAt(0), isEmpty);
+      // 追加列不改变原有数据
+      expect(sheet.cellAt(0, 1), '中国移动客服');
+      expect(sheet.rowCount, 11);
+    });
+
+    test('写入拨打情况只影响目标行', () {
+      final sheet = ExcelService.demoSheets().first;
+      final next = sheet.withStatusAt(0, '拨打成功');
+      expect(next.statusAt(0), '拨打成功');
+      expect(next.statusAt(1), isEmpty);
+      expect(next.rowCount, sheet.rowCount);
+      // 原对象不被修改（不可变）
+      expect(sheet.statusAt(0), isEmpty);
+    });
+
+    test('自定义文本也能写入', () {
+      final sheet = ExcelService.demoSheets().first.ensureStatusColumn();
+      final next = sheet.withStatusAt(2, '客户说下周一再联系');
+      expect(next.statusAt(2), '客户说下周一再联系');
+    });
+
+    test('切换号码列后拨打情况列不丢失', () {
+      final sheet = ExcelService.demoSheets().first;
+      final marked = sheet.withStatusAt(0, '未接听');
+      final toggled = marked.togglePhoneColumn(4);
+      expect(toggled.hasStatusColumn, isTrue);
+      expect(toggled.statusAt(0), '未接听');
+    });
+  });}
