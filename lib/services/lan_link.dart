@@ -147,6 +147,9 @@ class LanLink {
         );
         _peers[message.deviceId] = peer;
         onMessage(message, peer);
+      }, onError: (Object _) {
+        // 手机只有移动数据时广播会失败（Operation not permitted），
+        // 这里吞掉错误，避免未捕获异常刷屏/打断心跳
       });
       _socket = socket;
       return true;

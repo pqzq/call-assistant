@@ -154,12 +154,12 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     if (controller == null) {
       return _placeholder('数字人初始化中…');
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
+    // 背景保持透明（不能有底色，否则挡住下面的界面内容）；
+    // 但必须保留 ClipRect：不加裁剪时平台视图的触摸区域会外溢，把下方控制条也吞掉
+    return ClipRect(
+      child: SizedBox(
         height: widget.height,
         width: double.infinity,
-        color: const Color(0xFFEAF0FF),
         child: WebViewWidget(controller: controller),
       ),
     );
@@ -170,7 +170,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       height: widget.height,
       width: double.infinity,
       decoration: BoxDecoration(
-        color: isError ? const Color(0xFFFDECEC) : const Color(0xFFEAF0FF),
+        // 加载中用半透明白，避免浮窗上出现一块实心色块
+        color: isError ? const Color(0xFFFDECEC) : Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(14),
       ),
       alignment: Alignment.center,

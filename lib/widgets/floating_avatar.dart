@@ -71,24 +71,16 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   }
 
   Widget _buildFloatingCard(PromptLink link, Size free) {
+    // 整体透明：只有角色本身和底部控制条，不做底板/阴影，避免遮挡页面文字
     return Material(
       color: Colors.transparent,
-      child: Container(
+      child: SizedBox(
         width: FloatingAvatarHost.avatarWidth,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: const Color(0xFFEAF0FF),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: _dragging ? 0.22 : 0.14),
-              blurRadius: _dragging ? 18 : 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            // 注意：不要给平台视图套 IgnorePointer —— 放弃 Flutter 命中测试后，
+            // Android 层会把这一带触摸直接派发给 WebView，连下方控制条都点不动。
             Live2dAvatar(
               modelPath: link.avatarModel,
               mouth: link.mouth,
@@ -102,48 +94,61 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   }
 
   Widget _buildBar(PromptLink link, Size free) {
+    // 半透明小胶囊：整块背景透明后，手柄仍要看得见、抓得住
     return SizedBox(
       height: FloatingAvatarHost.barHeight,
-      child: Row(
-        children: <Widget>[
-          // 拖动区域
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanStart: (_) => setState(() => _dragging = true),
-              onPanUpdate: (details) {
-                setState(() {
-                  final current =
-                      _dragPos ?? AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free);
-                  _dragPos = AvatarLayout.clampPixel(
-                    Offset(current.dx + details.delta.dx, current.dy + details.delta.dy),
-                    free,
-                  );
-                });
-              },
-              onPanEnd: (_) async {
-                final pos = _dragPos;
-                setState(() => _dragging = false);
-                if (pos == null) return;
-                final normalized = AvatarLayout.normalize(pos, free);
-                await link.setAvatarPosition(normalized.dx, normalized.dy);
-              },
-              onPanCancel: () => setState(() => _dragging = false),
-              child: const Center(
-                child: Icon(Icons.drag_indicator, size: 18, color: Color(0xFF6B7A99)),
+      child: Center(
+        child: Container(
+          height: 26,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: _dragging ? 0.92 : 0.55),
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // 拖动区域
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (_) => setState(() => _dragging = true),
+                onPanUpdate: (details) {
+                  setState(() {
+                    final current =
+                        _dragPos ?? AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free);
+                    _dragPos = AvatarLayout.clampPixel(
+                      Offset(current.dx + details.delta.dx, current.dy + details.delta.dy),
+                      free,
+                    );
+                  });
+                },
+                onPanEnd: (_) async {
+                  final pos = _dragPos;
+                  setState(() => _dragging = false);
+                  if (pos == null) return;
+                  final normalized = AvatarLayout.normalize(pos, free);
+                  await link.setAvatarPosition(normalized.dx, normalized.dy);
+                },
+                onPanCancel: () => setState(() => _dragging = false),
+                child: const SizedBox(
+                  width: 62,
+                  height: 26,
+                  child: Icon(Icons.drag_indicator, size: 18, color: Color(0xFF6B7A99)),
+                ),
               ),
-            ),
+              Container(width: 1, height: 14, color: const Color(0xFFD6DEEE)),
+              InkWell(
+                onTap: () => link.setAvatarEnabled(false),
+                borderRadius: BorderRadius.circular(13),
+                child: const SizedBox(
+                  width: 32,
+                  height: 26,
+                  child: Icon(Icons.close, size: 15, color: Color(0xFF6B7A99)),
+                ),
+              ),
+            ],
           ),
-          const VerticalDivider(width: 1, indent: 9, endIndent: 9, color: Color(0xFFD6DEEE)),
-          InkWell(
-            onTap: () => link.setAvatarEnabled(false),
-            child: const SizedBox(
-              width: 34,
-              height: FloatingAvatarHost.barHeight,
-              child: Icon(Icons.close, size: 16, color: Color(0xFF6B7A99)),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
