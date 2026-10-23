@@ -137,24 +137,28 @@ class GlassActionButton extends StatelessWidget {
       blur: 22,
       opacity: active ? 0.86 : 0.6,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(
-            icon,
-            size: 20,
-            color: active ? const Color(0xFF2F6BFF) : Colors.black26,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: active ? const Color(0xFF1B2A44) : Colors.black26,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: active ? onPressed : null,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(
+              icon,
+              size: 20,
+              color: active ? const Color(0xFF2F6BFF) : Colors.black26,
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: active ? const Color(0xFF1B2A44) : Colors.black26,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

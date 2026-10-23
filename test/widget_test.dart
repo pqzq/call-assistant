@@ -23,7 +23,7 @@ Future<void> _scrollTo(WidgetTester tester, Finder target) async {
 }
 
 Future<void> _openList(WidgetTester tester) async {
-  await _scrollTo(tester, find.text('开始拨号'));
+  // 「开始拨号」现在是悬浮在页面底部的液态玻璃按钮，不需要滚动
   await tester.tap(find.text('开始拨号'));
   await tester.pumpAndSettle();
 }
