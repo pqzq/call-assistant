@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../services/live2d_service.dart';
+import '../services/platform_bridge.dart';
 
 /// Live2D 数字人：WebView 渲染，嘴型由外部 [mouth]（0~1）实时驱动。
 class Live2dAvatar extends StatefulWidget {
@@ -33,6 +35,9 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   String? _error;
   bool _pageReady = false;
   Timer? _throttle;
+
+  /// 加载超时检测定时器
+  Timer? _loadTimer;
   double _pendingMouth = -1;
 
   @override
@@ -55,6 +60,7 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   void dispose() {
     widget.mouth.removeListener(_onMouthChanged);
     _throttle?.cancel();
+    _loadTimer?.cancel();
     super.dispose();
   }
 
@@ -116,7 +122,21 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       await controller.loadRequest(Uri.parse(url));
     } catch (e) {
       if (mounted) setState(() => _error = '加载数字人失败：$e');
+      return;
     }
+
+    // 超时兜底：桌面端缺 WebView2 Runtime 时，浏览器进程根本起不来，
+    // 不会触发 onWebResourceError，只会一直白屏 —— 这里超时后给出可操作的提示。
+    _loadTimer?.cancel();
+    _loadTimer = Timer(const Duration(seconds: 12), () {
+      if (!mounted || _pageReady) return;
+      setState(() {
+        _error = PlatformBridge.isDesktop
+            ? '数字人加载超时：\nWindows 需要「Microsoft Edge WebView2 Runtime」，'
+                '请到微软官网下载安装后重试。\n（没装也不影响播报功能）'
+            : '数字人加载超时，请检查模型文件是否完整';
+      });
+    });
   }
 
   void _onMouthChanged() => _pushMouth(widget.mouth.value);
@@ -208,8 +228,34 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
               color: isError ? const Color(0xFFD03B3B) : Colors.black45,
             ),
           ),
+          // 桌面端缺 WebView2 时，直接给一个下载入口（省得用户自己找官网）
+          if (isError && PlatformBridge.isDesktop) ...<Widget>[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _openWebView2Download,
+              icon: const Icon(Icons.download_outlined, size: 16),
+              label: const Text('下载 WebView2 Runtime', style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// 打开微软官方的 WebView2 Runtime 下载页
+  Future<void> _openWebView2Download() async {
+    const url = 'https://developer.microsoft.com/microsoft-edge/webview2/';
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+    } catch (_) {
+      // 忽略
+    }
   }
 }

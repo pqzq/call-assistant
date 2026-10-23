@@ -14,6 +14,7 @@ import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/desktop_body.dart';
 import '../widgets/confirm_dialog.dart';
 import 'prompt_page.dart';
 
@@ -424,7 +425,7 @@ class _RecordListPageState extends State<RecordListPage> {
           ),
         ],
       ),
-      body: Column(
+      body: DesktopBody(child: Column(
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -492,6 +493,7 @@ class _RecordListPageState extends State<RecordListPage> {
           ),
         ],
       ),
+      ),   // DesktopBody
     );
   }
 

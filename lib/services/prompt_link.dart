@@ -389,7 +389,18 @@ class PromptLink extends ChangeNotifier {
     return List<String>.generate(6, (_) => random.nextInt(16).toRadixString(16)).join();
   }
 
+  /// 系统 TTS 是否可用。
+  ///
+  /// 桌面端**完全禁用** flutter_tts：它的 Windows 实现直接调用 SAPI，
+  /// 机器没装语音引擎时会在**原生层崩溃**（try/catch 拦不住，整个 App 闪退）。
+  /// 桌面端统一走端侧合成（sherpa-onnx）。
+  bool get _systemTtsAvailable => !PlatformBridge.isDesktop;
+
   Future<void> _initTts() async {
+    if (!_systemTtsAvailable) {
+      _ttsReady = false;
+      return;
+    }
     try {
       await _tts.setLanguage('zh-CN');
       await _tts.setSpeechRate(_rate);
@@ -866,6 +877,7 @@ class PromptLink extends ChangeNotifier {
   Future<void> setRate(double value) async {
     _rate = value;
     notifyListeners();
+    if (!_systemTtsAvailable) return;
     try {
       await _tts.setSpeechRate(value);
     } catch (_) {
@@ -1168,6 +1180,14 @@ class PromptLink extends ChangeNotifier {
     }
     final content = text.trim();
     if (content.isEmpty) return;
+
+    // 桌面端：系统 TTS（flutter_tts）在 Windows 上直接调用 SAPI，
+    // 机器没装语音引擎时会在原生层崩溃（整个 App 闪退），所以只走端侧合成。
+    if (PlatformBridge.isDesktop) {
+      await _speakByLocalSynth(content);
+      return;
+    }
+
     if (!_ttsReady) {
       await _initTts();
       if (!_ttsReady) {
@@ -1175,6 +1195,7 @@ class PromptLink extends ChangeNotifier {
         return;
       }
     }
+    if (!_systemTtsAvailable) return;
     try {
       await _tts.stop();
       await _tts.speak(content);
@@ -1186,12 +1207,48 @@ class PromptLink extends ChangeNotifier {
     }
   }
 
+  /// 桌面端播报：用端侧模型合成后播放（不依赖系统语音引擎）
+  Future<void> _speakByLocalSynth(String content) async {
+    if (!ttsModelReady) {
+      _log('桌面端需要端侧语音模型才能朗读（请先导入 TTS 模型）');
+      return;
+    }
+    try {
+      final result = await TtsSynthesizer.instance.synthesize(
+        text: content,
+        speed: _rate <= 0 ? 1.0 : _rate / 0.5,
+      );
+      if (result == null) {
+        _log('端侧合成失败，请检查模型文件是否完整');
+        return;
+      }
+      await _playLocalWav(result);
+    } catch (e) {
+      _log('端侧合成失败：$e');
+    }
+  }
+
+  /// 播放端侧合成的 wav，并按包络驱动嘴型（复用音频播放的嘴型逻辑）
+  Future<void> _playLocalWav(SynthesisResult result) async {
+    _envelope = result.envelope;
+    try {
+      await _player.stop();
+      await _player.play(DeviceFileSource(result.wavPath));
+      _startAudioMouth();
+      _log('开始朗读（端侧合成 ${result.duration.inMilliseconds}ms）');
+    } catch (e) {
+      _log('播放失败：$e');
+    }
+  }
+
   Future<void> stopSpeaking() async {
     _stopMouth();
-    try {
-      await _tts.stop();
-    } catch (_) {
-      // 忽略
+    if (_systemTtsAvailable) {
+      try {
+        await _tts.stop();
+      } catch (_) {
+        // 忽略
+      }
     }
     try {
       await _player.stop();
@@ -1218,7 +1275,9 @@ class PromptLink extends ChangeNotifier {
     _disposed = true;
     _mouthTimer?.cancel();
     _link.close();
-    _tts.stop();
+    if (_systemTtsAvailable) {
+      _tts.stop();
+    }
     _player.dispose();
     mouth.dispose();
     super.dispose();

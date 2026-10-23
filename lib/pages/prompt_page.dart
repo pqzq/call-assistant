@@ -13,6 +13,7 @@ import '../widgets/glass_surface.dart';
 import '../widgets/confirm_dialog.dart';
 import 'demo_page.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/desktop_body.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
 class PromptPage extends StatefulWidget {
@@ -165,7 +166,7 @@ class _PromptPageState extends State<PromptPage> {
           ),
         ],
       ),
-      body: DefaultTabController(
+      body: DesktopBody(child: DefaultTabController(
         length: 4,
         child: Stack(
           children: <Widget>[
@@ -226,6 +227,7 @@ class _PromptPageState extends State<PromptPage> {
           ],
         ),
       ),
+      ),   // DesktopBody
     );
   }
 
@@ -531,6 +533,8 @@ class _PromptPageState extends State<PromptPage> {
 
   Widget _buildStatusCard() {
     final enabled = _link.accessibilityEnabled;
+    // 桌面端没有无障碍服务（也不存在「拨号端」角色），整张卡片不显示
+    if (!PlatformBridge.canDetectCall) return const SizedBox.shrink();
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -287,7 +287,16 @@ PC 端定位为**播放端**：替代第二台手机，接收手机拨号端发�
 | 端侧 TTS / ASR | ✅ | ✅（ASR 的音频解码暂仅 Android） |
 | 保存导出文件 | 系统「下载」目录 | 系统保存对话框 |
 
-**宽屏适配**：桌面端内容限宽 760px 居中，手机布局不会被宽屏拉散。
+**宽屏适配**：桌面端**内容区**限宽 820px 居中（`DesktopBody`），但 **AppBar 仍然通栏**，更像桌面应用；两侧用页面背景色铺满，不会露出黑块。
+
+**桌面端的三个坑（都已处理）**
+
+| 坑 | 现象 | 处理 |
+| --- | --- | --- |
+| `flutter_tts` 在 Windows 上调 SAPI | 机器没装语音引擎时**原生层崩溃**（整个 App 闪退，try/catch 拦不住） | 桌面端**完全禁用**系统 TTS，统一走端侧合成（导入 TTS 模型即可） |
+| 缺 `webview_flutter_windows` | 数字人一片空白，报 `WebViewPlatform.instance != null` | pubspec 显式声明 `webview_flutter_windows`，并确认它出现在 `windows/flutter/generated_plugins.cmake` 里 |
+| 缺 WebView2 Runtime | 数字人不加载（浏览器进程起不来，**不会**触发任何错误回调，只会一直白屏） | 安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)；App 内也有「下载 WebView2 Runtime」按钮 |
+
 
 **构建 Windows**
 

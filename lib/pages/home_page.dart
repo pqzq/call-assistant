@@ -15,6 +15,7 @@ import '../widgets/glass_surface.dart';
 import 'prompt_page.dart';
 import 'record_list_page.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/desktop_body.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -215,7 +216,7 @@ class _HomePageState extends State<HomePage> {
             ),
         ],
       ),
-      body: _busy
+        body: DesktopBody(child: _busy
           ? const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -229,6 +230,7 @@ class _HomePageState extends State<HomePage> {
           : sheet == null
               ? _buildEmptyView()
               : _buildDashboard(sheet),
+            ),   // DesktopBody
     );
   }
 
