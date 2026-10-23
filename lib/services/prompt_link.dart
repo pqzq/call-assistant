@@ -94,6 +94,23 @@ class PromptLink extends ChangeNotifier {
 
   /// 是否已订阅通话状态（避免重复订阅）
   bool _callStateSubscribed = false;
+
+  /// 是否已与对端建立连接（由播放端主动发起）
+  bool _peerConnected = false;
+  String? _connectedPeerId;
+  String? _connectedPeerName;
+
+  /// 正在寻找拨号端
+  bool _seeking = false;
+  int _connectAttempts = 0;
+  Timer? _queryTimer;
+
+  /// 最近一次收到对端消息的时间（用于判断断开）
+  DateTime? _lastPeerMessageAt;
+
+  bool get peerConnected => _peerConnected;
+  String? get connectedPeerName => _connectedPeerName;
+  bool get seeking => _seeking;
   bool _asPlayer = false;
   bool _ttsReady = false;
   bool _initialized = false;
@@ -335,6 +352,9 @@ class PromptLink extends ChangeNotifier {
       CallStateWatcher.stream().listen(_onCallState);
       _callStateSubscribed = true;
       _log('已按配置启动拨号端服务（等待接通检测）');
+      // 前台保活：避免进程被回收导致无障碍授权被系统移除
+      await CallStateWatcher.requestNotificationPermission();
+      await CallStateWatcher.startKeepAlive();
     }
     if (_asPlayer) {
       _log('已按配置启动播放端服务（等待播报指令）');
@@ -673,9 +693,25 @@ class PromptLink extends ChangeNotifier {
     notifyListeners();
     if (ok) {
       _announce();
-      // 周期性宣告在线，方便两端互相发现
-      Timer.periodic(const Duration(seconds: 5), (_) => _announce());
+      // 周期性宣告在线，方便两端互相发现（不刷日志，只有连接/断开才记录）
+      Timer.periodic(const Duration(seconds: 5), (_) {
+        _announce();
+        _checkPeerTimeout();
+      });
     }
+  }
+
+  /// 对端超过 15 秒没有消息 -> 视为断开，只在状态变化时记一条日志
+  void _checkPeerTimeout() {
+    final last = _lastPeerMessageAt;
+    if (!_peerConnected || last == null) return;
+    if (DateTime.now().difference(last).inSeconds < 15) return;
+    final name = _connectedPeerName ?? '对端';
+    _peerConnected = false;
+    _connectedPeerId = null;
+    _connectedPeerName = null;
+    _log('$name 已断开连接');
+    notifyListeners();
   }
 
   void _announce() {
@@ -750,6 +786,7 @@ class PromptLink extends ChangeNotifier {
     if (!_autoTrigger && _callStateSubscribed) {
       _callStateSubscribed = false;
       _armed = false;
+      await CallStateWatcher.stopKeepAlive();
     }
   }
 
@@ -837,12 +874,37 @@ class PromptLink extends ChangeNotifier {
 
   void _onLanMessage(LanMessage message, LanPeer peer) {
     if (message.deviceId == _deviceId) return;
+    _lastPeerMessageAt = DateTime.now();
 
     switch (message.type) {
-      case LanMessageType.hello:
-        _log('发现对端：${peer.displayName}（${peer.address.address}）');
-        notifyListeners();
+      case LanMessageType.query:
+        // 播放端在找拨号端：拨号端回应自己的身份
+        if (_autoTrigger && !_asPlayer) {
+          _send(peer, LanMessageType.hello);
+        }
         break;
+
+      case LanMessageType.hello:
+        // 拨号端的存在宣告（每 5 秒一次，不再刷日志）
+        if (_asPlayer && !_peerConnected && peer.role == 'dialer') {
+          // 播放端主动发起连接
+          _send(peer, LanMessageType.connect);
+        }
+        break;
+
+      case LanMessageType.connect:
+        // 播放端请求连接：拨号端确认
+        if (_autoTrigger) {
+          _send(peer, LanMessageType.connected);
+          _markConnected(peer, '播放端已连接：${peer.displayName}');
+        }
+        break;
+
+      case LanMessageType.connected:
+        // 拨号端确认连接
+        _markConnected(peer, '已连接拨号端：${peer.displayName}');
+        break;
+
       case LanMessageType.answered:
         if (!_asPlayer) {
           _log('收到播报指令，但本机未开启播放端');
@@ -852,9 +914,82 @@ class PromptLink extends ChangeNotifier {
         _log('收到播报指令（来自 ${peer.displayName}）：${message.rowLabel}', important: true);
         speak(text);
         break;
+
       default:
         break;
     }
+  }
+
+  void _send(LanPeer peer, String type) {
+    _link.sendTo(
+      LanMessage(
+        type: type,
+        deviceId: _deviceId,
+        deviceName: _deviceName,
+        role: _roleName,
+      ),
+      peer,
+    );
+  }
+
+  void _markConnected(LanPeer peer, String log) {
+    final already = _peerConnected && _connectedPeerId == peer.deviceId;
+    _peerConnected = true;
+    _connectedPeerId = peer.deviceId;
+    _connectedPeerName = peer.displayName;
+    if (!already) {
+      _log(log, important: true);
+    }
+    notifyListeners();
+  }
+
+  /// 播放端：手动发起连接拨号端
+  Future<void> connectToDialer() async {
+    if (!_asPlayer) {
+      _log('请先开启「播放端」');
+      return;
+    }
+    _seeking = true;
+    _connectAttempts = 0;
+    notifyListeners();
+    _log('正在寻找拨号端…');
+    _queryTimer?.cancel();
+    _queryTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!_seeking || _peerConnected) {
+        timer.cancel();
+        _seeking = false;
+        notifyListeners();
+        return;
+      }
+      _connectAttempts++;
+      if (_connectAttempts > 15) {
+        timer.cancel();
+        _seeking = false;
+        notifyListeners();
+        _log('未找到拨号端，请确认两台手机在同一 Wi-Fi 且拨号端已开启');
+        return;
+      }
+      _link.broadcast(LanMessage(
+        type: LanMessageType.query,
+        deviceId: _deviceId,
+        deviceName: _deviceName,
+        role: _roleName,
+      ));
+    });
+  }
+
+  /// 断开与拨号端的连接
+  Future<void> disconnectPeer() async {
+    _queryTimer?.cancel();
+    _queryTimer = null;
+    _seeking = false;
+    if (_peerConnected) {
+      _log('已断开拨号端连接');
+    }
+    _peerConnected = false;
+    _connectedPeerId = null;
+    _connectedPeerName = null;
+    notifyListeners();
   }
 
   /// 播放开场白：优先用音频文件，其次系统 TTS

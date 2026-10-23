@@ -210,21 +210,47 @@ class _PromptPageState extends State<PromptPage> {
           Row(
             children: <Widget>[
               Icon(
-                _link.listening ? Icons.wifi : Icons.wifi_off,
+                _link.peerConnected
+                    ? Icons.wifi
+                    : _link.listening
+                        ? Icons.wifi_find
+                        : Icons.wifi_off,
                 size: 16,
-                color: _link.listening ? const Color(0xFF2F6BFF) : Colors.black38,
+                color: _link.peerConnected
+                    ? const Color(0xFF17A05A)
+                    : _link.listening
+                        ? const Color(0xFF2F6BFF)
+                        : Colors.black38,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  _link.listening
-                      ? _link.hasPeer
-                          ? '局域网已连接：${_link.peers.map((p) => p.displayName).join('、')}'
-                          : '局域网监听中，等待另一台手机…'
-                      : '局域网未启动',
+                  _link.peerConnected
+                      ? '已连接：${_link.connectedPeerName ?? '对端'}'
+                      : _link.seeking
+                          ? '正在寻找拨号端…'
+                          : _link.listening
+                              ? (_link.asPlayer ? '未连接拨号端' : '等待播放端连接')
+                              : '局域网未启动',
                   style: const TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ),
+              // 播放端：手动发起连接
+              if (_link.asPlayer && _link.listening)
+                TextButton(
+                  onPressed: _link.peerConnected
+                      ? _link.disconnectPeer
+                      : _link.connectToDialer,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    _link.peerConnected ? '断开' : (_link.seeking ? '搜索中…' : '连接拨号端'),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
             ],
           ),
           if (_link.lastError != null) ...<Widget>[

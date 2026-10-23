@@ -73,6 +73,46 @@ class CallStateWatcher {
     }
   }
 
+  /// 启动前台保活服务：进程不被系统回收，无障碍服务授权不会掉
+  static Future<bool> startKeepAlive() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('startKeepAlive');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 停止前台保活服务
+  static Future<bool> stopKeepAlive() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('stopKeepAlive');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 申请通知权限（Android 13+ 才有前台服务通知，不授权也不影响服务运行）
+  static Future<bool> requestNotificationPermission() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('requestNotificationPermission');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 打开系统无障碍设置页
+  static Future<bool> openAccessibilitySettings() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('openAccessibilitySettings');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 设备机型（用作默认设备名），取不到时返回空串
   static Future<String> deviceModel() async {
     try {

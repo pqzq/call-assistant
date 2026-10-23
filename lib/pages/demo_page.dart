@@ -148,7 +148,8 @@ class _DemoPageState extends State<DemoPage> {
     final steps = _steps;
     final current = steps.isEmpty ? null : steps[_currentStep];
     return Scaffold(
-      backgroundColor: const Color(0xFF0E1524),
+      // 与「双机联动播报」页保持同一背景色
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('数字人演示'),
         actions: <Widget>[
@@ -162,7 +163,8 @@ class _DemoPageState extends State<DemoPage> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final avatarHeight = (constraints.maxHeight * 0.58).clamp(200.0, 460.0);
+            // 数字人放大一倍：几乎占满可用高度（原来上限 460，现在上限 900）
+            final avatarHeight = (constraints.maxHeight - 200).clamp(320.0, 900.0);
             return Column(
               children: <Widget>[
                 const SizedBox(height: 8),
@@ -186,9 +188,9 @@ class _DemoPageState extends State<DemoPage> {
                     margin: const EdgeInsets.symmetric(horizontal: 16),
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
+                      color: Colors.white.withValues(alpha: 0.94),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      border: Border.all(color: const Color(0xFFE1E7F2)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,10 +211,7 @@ class _DemoPageState extends State<DemoPage> {
                             const Spacer(),
                             Text(
                               _link.activeLead == null ? '示例播报' : _link.activeLead!.name,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white.withValues(alpha: 0.6),
-                              ),
+                              style: const TextStyle(fontSize: 12, color: Colors.black54),
                             ),
                           ],
                         ),
@@ -224,7 +223,7 @@ class _DemoPageState extends State<DemoPage> {
                               style: const TextStyle(
                                 fontSize: 17,
                                 height: 1.6,
-                                color: Colors.white,
+                                color: Colors.black87,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -236,7 +235,7 @@ class _DemoPageState extends State<DemoPage> {
                           child: LinearProgressIndicator(
                             value: _progress,
                             minHeight: 3,
-                            backgroundColor: Colors.white.withValues(alpha: 0.12),
+                            backgroundColor: const Color(0xFFE8EDF6),
                             valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4D8BFF)),
                           ),
                         ),
@@ -256,8 +255,6 @@ class _DemoPageState extends State<DemoPage> {
                           label: Text(_playing ? '停止' : '开始演示'),
                           style: FilledButton.styleFrom(
                             minimumSize: const Size.fromHeight(50),
-                            backgroundColor: Colors.white,
-                            foregroundColor: const Color(0xFF0E1524),
                           ),
                         ),
                       ),
@@ -266,8 +263,6 @@ class _DemoPageState extends State<DemoPage> {
                         onPressed: () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(96, 50),
-                          foregroundColor: Colors.white,
-                          side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
                         ),
                         child: const Text('返回'),
                       ),

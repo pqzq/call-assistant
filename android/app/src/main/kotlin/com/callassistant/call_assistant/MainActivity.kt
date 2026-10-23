@@ -41,6 +41,34 @@ class MainActivity : FlutterActivity() {
                         result.error("OPEN_FAILED", e.message, null)
                     }
                 }
+                // 启动/停止前台保活服务（进程不被回收 -> 无障碍授权不会掉）
+                "startKeepAlive" -> {
+                    try {
+                        CallAssistantService.start(this)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("START_FAILED", e.message, null)
+                    }
+                }
+                "stopKeepAlive" -> {
+                    try {
+                        CallAssistantService.stop(this)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("STOP_FAILED", e.message, null)
+                    }
+                }
+                // Android 13+ 需要通知权限才能看到前台服务通知（不授权也不影响服务运行）
+                "requestNotificationPermission" -> {
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= 33) {
+                            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1001)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

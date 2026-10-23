@@ -6,8 +6,17 @@ import 'dart:io';
 class LanMessageType {
   const LanMessageType._();
 
-  /// 心跳/在线宣告
+  /// 心跳/在线宣告（拨号端用它回应播放端的查询）
   static const String hello = 'hello';
+
+  /// 播放端广播：寻找局域网里的拨号端
+  static const String query = 'query';
+
+  /// 播放端：请求与拨号端建立连接
+  static const String connect = 'connect';
+
+  /// 拨号端：已接受连接
+  static const String connected = 'connected';
 
   /// 拨号端通知：对方已接通，请播放开场白
   static const String answered = 'answered';
@@ -174,6 +183,17 @@ class LanLink {
       } catch (_) {
         // 忽略
       }
+    }
+  }
+
+  /// 单播给指定对端（连接握手用，避免广播被其它设备看到）
+  void sendTo(LanMessage message, LanPeer peer) {
+    final socket = _socket;
+    if (socket == null) return;
+    try {
+      socket.send(message.encode(), peer.address, port);
+    } catch (_) {
+      // 忽略
     }
   }
 
