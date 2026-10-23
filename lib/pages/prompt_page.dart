@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/call_state_watcher.dart';
 import '../services/prompt_link.dart';
+import '../widgets/glass_surface.dart';
 import 'demo_page.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
@@ -121,61 +122,84 @@ class _PromptPageState extends State<PromptPage> {
           ),
         ],
       ),
-      body: Column(
-        children: <Widget>[
-          // 常驻快捷条：角色开关 + 连接状态 + 立即播报，一屏可达
-          _buildQuickBar(),
-          Expanded(
-            child: DefaultTabController(
-              length: 4,
-              child: Column(
-                children: <Widget>[
-                  Expanded(
-                    child: TabBarView(
-                      children: <Widget>[
-                        _tabView(<Widget>[
-                          _buildStatusCard(),
-                          const SizedBox(height: 12),
-                          _buildDeviceCard(),
-                          const SizedBox(height: 12),
-                          _buildSingleDeviceCard(),
-                        ]),
-                        _tabView(<Widget>[
-                          _buildScriptCard(),
-                          const SizedBox(height: 12),
-                          _buildSynthCard(),
-                          const SizedBox(height: 12),
-                          _buildAudioCard(),
-                        ]),
-                        _tabView(<Widget>[
-                          _buildAvatarCard(),
-                          const SizedBox(height: 12),
-                          _buildAvatarModelCard(),
-                        ]),
-                        _tabView(<Widget>[
-                          _buildLogCard(),
-                          const SizedBox(height: 16),
-                          _buildTipCard(),
-                        ]),
-                      ],
-                    ),
-                  ),
-                  const TabBar(
-                    isScrollable: false,
-                    tabAlignment: TabAlignment.fill,
-                    labelPadding: EdgeInsets.zero,
-                    tabs: <Widget>[
-                      Tab(text: '连接', height: 44),
-                      Tab(text: '播报', height: 44),
-                      Tab(text: '数字人', height: 44),
-                      Tab(text: '日志', height: 44),
+      body: DefaultTabController(
+        length: 4,
+        child: Stack(
+          children: <Widget>[
+            Column(
+              children: <Widget>[
+                // 常驻快捷条：角色开关 + 连接状态 + 立即播报，一屏可达
+                _buildQuickBar(),
+                Expanded(
+                  child: TabBarView(
+                    children: <Widget>[
+                      _tabView(<Widget>[
+                        _buildStatusCard(),
+                        const SizedBox(height: 12),
+                        _buildDeviceCard(),
+                        const SizedBox(height: 12),
+                        _buildSingleDeviceCard(),
+                      ]),
+                      _tabView(<Widget>[
+                        _buildScriptCard(),
+                        const SizedBox(height: 12),
+                        _buildSynthCard(),
+                        const SizedBox(height: 12),
+                        _buildAudioCard(),
+                      ]),
+                      _tabView(<Widget>[
+                        _buildAvatarCard(),
+                        const SizedBox(height: 12),
+                        _buildAvatarModelCard(),
+                      ]),
+                      _tabView(<Widget>[
+                        _buildLogCard(),
+                        const SizedBox(height: 16),
+                        _buildTipCard(),
+                      ]),
                     ],
                   ),
-                ],
+                ),
+              ],
+            ),
+            // 悬浮玻璃导航条
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 14,
+              child: GlassNavBar(
+                child: Row(
+                  children: <Widget>[
+                    _navItem(0, Icons.link, '连接'),
+                    _navItem(1, Icons.campaign_outlined, '播报'),
+                    _navItem(2, Icons.face_retouching_natural, '数字人'),
+                    _navItem(3, Icons.receipt_long_outlined, '日志'),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 玻璃导航条上的一个项
+  Widget _navItem(int index, IconData icon, String label) {
+    return Expanded(
+      child: Builder(
+        builder: (context) {
+          final controller = DefaultTabController.of(context);
+          return AnimatedBuilder(
+            animation: controller,
+            builder: (context, _) => GlassNavItem(
+              selected: controller.index == index,
+              icon: icon,
+              label: label,
+              onTap: () => controller.animateTo(index),
+            ),
+          );
+        },
       ),
     );
   }
@@ -261,7 +285,8 @@ class _PromptPageState extends State<PromptPage> {
   /// 标签页内容（各自可滚动，但关键操作都在首屏）
   Widget _tabView(List<Widget> children) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      // 底部留白：避免被悬浮玻璃导航条遮住
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: children,
     );
   }

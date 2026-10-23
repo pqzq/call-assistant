@@ -99,6 +99,21 @@ flutter build apk --release
         {type:answered, script:"开场白"}      → flutter_tts 朗读开场白
 ```
 
+### 液态玻璃风格（Liquid Glass）
+
+新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：
+
+| 组件 | 用途 |
+| --- | --- |
+| `GlassSurface` | 玻璃容器：背景强模糊（BackdropFilter）+ 半透明渐变 + 1px 高光描边 + 柔和投影 |
+| `GlassNavBar` | 悬浮玻璃导航条（联动页底部） |
+| `GlassNavItem` | 导航项，选中时是更亮的一小块玻璃 |
+| `GlassActionButton` | 悬浮玻璃主按钮（首页「开始拨号」「选择 Excel 文件」） |
+
+- 联动页底部标签栏从「占布局空间」改成**悬浮在内容之上**的玻璃条（内容区留了 96px 底部空白，不会被遮住）
+- 首页的主操作按钮也改成悬浮玻璃按钮（列表里不再有重复的大按钮）
+- 玻璃模糊需要背后有内容才看得出来，所以两个页面都把按钮放在内容之上（`Stack` + `Positioned`），而不是放在 `bottomNavigationBar`
+
 ### 页面布局（尽量不滚动就能操作）
 
 「双机联动播报」页改成 **常驻快捷条 + 4 个标签页**：
