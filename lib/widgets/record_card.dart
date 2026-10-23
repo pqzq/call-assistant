@@ -15,6 +15,7 @@ class RecordCard extends StatelessWidget {
     required this.onTap,
     required this.onPhoneTap,
     this.highlighted = false,
+    this.compact = false,
   });
 
   /// 在表格中的行号（从 1 开始）
@@ -33,6 +34,9 @@ class RecordCard extends StatelessWidget {
   /// 正在拨打该行号码时高亮
   final bool highlighted;
 
+  /// 紧凑模式：一行信息尽量塞进一行，行高约 50（标准模式约 120）
+  final bool compact;
+
   /// 点击卡片整体（号码多于一个时会弹出选择器）
   final VoidCallback onTap;
 
@@ -47,6 +51,7 @@ class RecordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (compact) return _buildCompact(context);
     final theme = Theme.of(context);
     final hasPhone = phones.isNotEmpty;
 
@@ -146,6 +151,208 @@ class RecordCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 紧凑模式：整行压到约 50 高，一屏能多看一倍的记录
+  Widget _buildCompact(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasPhone = phones.isNotEmpty;
+    final borderColor = highlighted
+        ? theme.colorScheme.primary
+        : (called ? const Color(0xFFBFE5CD) : Colors.black12);
+
+    return AnimatedContainer(
+      key: ValueKey<String>('row_card_$rowNumber'),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: highlighted ? highlightColor : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor, width: highlighted ? 1.6 : 1),
+        boxShadow: highlighted
+            ? const <BoxShadow>[
+                BoxShadow(color: Color(0x1F2F6BFF), blurRadius: 10, offset: Offset(0, 3)),
+              ]
+            : const <BoxShadow>[],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: hasPhone ? onTap : null,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _compactIndex(theme, hasPhone),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Flexible(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                height: 1.15,
+                              ),
+                            ),
+                          ),
+                          if (highlighted) ...<Widget>[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                '正在拨打',
+                                style: TextStyle(fontSize: 9, color: Colors.white),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 1),
+                      _compactPhones(),
+                      _compactSummary(),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _compactCallButton(hasPhone),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 紧凑模式的序号（小圆点）
+  Widget _compactIndex(ThemeData theme, bool hasPhone) {
+    return Container(
+      width: 20,
+      height: 20,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: highlighted
+            ? theme.colorScheme.primary
+            : (hasPhone ? const Color(0xFFE8EEFF) : Colors.black12),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        '$rowNumber',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: highlighted ? Colors.white : const Color(0xFF5B6B84),
+        ),
+      ),
+    );
+  }
+
+  /// 紧凑模式：号码横排显示，可直接点击拨打
+  Widget _compactPhones() {
+    if (phones.isEmpty) {
+      return const Text(
+        '无号码',
+        style: TextStyle(fontSize: 12, color: Colors.black38),
+      );
+    }
+    final visible = phones.take(2).toList();
+    return Wrap(
+      spacing: 8,
+      runSpacing: 0,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        for (final phone in visible)
+          GestureDetector(
+            onTap: () => onPhoneTap(phone),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  phone.label,
+                  style: const TextStyle(fontSize: 9.5, color: Colors.black38),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  phone.display,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.1,
+                    fontWeight: FontWeight.w600,
+                    color: called ? Colors.black38 : const Color(0xFF1B62F0),
+                    decoration: called ? TextDecoration.lineThrough : null,
+                    decorationColor: Colors.black26,
+                  ),
+                ),
+                if (phone.note != null && phone.note!.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: 4),
+                  Text(
+                    phone.note!,
+                    style: const TextStyle(fontSize: 9.5, color: Color(0xFF17A05A)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        if (phones.length > visible.length)
+          Text(
+            '+${phones.length - visible.length}',
+            style: const TextStyle(fontSize: 10.5, color: Colors.black38),
+          ),
+      ],
+    );
+  }
+
+  /// 紧凑模式：其它字段摘要（部门/备注等，最多两条，一行省略）
+  Widget _compactSummary() {
+    if (fields.isEmpty) {
+      return const Text('', style: TextStyle(fontSize: 10, height: 1.1));
+    }
+    final text = fields
+        .where((field) => field.label.trim() != '序号') // 左边已有序号圆点，避免重复
+        .take(2)
+        .map((field) => '${field.label}: ${field.value}')
+        .where((item) => item.trim().isNotEmpty && !item.endsWith(': '))
+        .join(' · ');
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 10.5, height: 1.2, color: Colors.black38),
+    );
+  }
+
+  /// 紧凑模式的拨号按钮
+  Widget _compactCallButton(bool hasPhone) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: hasPhone ? const Color(0xFFE7F0FF) : Colors.black12,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        Icons.call,
+        size: 15,
+        color: hasPhone ? const Color(0xFF2F6BFF) : Colors.black26,
       ),
     );
   }

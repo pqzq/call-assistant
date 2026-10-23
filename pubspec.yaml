@@ -1,7 +1,7 @@
 name: call_assistant
 description: "导入 Excel 表格，自动识别手机号列，点击号码跳转系统拨号页并自动填充号码。"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -17,6 +17,14 @@ dependencies:
   url_launcher: ">=6.2.0 <7.0.0"
   # 记录已呼叫号码
   shared_preferences: ">=2.2.0 <3.0.0"
+  # 双机联动：播放端朗读开场白（系统 TTS 不可用时回退到音频文件）
+  flutter_tts: ">=4.0.0 <5.0.0"
+  audioplayers: ">=6.0.0 <7.0.0"
+  path_provider: ">=2.1.0 <3.0.0"
+  sherpa_onnx: 1.13.8
+  archive: ^3.6.1
+  webview_flutter: ^4.14.1
+  webview_flutter_android: ^4.14.1
 
 dev_dependencies:
   flutter_test:
@@ -25,3 +33,31 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # Live2D 数字人：web 运行时 + 8 个 Live2D 官方样例模型
+    # （样例模型仅限测试/非商业用途，商用请替换成自有授权模型）
+    - assets/live2d/
+    - assets/live2d/haru/
+    - assets/live2d/haru/Haru.2048/
+    - assets/live2d/haru/motions/
+    - assets/live2d/haru/expressions/
+    - assets/live2d/hiyori/
+    - assets/live2d/hiyori/Hiyori.2048/
+    - assets/live2d/hiyori/motions/
+    - assets/live2d/mao/
+    - assets/live2d/mao/Mao.2048/
+    - assets/live2d/mao/motions/
+    - assets/live2d/mao/expressions/
+    - assets/live2d/mark/
+    - assets/live2d/mark/Mark.2048/
+    - assets/live2d/mark/motions/
+    - assets/live2d/natori/
+    - assets/live2d/natori/Natori.2048/
+    - assets/live2d/natori/motions/
+    - assets/live2d/natori/exp/
+    - assets/live2d/rice/
+    - assets/live2d/rice/Rice.2048/
+    - assets/live2d/rice/motions/
+    - assets/live2d/wanko/
+    - assets/live2d/wanko/Wanko.1024/
+    - assets/live2d/wanko/motions/

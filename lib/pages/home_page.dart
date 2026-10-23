@@ -10,7 +10,10 @@ import '../services/dialer_service.dart';
 import '../services/excel_service.dart';
 import '../services/settings_store.dart';
 import '../utils/phone_utils.dart';
+import '../widgets/glass_surface.dart';
+import 'prompt_page.dart';
 import 'record_list_page.dart';
+import '../widgets/app_toast.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -76,9 +79,7 @@ class _HomePageState extends State<HomePage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
+    AppToast.show(context, message);
   }
 
   Future<void> _importExcel() async {
@@ -195,6 +196,15 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('话务助手'),
         actions: <Widget>[
+          IconButton(
+            tooltip: '双机联动播报',
+            icon: const Icon(Icons.record_voice_over_outlined),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const PromptPage()),
+              );
+            },
+          ),
           if (sheet != null)
             IconButton(
               tooltip: '重新导入',
@@ -221,12 +231,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildEmptyView() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 48, 24, 32),
+    return Stack(
       children: <Widget>[
-        Center(
-          child: Container(
-            width: 104,
+        ListView(
+          // 底部留白：给悬浮玻璃按钮让位
+          padding: const EdgeInsets.fromLTRB(24, 48, 24, 120),
+          children: <Widget>[
+            Center(
+              child: Container(
+                width: 104,
             height: 104,
             decoration: BoxDecoration(
               color: Colors.white,
@@ -251,12 +264,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         const SizedBox(height: 32),
-        FilledButton.icon(
-          onPressed: _importExcel,
-          icon: const Icon(Icons.file_open),
-          label: const Text('选择 Excel 文件'),
-        ),
-        const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: _useDemoData,
           icon: const Icon(Icons.play_circle_outline),
@@ -264,6 +271,19 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 28),
         _buildTipCard(),
+          ],
+        ),
+        // 悬浮液态玻璃主按钮
+        Positioned(
+          left: 24,
+          right: 24,
+          bottom: 18,
+          child: GlassActionButton(
+            onPressed: _importExcel,
+            icon: Icons.file_open,
+            label: '选择 Excel 文件',
+          ),
+        ),
       ],
     );
   }
@@ -296,27 +316,37 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDashboard(ImportedSheet sheet) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+    return Stack(
       children: <Widget>[
-        _buildSourceCard(sheet),
-        const SizedBox(height: 12),
-        _buildPhoneColumnCard(sheet),
-        const SizedBox(height: 12),
-        _buildAreaCodeCard(),
-        const SizedBox(height: 12),
-        _buildStatsCard(sheet),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: _openList,
-          icon: const Icon(Icons.call),
-          label: const Text('开始拨号'),
+        ListView(
+          // 底部留白：给悬浮玻璃按钮让位
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 108),
+          children: <Widget>[
+            _buildSourceCard(sheet),
+            const SizedBox(height: 12),
+            _buildPhoneColumnCard(sheet),
+            const SizedBox(height: 12),
+            _buildAreaCodeCard(),
+            const SizedBox(height: 12),
+            _buildStatsCard(sheet),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: _importExcel,
+              icon: const Icon(Icons.upload_file),
+              label: const Text('导入其他表格'),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: _importExcel,
-          icon: const Icon(Icons.upload_file),
-          label: const Text('导入其他表格'),
+        // 悬浮液态玻璃主按钮
+        Positioned(
+          left: 24,
+          right: 24,
+          bottom: 18,
+          child: GlassActionButton(
+            onPressed: _openList,
+            icon: Icons.call,
+            label: '开始拨号',
+          ),
         ),
       ],
     );

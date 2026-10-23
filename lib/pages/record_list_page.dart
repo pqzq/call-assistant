@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/active_lead.dart';
 import '../models/sheet_data.dart';
+import '../services/call_log_store.dart';
+import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
+import '../widgets/app_toast.dart';
 
 class RecordListPage extends StatefulWidget {
   const RecordListPage({
@@ -37,6 +42,11 @@ class _RecordListPageState extends State<RecordListPage> {
   final Set<String> _called = <String>{};
   String _query = '';
 
+  /// 紧凑模式（默认开启）：一屏能看到更多行
+  bool _compact = true;
+
+  static const String _compactKey = 'record_list_compact';
+
   /// 最近拨打的行（持续高亮，直到刷新列表 / 重新进入本页）
   int? _highlightRow;
 
@@ -44,6 +54,19 @@ class _RecordListPageState extends State<RecordListPage> {
   void initState() {
     super.initState();
     _called.addAll(widget.called);
+    _loadCompactPref();
+  }
+
+  /// 读取上次选择的显示密度
+  Future<void> _loadCompactPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getBool(_compactKey);
+      if (value == null || !mounted) return;
+      setState(() => _compact = value);
+    } catch (_) {
+      // 忽略
+    }
   }
 
   @override
@@ -110,6 +133,38 @@ class _RecordListPageState extends State<RecordListPage> {
     return text.length > 24 ? '${text.substring(0, 24)}…' : text;
   }
 
+  /// 把当前行整理成提词用的客户信息（含上次拨打时间）
+  Future<void> _attachLead(int row, String phone) async {
+    final fields = _fieldsOf(row);
+    final titleIndex = _titleIndexOf(fields);
+    final name = titleIndex >= 0 ? fields[titleIndex].value.trim() : '第 ${row + 1} 行';
+    final extras = <CellField>[
+      for (var i = 0; i < fields.length; i++)
+        if (i != titleIndex) fields[i],
+    ];
+    Map<String, DateTime> times = <String, DateTime>{};
+    try {
+      times = await CallLogStore.loadTimes();
+    } catch (_) {
+      // 忽略
+    }
+    await PromptLink.instance.setActiveLead(ActiveLead(
+      name: name.isEmpty ? '第 ${row + 1} 行' : name,
+      phone: phone,
+      extras: extras,
+      lastCalled: times[phone],
+    ));
+  }
+
+  /// 联动日志用的行描述：标题 + 号码
+  String _rowLabelOf(int row) {
+    final fields = _fieldsOf(row);
+    final titleIndex = _titleIndexOf(fields);
+    final title = titleIndex >= 0 ? fields[titleIndex].value : '第 ${row + 1} 行';
+    final phone = PhoneUtils.dialTarget(widget.sheet.rawPhoneAt(row), areaCode: widget.areaCode);
+    return phone == null ? title : '$title $phone';
+  }
+
   Future<void> _dialEntry(PhoneEntry entry, int row) async {
     final target = entry.dialTarget;
     if (target == null) {
@@ -119,6 +174,10 @@ class _RecordListPageState extends State<RecordListPage> {
     _markDialing(row);
     setState(() => _called.add(target));
     HapticFeedback.lightImpact();
+    // 浮动提词气泡：把当前客户与上次联系时间带过去
+    await _attachLead(row, target);
+    // 双机联动：拨号后进入「等待接通」状态，接通即通知播放端
+    PromptLink.instance.armAfterDial(rowLabel: _rowLabelOf(row), phone: target);
     final ok = await widget.onCall(target);
     if (!ok) {
       _toast('未找到可用的拨号应用');
@@ -151,9 +210,7 @@ class _RecordListPageState extends State<RecordListPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
+    AppToast.show(context, message);
   }
 
   Future<void> _copyAll() async {
@@ -182,6 +239,19 @@ class _RecordListPageState extends State<RecordListPage> {
       appBar: AppBar(
         title: Text(sheet.name.isEmpty ? '号码列表' : sheet.name),
         actions: <Widget>[
+          IconButton(
+            tooltip: _compact ? '切换为详细模式' : '切换为紧凑模式',
+            icon: Icon(_compact ? Icons.view_agenda_outlined : Icons.density_small),
+            onPressed: () async {
+              setState(() => _compact = !_compact);
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool(_RecordListPageState._compactKey, _compact);
+              } catch (_) {
+                // 忽略
+              }
+            },
+          ),
           IconButton(
             tooltip: '刷新列表',
             icon: const Icon(Icons.refresh),
@@ -215,18 +285,23 @@ class _RecordListPageState extends State<RecordListPage> {
       body: Column(
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: TextField(
               controller: _controller,
               onChanged: (value) => setState(() => _query = value),
               textInputAction: TextInputAction.search,
+              style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
                 hintText: '搜索姓名 / 号码 / 其他字段',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                hintStyle: const TextStyle(fontSize: 13),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                prefixIcon: const Icon(Icons.search, size: 18),
+                prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 30),
                 suffixIcon: _query.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
+                        icon: const Icon(Icons.clear, size: 16),
                         onPressed: () {
                           _controller.clear();
                           setState(() => _query = '');
@@ -236,13 +311,13 @@ class _RecordListPageState extends State<RecordListPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: Row(
               children: <Widget>[
                 Expanded(
                   child: Text(
                     '共 ${sheet.rowCount} 条，当前显示 ${rows.length} 条',
-                    style: const TextStyle(fontSize: 12, color: Colors.black45),
+                    style: const TextStyle(fontSize: 11.5, color: Colors.black45),
                   ),
                 ),
                 Text(
@@ -251,7 +326,7 @@ class _RecordListPageState extends State<RecordListPage> {
                       : sheet.phoneColumns.length == 1
                           ? '号码列：${sheet.headerAt(sheet.phoneColumn!)}'
                           : '号码列：${sheet.phoneColumns.map(sheet.headerAt).join(' / ')}',
-                  style: const TextStyle(fontSize: 12, color: Colors.black45),
+                  style: const TextStyle(fontSize: 11.5, color: Colors.black45),
                 ),
               ],
             ),
@@ -292,6 +367,7 @@ class _RecordListPageState extends State<RecordListPage> {
                             fields: details,
                             called: anyCalled,
                             highlighted: _highlightRow == row,
+                            compact: _compact,
                             onTap: () => _chooseAndDial(phones, row),
                             onPhoneTap: (entry) => _dialEntry(entry, row),
                           );

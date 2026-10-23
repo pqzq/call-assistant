@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">话务助手</string>
+    <string name="accessibility_service_description">用于检测电话是否已接通：读取系统通话界面上的通话计时（如 00:05）与“通话中”字样，接通后通知本应用的播放端在另一台手机上朗读开场白。不会读取或上传通话内容。</string>
+</resources>
