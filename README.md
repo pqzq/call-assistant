@@ -403,12 +403,12 @@ flutter build apk --release
 
 流程（release job）：checkout → JDK 21 + Flutter → 从 Secrets 还原密钥 → `flutter pub get` → 校验标签版本与 pubspec 版本一致 → `flutter build apk --release --split-per-abi` → 只保留 ARM 架构并重命名 → 创建 GitHub Release。
 
-发布产物（以 v1.0.0 为例）：
+发布产物（以 v1.1.0 为例）：
 
 | 文件名 | 体积 | 适用设备 |
 | --- | --- | --- |
-| `call-assistant-1.0.0-arm64-v8a.apk` | ~63.6 MB | 绝大多数现代手机（**推荐**） |
-| `call-assistant-1.0.0-armeabi-v7a.apk` | ~53.2 MB | 32 位老旧机型（Android 5~7 时代） |
+| `call-assistant-1.1.0-arm64-v8a.apk` | ~63.6 MB | 绝大多数现代手机（**推荐**） |
+| `call-assistant-1.1.0-armeabi-v7a.apk` | ~53.2 MB | 32 位老旧机型（Android 5~7 时代） |
 
 - 用 `--split-per-abi` 拆分后每个包只含一套 so；`x86_64` 仅用于模拟器，不发布
 - 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）与 Live2D 运行时 + **8 个官方样例模型（约 22MB assets）**；通用包会到 145MB，所以**必须按 ABI 拆分**
@@ -440,14 +440,14 @@ flutter build apk --release
 
    ```powershell
    # 先把 pubspec.yaml 里的 version 改成要发布的版本号并提交
-   # version: 1.0.0+1  ->  版本号取 1.0.0
-   git add pubspec.yaml && git commit -m "chore: bump version to 1.0.0"
+   # version: 1.1.0+2  ->  版本号取 1.1.0
+   git add pubspec.yaml && git commit -m "chore: bump version to 1.1.0"
    git push origin main
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v1.1.0
+   git push origin v1.1.0
    ```
 
-   标签推送后 `release` job 会跑，校验标签版本与 `pubspec.yaml` 版本一致（不一致直接报错终止），构建正式签名包并重命名为 `call-assistant-1.0.0.apk`，挂到 GitHub Release 上。
+   标签推送后 `release` job 会跑，校验标签版本与 `pubspec.yaml` 版本一致（不一致直接报错终止），构建正式签名包并重命名为 `call-assistant-1.1.0.apk`，挂到 GitHub Release 上。
 
 ### 说明
 
