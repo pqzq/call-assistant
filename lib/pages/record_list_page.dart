@@ -155,9 +155,12 @@ class _RecordListPageState extends State<RecordListPage> {
     final fields = <CellField>[];
     for (var column = 0; column < sheet.columnCount; column++) {
       if (sheet.isPhoneColumn(column)) continue;
+      final label = sheet.headerAt(column).trim();
+      // 「序号」列不展示（行号在界面左侧已经有了）
+      if (label == '序号') continue;
       final value = sheet.cellAt(row, column).trim();
       if (value.isEmpty) continue;
-      fields.add(CellField(sheet.headerAt(column), value));
+      fields.add(CellField(label, value));
     }
     return fields;
   }
@@ -310,13 +313,20 @@ class _RecordListPageState extends State<RecordListPage> {
             title: const Text('清空拨打情况', style: TextStyle(fontSize: 17)),
             content: const Text('将清空当前表格所有行的拨打情况，确定继续？'),
             actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('取消'),
-              ),
+              // 清空在左、取消在右，两个按钮同样大小
               FilledButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(96, 44),
+                ),
                 child: const Text('清空'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(96, 44),
+                ),
+                child: const Text('取消'),
               ),
             ],
           ),

@@ -276,7 +276,7 @@ class _PromptPageState extends State<PromptPage> {
     if (ok) {
       AppToast.show(context, '模型已从文件夹导入', icon: Icons.check_circle_outline);
     } else {
-      AppToast.error(context, '导入失败，文件夹里没有 .model3.json');
+      AppToast.error(context, _link.lastImportError ?? '导入失败');
     }
   }
 

@@ -554,7 +554,8 @@ class PromptLink extends ChangeNotifier {
       notifyListeners();
       final model = await Live2dService.instance.importModelFolder(Directory(dirPath));
       if (model == null) {
-        _log('导入失败：文件夹里没有找到 .model3.json');
+        final reason = Live2dService.instance.lastImportError ?? '没有找到 .model3.json';
+        _log('导入失败：$reason');
         return false;
       }
       await setAvatarModel(model);
@@ -565,6 +566,9 @@ class PromptLink extends ChangeNotifier {
       return false;
     }
   }
+
+  /// 最近一次模型导入失败的原因（界面提示用）
+  String? get lastImportError => Live2dService.instance.lastImportError;
 
   DateTime? _mouthClock;
 

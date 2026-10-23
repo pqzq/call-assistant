@@ -207,22 +207,32 @@ class Live2dService {
     return 'models/$safeName/${modelPath.substring(prefix.length)}';
   }
 
+  /// 最近一次导入失败的原因（供界面提示，避免一律报「没有找到 .model3.json」）
+  String? lastImportError;
+
   /// 从文件夹导入模型：递归寻找 *.model3.json，并把该模型目录（含贴图/动作/表情）
   /// 整体复制到 models/ 下。返回导入后的模型相对路径。
   Future<String?> importModelFolder(Directory folder, {String? name}) async {
     final root = _webRoot;
     if (root == null) return null;
-    if (!folder.existsSync()) return null;
+    lastImportError = null;
+    if (!folder.existsSync()) {
+      lastImportError = '目录不存在或无法访问';
+      return null;
+    }
 
     // 递归查找模型描述文件：先按后缀（*.model3.json），再按内容兜底
     final models = <File>[];
     final jsonCandidates = <File>[];
+    var unreadable = 0;
     void scan(Directory dir, int depth) {
-      if (depth > 6 || models.length > 20) return;
+      if (depth > 8 || models.length > 20) return;
       List<FileSystemEntity> children;
       try {
-        children = dir.listSync(followLinks: false);
+        // followLinks: true —— 部分解压工具会建符号链接，false 会直接漏掉
+        children = dir.listSync(followLinks: true);
       } catch (_) {
+        unreadable++;
         return;
       }
       for (final entity in children) {
@@ -245,6 +255,18 @@ class Live2dService {
 
     scan(folder, 0);
     if (models.isEmpty) {
+      // 兜底：一次性递归遍历（某些目录下 listSync 逐层列举会失败）
+      try {
+        for (final entity in folder.listSync(recursive: true, followLinks: true)) {
+          if (entity is File && isModelDescriptionFile(entity.path)) {
+            models.add(entity);
+          }
+        }
+      } catch (_) {
+        // 忽略
+      }
+    }
+    if (models.isEmpty) {
       // 后缀不标准（模型 json 被改过名）时按内容再找一遍
       for (final candidate in jsonCandidates) {
         try {
@@ -258,7 +280,19 @@ class Live2dService {
         }
       }
     }
-    if (models.isEmpty) return null;
+    if (models.isEmpty) {
+      // 给出能定位问题的原因，而不是笼统的「没有找到」
+      if (unreadable > 0) {
+        lastImportError = '无法读取该目录（可能缺少存储权限），'
+            '建议改用「导入模型包（zip）」';
+      } else if (jsonCandidates.isNotEmpty) {
+        lastImportError = '目录里有 ${jsonCandidates.length} 个 json，但都不是模型描述文件'
+            '（需要 *.model3.json）';
+      } else {
+        lastImportError = '该目录里没有找到 .model3.json';
+      }
+      return null;
+    }
     models.sort((a, b) => a.path.length.compareTo(b.path.length));
     final modelFile = models.first;
 

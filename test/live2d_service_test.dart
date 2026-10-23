@@ -32,4 +32,21 @@ void main() {
       expect(Live2dService.modelNameOf('models/my.model3.json'), 'my');
     });
   });
-}
+
+  group('模型文件识别（文件夹导入用）', () {
+    test('任意层级的 model3.json 都能被识别', () {
+      expect(Live2dService.isModelDescriptionFile('/sdcard/A/Haru.model3.json'), isTrue);
+      expect(Live2dService.isModelDescriptionFile('/sdcard/A/B/C/Haru.model3.json'), isTrue);
+      expect(Live2dService.isModelDescriptionFile('/sdcard/A/model3.json'), isTrue);
+    });
+
+    test('同目录的其它文件不会被当成模型描述文件', () {
+      expect(Live2dService.isModelDescriptionFile('/sdcard/A/texture_00.png'), isFalse);
+      expect(Live2dService.isModelDescriptionFile('/sdcard/A/ Haru.moc3'), isFalse);
+      expect(Live2dService.isModelDescriptionFile('/sdcard/A/readme.txt'), isFalse);
+    });
+
+    test('大小写不同的后缀也能识别', () {
+      expect(Live2dService.isModelDescriptionFile('/sdcard/A/Haru.MODEL3.JSON'), isTrue);
+    });
+  });}
