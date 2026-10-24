@@ -111,6 +111,31 @@ const List<_Edit> _edits = <_Edit>[
     marker: '只有真的在 surface created 时 retain 过',
   ),
 
+  // ---- 4.5 nativeLoadModel 里确保 Framework 已初始化 ----
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    bool ok = false;
+    if (view->width > 0 && view->height > 0)
+    {
+        ok = ReloadModelInternal(view, dir, file);
+    }''',
+    '''    bool ok = false;
+    if (view->width > 0 && view->height > 0)
+    {
+        // 关掉数字人时 FrameworkRelease 会把 CubismFramework Dispose 掉。
+        // 重新打开时如果 nativeOnSurfaceCreated 还没被调用（EGL surface 尚未就绪），
+        // Framework 就是未初始化状态，CreateRenderer 会失败。
+        // 这里补一次初始化 —— 当前已在 render hub 线程且 eglMakeCurrent 过了。
+        if (!view->frameworkRetained)
+        {
+            FrameworkRetain();
+            view->frameworkRetained = true;
+        }
+        ok = ReloadModelInternal(view, dir, file);
+    }''',
+    marker: '重新打开时如果 nativeOnSurfaceCreated 还没被调用',
+  ),
+
   // ---- 5. 模型适配改成「按高度填满」（修裁头/裁脚） ----
   _Edit(
     'android/src/main/cpp/live2d_flutter.cpp',

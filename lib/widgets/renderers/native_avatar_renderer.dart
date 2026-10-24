@@ -60,19 +60,31 @@ class NativeAvatarRenderer implements AvatarRenderer {
 
       await _controller.whenAttached;
 
-      // 插件的竞态：whenAttached 在平台视图创建时就 resolve，
-      // 但 TextureView 的 SurfaceTexture 是异步创建的，
-      // 此刻原生侧 view->width 还是 0，nativeLoadModel 会直接返回 false。
-      // 这里多重试几次，等 surface ready 后再加载。
+      // 插件的两个问题：
+      // 1. whenAttached 在平台视图创建时就 resolve，但 TextureView 的
+      //    SurfaceTexture 是异步创建的，此刻原生侧 view->width 还是 0，
+      //    nativeLoadModel 会直接返回 false。
+      // 2. 如果 EGL surface 还没就绪，插件 Kotlin 侧会把 loadModel 事件
+      //    **静默丢弃**（queueEvent 里判断 eglSurface != NO_SURFACE），
+      //    对应 Dart Future 永远不返回 —— 所以必须自己加超时。
       var ok = false;
-      for (var attempt = 0; attempt < 4 && !ok; attempt++) {
+      for (var attempt = 0; attempt < 8 && !ok; attempt++) {
         if (attempt > 0) {
-          await Future<void>.delayed(const Duration(milliseconds: 250));
+          await Future<void>.delayed(const Duration(milliseconds: 400));
         }
-        ok = await _controller.loadModel(
-          modelDir: modelDir,
-          modelFileName: modelFileName,
-        );
+        try {
+          ok = await _controller
+              .loadModel(
+                modelDir: modelDir,
+                modelFileName: modelFileName,
+              )
+              .timeout(
+                const Duration(seconds: 2),
+                onTimeout: () => false,
+              );
+        } catch (_) {
+          ok = false;
+        }
       }
       _loaded = ok;
       if (!ok) {

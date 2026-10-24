@@ -62,10 +62,6 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   @override
   void didUpdateWidget(covariant Live2dAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.backend != widget.backend) {
-      _initRenderer();
-      return;
-    }
     if (oldWidget.modelPath != widget.modelPath) {
       _loadModel();
     }

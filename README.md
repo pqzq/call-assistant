@@ -454,6 +454,25 @@ Live2DPal::LoadFileAsBytes("FrameworkShaders/VertShaderSrc.vert")   // → AAsse
 
 **修复**：把 `StandardES/*.vert` / `*.frag`（36 个）复制到 `android/src/main/assets/FrameworkShaders/`。
 
+#### Bug 4：关闭数字人再打开，原生渲染加载不回来
+
+关闭时 `nativeDestroyView` 会 `FrameworkRelease()` → refCount 归零 → **`CubismFramework::Dispose()`**。重新打开时：
+
+- `nativeOnSurfaceCreated` 可能还没被调用（新 SurfaceTexture 异步就绪），Framework 仍是**未初始化**状态 → `CreateRenderer` 拿不到 shader program
+- 更隐蔽的是：插件 Kotlin 侧的 `queueEvent` 有 `if (target.eglSurface != EGL_NO_SURFACE)` 判断，**surface 没就绪时会把 loadModel 事件静默丢弃** → 对应的 Dart Future **永远不返回**（表现为「模型一直不加载」且没有任何报错）
+
+**修复（两处）**：
+
+1. `nativeLoadModel` 里补一次 Framework 初始化（此时已在 render hub 线程且 `eglMakeCurrent` 过）：
+
+```cpp
+if (!view->frameworkRetained) {
+    FrameworkRetain();
+    view->frameworkRetained = true;
+}
+```
+
+2. Dart 侧给每次 `loadModel` 加 **2 秒超时** + 8 次重试（400ms 间隔），避免被插件静默丢弃时永久挂起
 #### Bug 3：模型适配用 SetWidth 导致瘦高模型被裁成半身
 
 ```cpp
