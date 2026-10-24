@@ -25,6 +25,23 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 释放磁盘空间
+        # runner 预装的组件占了 30GB+（NDK / dotnet / boost / ghc 等），
+        # 本项目一个都用不到；不清理的话 gradle 下 lint jar 时会报
+        # "No space left on device"
+        run: |
+          echo "===== 清理前 ====="
+          df -h /
+          sudo rm -rf /usr/local/lib/android/sdk/ndk
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /opt/ghc /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/chromium
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          sudo apt-get clean -qq >/dev/null 2>&1 || true
+          echo "===== 清理后 ====="
+          df -h /
+
       - name: 配置 JDK 21（与本地 flutter config --jdk-dir 一致）
         uses: actions/setup-java@v4
         with:
@@ -50,6 +67,10 @@ jobs:
             android/settings.gradle.kts android/build.gradle.kts
 
       - name: 安装依赖
+        env:
+          # runner 内存/磁盘紧张，把 gradle daemon 堆调小，
+          # 避免下载 lint jar 时把磁盘吃光（No space left on device）
+          ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
         run: flutter pub get
 
       - name: 静态分析
@@ -59,6 +80,8 @@ jobs:
         run: flutter test
 
       - name: 构建 Debug APK
+        env:
+          ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
         run: flutter build apk --debug
 
       - name: 上传 Debug APK
@@ -79,6 +102,21 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 释放磁盘空间
+        # 同 ci：runner 预装组件占 30GB+，本项目用不到
+        run: |
+          echo "===== 清理前 ====="
+          df -h /
+          sudo rm -rf /usr/local/lib/android/sdk/ndk
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /opt/ghc /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/chromium
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          sudo apt-get clean -qq >/dev/null 2>&1 || true
+          echo "===== 清理后 ====="
+          df -h /
 
       - name: 配置 JDK 21
         uses: actions/setup-java@v4
@@ -123,6 +161,10 @@ jobs:
           EOF
 
       - name: 安装依赖
+        env:
+          # runner 内存/磁盘紧张，把 gradle daemon 堆调小，
+          # 避免下载 lint jar 时把磁盘吃光（No space left on device）
+          ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
         run: flutter pub get
 
       - name: 校验标签版本与 pubspec 版本一致
@@ -138,6 +180,8 @@ jobs:
           echo "APP_VERSION=$PUB_VERSION" >> "$GITHUB_ENV"
 
       - name: 构建 Release APK（按 ABI 拆分）
+        env:
+          ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
         run: flutter build apk --release --split-per-abi
 
       - name: 只保留 ARM 架构并重命名
@@ -170,6 +214,17 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 释放磁盘空间
+        # windows-latest 预装 Android NDK / SDK 占 20GB+，本项目用不到
+        shell: pwsh
+        run: |
+          "===== 清理前 ====="
+          Get-PSDrive C | Select-Object Used, Free
+          Remove-Item -Recurse -Force "C:\Program Files (x86)\Android\android-sdk\ndk\*" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\com.android.tools.build" -ErrorAction SilentlyContinue
+          "===== 清理后 ====="
+          Get-PSDrive C | Select-Object Used, Free
 
       - name: 启用符号链接
         # Flutter 给插件建 .plugin_symlinks 时需要符号链接权限；
