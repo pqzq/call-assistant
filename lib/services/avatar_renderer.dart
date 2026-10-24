@@ -66,9 +66,9 @@ String? backendUnsupportedReason(AvatarBackend backend) {
     case AvatarBackend.webview:
       return null; // 全平台可用
     case AvatarBackend.native:
-      // 只在「完全不支持」的平台拦截；Android / iOS 允许切换，
-      // 即使当前插件绘制有问题（名称已标注「实验性」），
-      // 这样架构完整、将来插件修好或换实现可直接生效
+      // `flutter_live2d` 只声明了 android / ios（没有 windows 目录），
+      // 桌面端只能走 WebView。要做 Windows 原生需要自研 C++ 插件
+      // （Cubism SDK for Native 支持 Windows 的 D3D11 / OpenGL）。
       if (PlatformBridge.isDesktop) {
         return '原生渲染暂只支持 Android / iOS，Windows 请用 WebView';
       }

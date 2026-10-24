@@ -284,8 +284,10 @@ class _PromptPageState extends State<PromptPage> {
                     for (final backend in AvatarBackend.values)
                       ButtonSegment<AvatarBackend>(
                         value: backend,
+                        // 当前平台不支持的直接置灰（如 Windows 上的原生渲染）
+                        enabled: backendUnsupportedReason(backend) == null,
                         label: Text(backend.displayName, style: const TextStyle(fontSize: 12)),
-                        tooltip: backendUnsupportedReason(backend),
+                        tooltip: backendUnsupportedReason(backend) ?? backend.displayName,
                       ),
                   ],
                   selected: <AvatarBackend>{_link.avatarBackend},
