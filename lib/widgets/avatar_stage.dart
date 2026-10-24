@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/active_lead.dart';
+import '../services/avatar_renderer.dart';
 import '../services/prompt_link.dart';
 import 'live2d_avatar.dart';
 
@@ -17,6 +18,7 @@ class AvatarStage extends StatelessWidget {
     this.bubbleMaxHeight = 150,
     this.solidBubble = false,
     this.avatarBoxWidth,
+    this.backend,
   });
 
   final PromptLink link;
@@ -36,6 +38,9 @@ class AvatarStage extends StatelessWidget {
   /// 数字人区域宽度（不传则自适应）
   final double? avatarBoxWidth;
 
+  /// 渲染后端（不传则用 link 的当前值；显式传入是为了切换时能重建 renderer）
+  final AvatarBackend? backend;
+
   @override
   Widget build(BuildContext context) {
     // 不显示气泡时只放角色本身：
@@ -48,6 +53,7 @@ class AvatarStage extends StatelessWidget {
           modelPath: link.avatarModel,
           mouth: link.mouth,
           height: avatarHeight,
+            backend: backend ?? link.avatarBackend,
         ),
       );
     }
@@ -62,6 +68,7 @@ class AvatarStage extends StatelessWidget {
             modelPath: link.avatarModel,
             mouth: link.mouth,
             height: avatarHeight,
+            backend: backend ?? link.avatarBackend,
           ),
         ),
         if (!link.bubbleCollapsed) ...<Widget>[

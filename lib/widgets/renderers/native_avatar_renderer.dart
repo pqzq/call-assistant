@@ -59,10 +59,21 @@ class NativeAvatarRenderer implements AvatarRenderer {
       }
 
       await _controller.whenAttached;
-      final ok = await _controller.loadModel(
-        modelDir: modelDir,
-        modelFileName: modelFileName,
-      );
+
+      // 插件的竞态：whenAttached 在平台视图创建时就 resolve，
+      // 但 TextureView 的 SurfaceTexture 是异步创建的，
+      // 此刻原生侧 view->width 还是 0，nativeLoadModel 会直接返回 false。
+      // 这里多重试几次，等 surface ready 后再加载。
+      var ok = false;
+      for (var attempt = 0; attempt < 4 && !ok; attempt++) {
+        if (attempt > 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+        ok = await _controller.loadModel(
+          modelDir: modelDir,
+          modelFileName: modelFileName,
+        );
+      }
       _loaded = ok;
       if (!ok) {
         final err = _controller.value.lastError;
@@ -77,12 +88,15 @@ class NativeAvatarRenderer implements AvatarRenderer {
     }
   }
 
+  /// 只在「已经加载成功过、后来又出错」时才提示，避免加载中的重试被误报
+  /// （一旦这里上报错误，上层会用错误框替换掉 Live2DView，插件随即 detach，
+  ///  之后的 loadModel 全部会以 VIEW_NOT_ATTACHED 失败）
   void _onStateChanged() {
     final state = _controller.value;
     final err = state.lastError;
-    if (err != null && !_loaded) {
-      onError?.call('原生渲染错误：${err.message}');
+    if (err != null && _loaded) {
       _loaded = false;
+      onError?.call('原生渲染错误：${err.message}');
     }
   }
 
@@ -103,30 +117,14 @@ class NativeAvatarRenderer implements AvatarRenderer {
 
   @override
   Widget build() {
-    return IgnorePointer(
-      child: ClipRect(
-        child: SizedBox(
-          width: double.infinity,
-          child: ValueListenableBuilder<Live2DViewState>(
-            valueListenable: _controller,
-            builder: (context, state, _) {
-              if (state.isLoadingModel) {
-                return const Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                );
-              }
-              if (!state.isLoaded) {
-                return const SizedBox.shrink();
-              }
-              return const Live2DView();
-            },
-          ),
-        ),
-      ),
+    // Live2DView 必须**始终在树里**：
+    // 插件的 controller 是靠 Live2DView 挂载时才 _attach()，
+    // 进而 whenAttached 才 resolve、loadModel 才能跑。
+    //
+    // 注意：不要用 ClipRect / IgnorePointer 包裹（平台视图在混合合成下
+    // 被裁剪后可能整块不渲染），也不要因为加载状态替换掉它。
+    return SizedBox.expand(
+      child: Live2DView(controller: _controller),
     );
   }
 

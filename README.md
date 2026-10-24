@@ -432,29 +432,42 @@ project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 修法：新增 `lib/services/app_navigator.dart`，用 `GlobalKey<NavigatorState>` 拿到全局 Navigator，弹窗和 Toast 都改走 `resolveNavigator(context)` / `resolveOverlay(context)`（优先用 context 上的，回退到全局 key）。
 
 
-### 数字人渲染引擎可切换
+### 数字人渲染引擎可切换（原生为实验性）
 
 数字人有两种渲染后端，可在「双机联动播报 → 数字人 → 模型与展示 → **渲染引擎**」里切换：
 
-| 后端 | 实现 | 平台 | 特点 |
+| 后端 | 实现 | 平台 | 状态 |
 | --- | --- | --- | --- |
-| **WebView**（默认） | WebView + PIXI + Cubism Web SDK | 全平台（Android / iOS / Windows） | 零额外依赖，行为经过长期验证 |
-| **原生渲染** | Cubism Native SDK + OpenGL ES 2（`flutter_live2d`） | **仅 Android / iOS** | 不用起本地 HttpServer、不占 WebView 内存、启动更快；Windows 上该选项置灰 |
+| **WebView**（默认） | WebView + PIXI + Cubism Web SDK | 全平台 | ✅ 稳定，长期验证 |
+| **原生（实验性）** | Cubism Native SDK + OpenGL ES 2（`flutter_live2d`） | Android / iOS | ⚠️ 模型能加载但**画面不绘制**（插件缺陷） |
 
 - 选择会记住（`prompt_avatar_backend`），重启后保持
-- 切换后数字人立即按新后端重新加载，模型/嘴型/导入等逻辑完全复用
-- 原生后端直接读磁盘上的模型文件，所以**不需要 HttpServer**（`Live2dService.ensureWebRoot()`）
+- 切换后数字人立即按新后端重新加载，模型/嘴型/导入逻辑完全复用
+
+**原生后端当前的问题（已实测确认）**
+
+```
+[原生渲染] loadModel 最终返回: true
+D/CubismCore: Live2D Cubism SDK Core Version 6.0.1
+```
+原生侧**加载成功、Cubism Core 正常初始化**，但 TextureView 不上屏（画面空白）。属于 `flutter_live2d` 插件自身的 TextureView + 单 EGL context 渲染 hub 在部分 ROM 上的兼容问题。
+
+排查过程中已修掉两个**我们这边**的坑：
+
+1. **`Live2DView` 必须始终在 widget 树里** —— 插件的 controller 靠视图挂载才 `_attach()`，`whenAttached` 才 resolve；按加载状态决定是否渲染它会造成死锁
+2. **加载中不要上报错误** —— 一旦上层用错误框替换掉 `Live2DView`，插件立即 detach，后续 `loadModel` 全部 `VIEW_NOT_ATTACHED`
+3. **`SurfaceTexture` 是异步创建的** —— 视图刚挂载时原生侧 `width=0`，`nativeLoadModel` 会直接失败，需要重试（已加 4 次重试）
 
 代码结构：
 
 ```
-lib/services/avatar_renderer.dart              # AvatarRenderer 抽象 + AvatarBackend 枚举 + 平台可用性
-lib/widgets/live2d_avatar.dart                 # 壳：按后端创建 renderer，转发嘴型
-lib/widgets/renderers/webview_avatar_renderer.dart   # WebView 实现（原 live2d_avatar 的逻辑）
-lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现（flutter_live2d）
+lib/services/avatar_renderer.dart                    # AvatarRenderer 抽象 + AvatarBackend 枚举 + 平台可用性
+lib/widgets/live2d_avatar.dart                       # 壳：按后端创建 renderer，转发嘴型
+lib/widgets/renderers/webview_avatar_renderer.dart   # WebView 实现
+lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现（实验性）
 ```
 
-**引入 `flutter_live2d` 的代价**：APK +4MB（自带 Cubism Core 静态库，支持 `.moc3` 3.0–5.3），并且 Android 构建需要 **CMake 3.10.2 + NDK 27.2**（CI 里已自动装）。
+**代价**：APK +4MB（Cubism Core 静态库），Android 构建需要 CMake 3.10.2 + NDK 27.2（CI 已自动安装）。
 
 ### 液态玻璃风格（Liquid Glass）
 

@@ -43,10 +43,16 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   AvatarRenderer? _renderer;
   String? _error;
 
+  /// 当前 renderer 用的后端（用于判断是否需要重建）
+  AvatarBackend? _currentBackend;
+
   @override
   void initState() {
     super.initState();
     widget.mouth.addListener(_onMouthChanged);
+    // 后端设置是异步读的（SharedPreferences），init 完成前可能还是默认值，
+    // 这里监听 PromptLink，等它 notify 后再按真实后端重建一次
+    PromptLink.instance.addListener(_onLinkChanged);
     _initRenderer();
   }
 
@@ -62,8 +68,18 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     }
   }
 
+  /// PromptLink 刷新（含后端切换、init 完成）时，按最新后端重建 renderer
+  void _onLinkChanged() {
+    if (!mounted) return;
+    final target = widget.backend ?? PromptLink.instance.avatarBackend;
+    if (target != _currentBackend) {
+      _initRenderer();
+    }
+  }
+
   @override
   void dispose() {
+    PromptLink.instance.removeListener(_onLinkChanged);
     widget.mouth.removeListener(_onMouthChanged);
     final renderer = _renderer;
     _renderer = null;
@@ -107,6 +123,7 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       await renderer.dispose();
       return;
     }
+    _currentBackend = effective;
     setState(() => _renderer = renderer);
     await _loadModel();
   }

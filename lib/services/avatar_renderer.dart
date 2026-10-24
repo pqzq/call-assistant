@@ -8,7 +8,12 @@ enum AvatarBackend {
   webview('webview', 'WebView'),
 
   /// 原生（Cubism Native SDK + OpenGL ES）—— 目前仅 Android / iOS
-  native('native', '原生渲染');
+  ///
+  /// ⚠️ 实验性：依赖 `flutter_live2d` 插件，实测「模型加载成功
+  /// （loadModel 返回 true、Cubism Core 正常初始化）但画面不绘制」，
+  /// 属插件自身的 TextureView 渲染问题。保留该后端是为了架构完整，
+  /// 等插件修复或换成自研实现即可直接启用。
+  native('native', '原生（实验性）');
 
   const AvatarBackend(this.name, this.displayName);
 
@@ -61,6 +66,9 @@ String? backendUnsupportedReason(AvatarBackend backend) {
     case AvatarBackend.webview:
       return null; // 全平台可用
     case AvatarBackend.native:
+      // 只在「完全不支持」的平台拦截；Android / iOS 允许切换，
+      // 即使当前插件绘制有问题（名称已标注「实验性」），
+      // 这样架构完整、将来插件修好或换实现可直接生效
       if (PlatformBridge.isDesktop) {
         return '原生渲染暂只支持 Android / iOS，Windows 请用 WebView';
       }

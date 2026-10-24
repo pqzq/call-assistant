@@ -73,7 +73,7 @@ class WebViewAvatarRenderer implements AvatarRenderer {
         ..setOnConsoleMessage((message) => debugPrint('[Live2D] ${message.message}'))
         ..setNavigationDelegate(
           NavigationDelegate(
-            onPageFinished: (_) {
+            onPageFinished: (url) {
               _pageReady = true;
               onReady?.call();
               setMouth(_pendingMouth >= 0 ? _pendingMouth : 0);
@@ -246,8 +246,7 @@ class WebViewAvatarRenderer implements AvatarRenderer {
       }
       return IgnorePointer(
         child: ClipRect(
-          child: SizedBox(
-            width: double.infinity,
+          child: SizedBox.expand(
             // WebView2 在尺寸变化（展开 <-> 贴边）后会把背景色重置回默认灰色，
             // 所以尺寸一变就重新设一次透明背景，否则贴边后会露出一条灰带。
             child: LayoutBuilder(
@@ -264,10 +263,11 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     if (controller == null) {
       return _placeholder('数字人初始化中…');
     }
+    // 必须撑满父约束：Android 平台视图（AndroidView）在**宽松约束**下
+    // 会渲染成 0 高度，表现为一片空白（之前直接写 width: infinity 就是这个坑）
     return IgnorePointer(
       child: ClipRect(
-        child: SizedBox(
-          width: double.infinity,
+        child: SizedBox.expand(
           child: WebViewWidget(controller: controller),
         ),
       ),
