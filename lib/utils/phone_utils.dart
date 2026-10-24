@@ -3,6 +3,9 @@ enum PhoneKind {
   /// 手机号，直接拨打
   mobile,
 
+  /// 短号/服务号（10086 / 10010 / 10000），直接拨打
+  service,
+
   /// 固话且已自带区号（02188886666 / 0571-88889999）
   landlineWithAreaCode,
 
@@ -49,6 +52,10 @@ class PhoneUtils {
 
   /// 本地座机，7~8 位且不以 0 开头（88886666 / 51234567）
   static final RegExp _localLandline = RegExp(r'^[2-9]\d{6,7}$');
+
+  /// 短号/服务号，5~6 位且不以 0 开头（10086 移动 / 10010 联通 / 10000 电信 / 12345）
+  /// 下限取 5 位是为了避开年份、编号这类 4 位数字（2024、1001）
+  static final RegExp _serviceNumber = RegExp(r'^[1-9]\d{4,5}$');
 
   /// 其他国家/地区号码（8~15 位）
   static final RegExp _generic = RegExp(r'^\d{8,15}$');
@@ -122,6 +129,7 @@ class PhoneUtils {
     if (normalized == null) return PhoneKind.unknown;
     if (normalized.startsWith('+')) return PhoneKind.international;
     if (_cnMobile.hasMatch(normalized)) return PhoneKind.mobile;
+    if (_serviceNumber.hasMatch(normalized)) return PhoneKind.service;
     if (_cnLandlineWithAreaCode.hasMatch(normalized)) return PhoneKind.landlineWithAreaCode;
     if (_localLandline.hasMatch(normalized)) return PhoneKind.landlineLocal;
     return PhoneKind.unknown;
@@ -145,7 +153,22 @@ class PhoneUtils {
     return text;
   }
 
+  /// 判断是不是 5~6 位服务号（10086 / 10010 / 10000 / 12345 等）。
+  ///
+  /// 单独拆出来是因为这类数字太"像"编号：只有当**列头命中电话关键词**
+  /// 且该列还有标准格式号码时，识别逻辑才采信它（见 ExcelService._detectCandidates）。
+  static bool looksLikeServiceNumber(String? raw) {
+    final normalized = normalize(raw);
+    if (normalized == null) return false;
+    if (normalized.startsWith('+')) return false;
+    return _serviceNumber.hasMatch(normalized);
+  }
+
   /// 判断一段文本是否像电话号码（用于自动识别手机号列）。
+  ///
+  /// 注意：5~6 位服务号（10086 等）**不算**在这里面 —— 它们和「编号 10001」
+  /// 长得一样，混进来会让编号列被误当成号码列。服务号由
+  /// `looksLikeServiceNumber` 单独判断，并由列级规则决定是否采信。
   static bool looksLikePhone(String? raw) {
     final normalized = normalize(raw);
     if (normalized == null) return false;
@@ -190,6 +213,8 @@ class PhoneUtils {
     switch (kind) {
       case PhoneKind.mobile:
         return '手机';
+      case PhoneKind.service:
+        return '服务号';
       case PhoneKind.landlineWithAreaCode:
         return '固话';
       case PhoneKind.landlineLocal:

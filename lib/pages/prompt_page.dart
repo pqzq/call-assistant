@@ -1,11 +1,19 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/asr_recognizer.dart';
 import '../services/call_state_watcher.dart';
+import '../services/platform_bridge.dart';
+import '../services/live2d_service.dart';
 import '../services/prompt_link.dart';
 import '../widgets/glass_surface.dart';
+import '../widgets/confirm_dialog.dart';
 import 'demo_page.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/desktop_body.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
 class PromptPage extends StatefulWidget {
@@ -80,7 +88,29 @@ class _PromptPageState extends State<PromptPage> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 11, color: Colors.black38),
                 ),
-                trailing: model == _link.avatarModel ? const Icon(Icons.check, size: 18) : null,
+                trailing: model == _link.avatarModel
+                    ? const Icon(Icons.check, size: 18)
+                    : (Live2dService.isUserImported(model)
+                        // 用户自己导入的模型可以移除，内置的不提供移除
+                        ? IconButton(
+                            tooltip: '移除这个模型',
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            onPressed: () async {
+                              // 先取出 navigator，避免 await 之后再跨异步间隙用 context
+                              final navigator = Navigator.of(sheetContext);
+                              final ok = await _confirmDeleteModel(model);
+                              if (ok != true || !mounted) return;
+                              await _link.deleteAvatarModel(model);
+                              if (!mounted) return;
+                              navigator.pop();
+                              AppToast.show(context, '已移除模型');
+                              // 刷新模型列表
+                              final rest = await _link.availableAvatarModels();
+                              if (!mounted) return;
+                              _showModelPicker(rest);
+                            },
+                          )
+                        : null),
                 onTap: () => Navigator.of(sheetContext).pop(model),
               ),
           ],
@@ -88,6 +118,18 @@ class _PromptPageState extends State<PromptPage> {
       ),
     );
     if (chosen != null) await _link.setAvatarModel(chosen);
+  }
+
+  /// 删除确认（只允许删用户导入的模型）
+  Future<bool> _confirmDeleteModel(String model) {
+    return ConfirmDialog.show(
+      context,
+      title: '移除模型',
+      message: '确定移除「${_modelLabel(model)}」吗？\n该模型占用的文件会一并删除。',
+      confirmText: '移除',
+      destructive: true,
+      icon: Icons.delete_outline,
+    );
   }
 
   @override
@@ -102,6 +144,8 @@ class _PromptPageState extends State<PromptPage> {
             onSelected: (value) async {
               if (value == 'import') {
                 await _importModel();
+              } else if (value == 'importDir') {
+                await _importModelFromFolder();
               } else if (value == 'models') {
                 await _switchModel();
               } else if (value == 'demo') {
@@ -110,6 +154,7 @@ class _PromptPageState extends State<PromptPage> {
             },
             itemBuilder: (context) => const <PopupMenuEntry<String>>[
               PopupMenuItem<String>(value: 'import', child: Text('导入模型包（zip）')),
+              PopupMenuItem<String>(value: 'importDir', child: Text('从文件夹导入模型')),
               PopupMenuItem<String>(value: 'models', child: Text('切换已有模型')),
               PopupMenuItem<String>(value: 'demo', child: Text('演示模式（全屏）')),
             ],
@@ -121,7 +166,7 @@ class _PromptPageState extends State<PromptPage> {
           ),
         ],
       ),
-      body: DefaultTabController(
+      body: DesktopBody(child: DefaultTabController(
         length: 4,
         child: Stack(
           children: <Widget>[
@@ -145,6 +190,8 @@ class _PromptPageState extends State<PromptPage> {
                         _buildSynthCard(),
                         const SizedBox(height: 12),
                         _buildAudioCard(),
+                        const SizedBox(height: 12),
+                        _buildAsrCard(),
                       ]),
                       _tabView(<Widget>[
                         _buildAvatarCard(),
@@ -180,6 +227,7 @@ class _PromptPageState extends State<PromptPage> {
           ],
         ),
       ),
+      ),   // DesktopBody
     );
   }
 
@@ -230,6 +278,7 @@ class _PromptPageState extends State<PromptPage> {
             children: <Widget>[
               _modelButton('切换模型', Icons.swap_horiz, _switchModel),
               _modelButton('导入 zip', Icons.folder_open, _importModel),
+              _modelButton('导入文件夹', Icons.folder_copy_outlined, _importModelFromFolder),
               _modelButton('演示模式', Icons.fullscreen, _openDemo),
               _modelButton('复位位置', Icons.my_location, _link.resetAvatarPosition),
             ],
@@ -266,6 +315,29 @@ class _PromptPageState extends State<PromptPage> {
     }
   }
 
+  /// 从文件夹导入模型
+  Future<void> _importModelFromFolder() async {
+    final ok = await _link.importAvatarModelFromFolder();
+    if (!mounted) return;
+    if (ok) {
+      AppToast.show(context, '模型已从文件夹导入', icon: Icons.check_circle_outline);
+      return;
+    }
+    final reason = _link.lastImportError;
+    final needPermission = reason == null && !await CallStateWatcher.hasAllFilesAccess();
+    if (!mounted) return;
+    if (needPermission) {
+      // 权限没开：引导去系统设置开启后再试
+      AppToast.show(
+        context,
+        '请在系统设置里开启「所有文件访问权限」，然后重新导入',
+        icon: Icons.open_in_new,
+      );
+      return;
+    }
+    AppToast.error(context, reason ?? '导入失败');
+  }
+
   /// 切换已有模型
   Future<void> _switchModel() async {
     final models = await _link.availableAvatarModels();
@@ -300,13 +372,16 @@ class _PromptPageState extends State<PromptPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              _roleChip(
-                label: '拨号端',
-                icon: Icons.phone_in_talk,
-                on: _link.autoTrigger,
-                onChanged: (v) => _link.setAutoTrigger(v),
-              ),
-              const SizedBox(width: 8),
+              // 桌面端（PC）只做播放端：没有系统拨号能力，也不存在「拨号端」角色
+              if (PlatformBridge.canDetectCall) ...<Widget>[
+                _roleChip(
+                  label: '拨号端',
+                  icon: Icons.phone_in_talk,
+                  on: _link.autoTrigger,
+                  onChanged: (v) => _link.setAutoTrigger(v),
+                ),
+                const SizedBox(width: 8),
+              ],
               _roleChip(
                 label: '播放端',
                 icon: Icons.volume_up,
@@ -343,11 +418,12 @@ class _PromptPageState extends State<PromptPage> {
                   side: const BorderSide(color: Color(0x33D03B3B)),
                 ),
               ),
-              if (!_link.accessibilityEnabled) ...<Widget>[
+              // 只有「拨号端」才需要通话检测，未开启拨号端时不显示这个按钮
+              if (_link.autoTrigger && !_link.accessibilityEnabled) ...<Widget>[
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
-                    await CallStateWatcher.openSettings();
+                    await PlatformBridge.openAccessibilitySettings();
                   },
                   icon: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFE08A00)),
                   label: const Text('开启检测', style: TextStyle(fontSize: 12)),
@@ -414,7 +490,7 @@ class _PromptPageState extends State<PromptPage> {
         : _link.seeking
             ? '正在寻找拨号端…'
             : _link.listening
-                ? (_link.asPlayer ? '未连接拨号端' : '等待播放端连接')
+                ? (_link.asPlayer ? '等待手机拨号端连接' : '等待播放端连接')
                 : '局域网未启动';
     final color = _link.peerConnected
         ? const Color(0xFF17A05A)
@@ -457,6 +533,8 @@ class _PromptPageState extends State<PromptPage> {
 
   Widget _buildStatusCard() {
     final enabled = _link.accessibilityEnabled;
+    // 桌面端没有无障碍服务（也不存在「拨号端」角色），整张卡片不显示
+    if (!PlatformBridge.canDetectCall) return const SizedBox.shrink();
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -489,7 +567,7 @@ class _PromptPageState extends State<PromptPage> {
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () async {
-                await CallStateWatcher.openSettings();
+                await PlatformBridge.openAccessibilitySettings();
               },
               icon: const Icon(Icons.open_in_new, size: 18),
               label: const Text('打开系统无障碍设置'),
@@ -729,9 +807,179 @@ class _PromptPageState extends State<PromptPage> {
                 child: const Text('清除音频', style: TextStyle(fontSize: 12)),
               ),
             ),
+          const SizedBox(height: 10),
+          // 用离线语音识别把这段录音转成文本
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: hasAudio ? _recognizeToText : null,
+              icon: const Icon(Icons.record_voice_over_outlined, size: 18),
+              label: const Text('把这段音频转成文本'),
+            ),
+          ),
+          if (hasAudio && !_link.asrModelReady)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '需要先在下方「语音识别模型」里导入模型',
+                style: const TextStyle(fontSize: 11, color: Color(0xFFE08A00)),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  /// 语音识别模型卡片：导入模型 + 下载链接
+  Widget _buildAsrCard() {
+    final ready = _link.asrModelReady;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.multitrack_audio, size: 18, color: Color(0xFF2F6BFF)),
+              const SizedBox(width: 8),
+              const Text('语音识别模型', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ready ? const Color(0xFFE7F7EE) : const Color(0xFFFDECEC),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  ready ? '已安装' : '未安装',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: ready ? const Color(0xFF17A05A) : const Color(0xFFD03B3B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            ready
+                ? '当前模型：${_link.asrModelName}'
+                : '把「开场白音频」转成文本需要离线语音识别模型（SenseVoice，约 155MB）。'
+                    '模型只在本机运行，录音不会上传。',
+            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _importAsrModel,
+                  icon: const Icon(Icons.upload_file, size: 18),
+                  label: const Text('导入模型包'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _openUrl(AsrRecognizer.modelDownloadPage),
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  label: const Text('下载模型'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '模型包：sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2\n'
+            '（tar.bz2 格式，导入后自动识别，无需手动解压）',
+            style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 导入语音识别模型
+  Future<void> _importAsrModel() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      withData: false,
+    );
+    if (!mounted) return;
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (path == null) {
+      AppToast.error(context, '无法读取所选模型包');
+      return;
+    }
+    final ok = await _link.importAsrModel(File(path));
+    if (!mounted) return;
+    if (ok) {
+      AppToast.show(context, '语音识别模型已导入', icon: Icons.check_circle_outline);
+    } else {
+      AppToast.error(context, '导入失败，详见日志');
+    }
+  }
+
+  /// 识别当前开场白音频 -> 弹出结果（可编辑）-> 填入文本框
+  Future<void> _recognizeToText() async {
+    final text = await _link.recognizeOpeningAudio();
+    if (!mounted) return;
+    if (text == null) {
+      AppToast.error(context, '识别失败，详见日志');
+      return;
+    }
+    final controller = TextEditingController(text: text);
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('识别结果', style: TextStyle(fontSize: 17)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: controller,
+            // 不自动弹键盘：否则弹窗被顶起来，按钮位置会变
+            autofocus: false,
+            maxLines: 6,
+            minLines: 3,
+            decoration: const InputDecoration(
+              hintText: '识别出的文本，可以直接修改',
+              isDense: true,
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    foregroundColor: const Color(0xFF5B6B84),
+                    side: const BorderSide(color: Color(0xFFD7DEE9)),
+                  ),
+                  child: const Text('取消'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                  child: const Text('填入'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    final value = controller.text.trim();
+    if (value.isEmpty) return;
+    _scriptController.text = value;
+    setState(() {});
+    AppToast.show(context, '已填入开场白文本', icon: Icons.check_circle_outline);
   }
 
   Widget _buildAvatarCard() {

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -45,27 +46,82 @@ class Live2dService {
       _server = server;
       _baseUrl = 'http://127.0.0.1:${server.port}';
       return _baseUrl;
-    } catch (_) {
+    } catch (e) {
+      // ignore: avoid_print
+      print('[Live2D] 本地服务启动失败: $e');
       return null;
     } finally {
       _preparingFuture = null;
     }
   }
 
+  /// 模型描述文件的标准后缀（Cubism 3/4/5 都用它）
+  static const String modelFileSuffix = '.model3.json';
+
+  /// 判断一个文件是不是 Live2D 模型描述文件。
+  ///
+  /// 优先按**后缀**判断（`*.model3.json`，大小写不敏感）；
+  /// 后缀不标准时（比如被改名成 model.json / config.json）再按**内容**兜底：
+  /// 含有 `FileReferences` 且引用了 `Moc` 即认为是模型描述文件。
+  static bool isModelDescriptionFile(String name, {String? content}) {
+    final lower = name.split('/').last.toLowerCase();
+    // 后缀判断：xxx.model3.json 或 model3.json 都算（大小写不敏感）
+    if (lower.endsWith('model3.json')) return true;
+    if (!lower.endsWith('.json')) return false;
+    if (content == null) return false;
+    return content.contains('"FileReferences"') && content.contains('"Moc"');
+  }
+
+  /// 从模型文件路径里取出展示名（去掉 .model3.json 后缀）
+  static String modelNameOf(String path) {
+    final file = path.split('/').last;
+    final lower = file.toLowerCase();
+    if (lower.endsWith(modelFileSuffix)) {
+      return file.substring(0, file.length - modelFileSuffix.length);
+    }
+    if (lower == 'model3.json') {
+      final dir = path.split('/');
+      return dir.length > 1 ? dir[dir.length - 2] : file;
+    }
+    final dot = file.lastIndexOf('.');
+    return dot > 0 ? file.substring(0, dot) : file;
+  }
+
   /// 可用模型列表（相对路径，如 hiyori/Hiyori.model3.json）
-  /// 只返回 Cubism 4/5 的模型；Cubism 3（Version<4）当前运行时不支持
+  /// 只返回 Cubism 4/5 的模型；Cubism 3（moc3 v6）当前运行时不支持
   Future<List<String>> listModels() async {
     final root = _webRoot;
     if (root == null) return const <String>[];
     final result = <String>[];
-    for (final entity in root.listSync(recursive: true)) {
-      if (entity is File && entity.path.endsWith('.model3.json')) {
-        final relative = entity.path.substring(root.path.length + 1).replaceAll(r'\', '/');
-        if (await isSupportedModel(entity)) {
-          result.add(relative);
-        } else {
-          incompatibleModels.add(relative);
+    // 只递归遍历**目录**、只挑 .model3.json：
+    // 直接 listSync(recursive: true) 会把上千张贴图也列一遍，很慢，
+    // 表现出来就是点「切换模型」之后半天没反应。
+    final modelFiles = <File>[];
+    void scan(Directory dir, int depth) {
+      if (depth > 8) return;
+      List<FileSystemEntity> children;
+      try {
+        children = dir.listSync(followLinks: true);
+      } catch (_) {
+        return;
+      }
+      for (final entity in children) {
+        if (entity is File) {
+          if (entity.path.toLowerCase().endsWith('.model3.json')) modelFiles.add(entity);
+        } else if (entity is Directory) {
+          scan(entity, depth + 1);
         }
+      }
+    }
+
+    scan(root, 0);
+
+    for (final entity in modelFiles) {
+      final relative = entity.path.substring(root.path.length + 1).replaceAll(r'\', '/');
+      if (await isSupportedModel(entity)) {
+        result.add(relative);
+      } else {
+        incompatibleModels.add(relative);
       }
     }
     result.sort();
@@ -74,6 +130,12 @@ class Live2dService {
 
   /// 被排除的 Cubism 3 模型（供界面提示）
   final List<String> incompatibleModels = <String>[];
+
+  /// 内置模型都放在资源根目录下（hiyori/ haru/ ...），
+  /// 用户自己导入的模型统一放在 `models/` 下 —— 用它区分两者，
+  /// 内置模型不允许被移除。
+  static bool isUserImported(String modelRelativePath) =>
+      modelRelativePath.startsWith('models/');
 
   /// 判断模型是否为当前运行时支持的 Cubism 4/5
   ///
@@ -110,11 +172,16 @@ class Live2dService {
     }
   }
 
-  /// 导入用户自备的模型包（zip，内含 *.model3.json 及其依赖文件）
+  /// 导入用户自备的模型包（zip，内含模型描述文件及其依赖文件）
   /// 返回导入后的模型相对路径
   Future<String?> importModelArchive(File archiveFile, {String? name}) async {
+    // 同上：先确保资源目录已初始化
+    await ensureStarted();
     final root = _webRoot;
-    if (root == null) return null;
+    if (root == null) {
+      lastImportError = '本地资源目录未初始化，请先开启一次数字人';
+      return null;
+    }
 
     final bytes = await archiveFile.readAsBytes();
     final Archive archive;
@@ -125,12 +192,27 @@ class Live2dService {
     }
 
     final files = archive.where((e) => e.isFile).toList();
-    // 找到 model3.json，取它所在的目录作为模型根
+    // 找模型描述文件：先按后缀（*.model3.json），再按内容兜底（改过名的 json）
     ArchiveFile? modelEntry;
     for (final entry in files) {
-      if (entry.name.toLowerCase().endsWith('.model3.json')) {
+      if (isModelDescriptionFile(entry.name)) {
         modelEntry = entry;
         break;
+      }
+    }
+    if (modelEntry == null) {
+      // 后缀不标准时，按内容再找一遍
+      for (final entry in files) {
+        if (!entry.name.toLowerCase().endsWith('.json')) continue;
+        try {
+          final content = utf8.decode(entry.content as List<int>, allowMalformed: true);
+          if (isModelDescriptionFile(entry.name, content: content)) {
+            modelEntry = entry;
+            break;
+          }
+        } catch (_) {
+          // 忽略
+        }
       }
     }
     if (modelEntry == null) return null;
@@ -138,13 +220,12 @@ class Live2dService {
     final modelPath = modelEntry.name.replaceAll('\\', '/');
     final cut = modelPath.lastIndexOf('/');
     final prefix = cut >= 0 ? modelPath.substring(0, cut + 1) : '';
-    final dirName = (name ?? (cut >= 0 ? modelPath.substring(0, cut) : ''))
-        .split('/')
-        .where((e) => e.isNotEmpty)
-        .lastOrNull ??
-        'model';
+    final dirName = (name ?? modelNameOf(modelPath))
+        .replaceAll(RegExp(r'[^\w\-.\u4e00-\u9fa5]'), '_')
+        .trim();
+    final safeName = dirName.isEmpty ? 'model' : dirName;
 
-    final targetDir = Directory('${root.path}/models/$dirName');
+    final targetDir = Directory('${root.path}/models/$safeName');
     if (targetDir.existsSync()) targetDir.deleteSync(recursive: true);
     targetDir.createSync(recursive: true);
 
@@ -158,14 +239,206 @@ class Live2dService {
       out.writeAsBytesSync(entry.content as List<int>);
     }
 
-    return 'models/$dirName/${modelPath.substring(prefix.length)}';
+    return 'models/$safeName/${modelPath.substring(prefix.length)}';
   }
 
-  /// 删除已导入的模型目录
+  /// 最近一次导入失败的原因（供界面提示，避免一律报「没有找到 .model3.json」）
+  String? lastImportError;
+
+  /// 把 SAF 返回的路径转成真实的文件系统路径。
+  ///
+  /// 文件选择器返回的可能是：
+  /// - `/document/primary:Download`（DocumentsUI 的 documentId 形式）
+  /// - `content://com.android.externalstorage.documents/primary%3ADownload`
+  /// - `primary:Download`
+  /// 这些都不是 dart:io 能用的路径，需要映射到 `/storage/emulated/0/...`。
+  static String resolveRealPath(String raw) {
+    var path = raw.trim();
+    // content:// URI -> documentId
+    final docMatch = RegExp(r'/document/(.+)$').firstMatch(path);
+    if (docMatch != null) {
+      path = Uri.decodeComponent(docMatch.group(1)!);
+    } else if (path.startsWith('content://')) {
+      // 兜底：取最后一个 / 后面的部分
+      final tail = path.split('/').last;
+      path = Uri.decodeComponent(tail);
+    }
+    // documentId 形如 primary:Download 或 XXXX-XXXX:Download
+    if (path.contains(':')) {
+      final parts = path.split(':');
+      final volume = parts.first;
+      final rest = parts.length > 1 ? parts.sublist(1).join(':') : '';
+      if (volume == 'primary') {
+        return '/storage/emulated/0/$rest';
+      }
+      return '/storage/$volume/$rest';
+    }
+    return path;
+  }
+
+  /// 用 shell 列目录（dart:io 在部分 ROM 上会被分区存储拦掉，shell 更宽松）
+  static List<String> _tryListViaShell(String path) {
+    try {
+      final result = Process.runSync('ls', <String>['-1', path]);
+      if (result.exitCode != 0) return const <String>[];
+      final out = (result.stdout as String).trim();
+      if (out.isEmpty) return const <String>[];
+      return out.split('\n');
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  /// 从文件夹导入模型：递归寻找 *.model3.json，并把该模型目录（含贴图/动作/表情）
+  /// 整体复制到 models/ 下。返回导入后的模型相对路径。
+  Future<String?> importModelFolder(Directory folder, {String? name}) async {
+    // 先确保资源目录已初始化：没开过数字人时 _webRoot 还是空的，
+    // 否则会在检查文件之前就直接返回，表现为「明明有 model3.json 却提示不存在」
+    await ensureStarted();
+    final root = _webRoot;
+    if (root == null) {
+      lastImportError = '本地资源目录未初始化，请先开启一次数字人';
+      return null;
+    }
+    lastImportError = null;
+    // SAF 返回的可能是 documentId 形式，需要转成真实路径
+    final realPath = resolveRealPath(folder.path);
+    debugPrint('[Live2D] 导入目录: 原始=${folder.path} 转换后=$realPath');
+    if (realPath != folder.path) {
+      folder = Directory(realPath);
+    }
+    if (!folder.existsSync()) {
+      // 目录「存在但列不出来」是分区存储下的典型表现：existsSync 通过，
+      // 但 listSync 会抛权限错误。这里用 shell 再确认一次。
+      final listed = _tryListViaShell(folder.path);
+      if (listed.isEmpty) {
+        lastImportError = '无法访问该目录（路径：${folder.path}）';
+        return null;
+      }
+      lastImportError = '目录不存在或无法访问';
+      return null;
+    }
+
+    // 递归查找模型描述文件：先按后缀（*.model3.json），再按内容兜底
+    final models = <File>[];
+    final jsonCandidates = <File>[];
+    var unreadable = 0;
+    void scan(Directory dir, int depth) {
+      if (depth > 8 || models.length > 20) return;
+      List<FileSystemEntity> children;
+      try {
+        // followLinks: true —— 部分解压工具会建符号链接，false 会直接漏掉
+        children = dir.listSync(followLinks: true);
+      } catch (_) {
+        unreadable++;
+        return;
+      }
+      for (final entity in children) {
+        if (entity is File) {
+          if (isModelDescriptionFile(entity.path)) {
+            models.add(entity);
+          } else if (entity.path.toLowerCase().endsWith('.json')) {
+            jsonCandidates.add(entity);
+          }
+        }
+      }
+      for (final entity in children) {
+        if (entity is Directory) {
+          final name = entity.path.split(Platform.pathSeparator).last;
+          if (name.startsWith('.') || name == '__MACOSX') continue;
+          scan(entity, depth + 1);
+        }
+      }
+    }
+
+    scan(folder, 0);
+    if (models.isEmpty) {
+      // 兜底：一次性递归遍历（某些目录下 listSync 逐层列举会失败）
+      try {
+        for (final entity in folder.listSync(recursive: true, followLinks: true)) {
+          if (entity is File && isModelDescriptionFile(entity.path)) {
+            models.add(entity);
+          }
+        }
+      } catch (_) {
+        // 忽略
+      }
+    }
+    if (models.isEmpty) {
+      // 后缀不标准（模型 json 被改过名）时按内容再找一遍
+      for (final candidate in jsonCandidates) {
+        try {
+          final content = await candidate.readAsString();
+          if (isModelDescriptionFile(candidate.path, content: content)) {
+            models.add(candidate);
+            break;
+          }
+        } catch (_) {
+          // 忽略
+        }
+      }
+    }
+    if (models.isEmpty) {
+      // 给出能定位问题的原因，而不是笼统的「没有找到」
+      if (unreadable > 0) {
+        lastImportError = '无法读取该目录（Android 11+ 需要「所有文件访问权限」），'
+            '建议改用「导入模型包（zip）」';
+      } else if (jsonCandidates.isNotEmpty) {
+        lastImportError = '目录里有 ${jsonCandidates.length} 个 json，但都不是模型描述文件'
+            '（需要 *.model3.json）';
+      } else {
+        lastImportError = '该目录里没有找到 .model3.json（路径：${folder.path}）';
+      }
+      return null;
+    }
+    models.sort((a, b) => a.path.length.compareTo(b.path.length));
+    final modelFile = models.first;
+
+    // 模型根目录 = model3.json 所在目录
+    final modelDir = modelFile.parent;
+    final dirName = (name ?? modelDir.path.split(Platform.pathSeparator).last)
+        .replaceAll(RegExp(r'[^\w\-. 一-龥]'), '_')
+        .trim();
+    final safeName = dirName.isEmpty ? 'model' : dirName;
+
+    final targetDir = Directory('${root.path}/models/$safeName');
+    if (targetDir.existsSync()) targetDir.deleteSync(recursive: true);
+    targetDir.createSync(recursive: true);
+
+    // 复制整个模型目录（相对 model3.json 的引用都在其中）
+    var copied = 0;
+    void copyTree(Directory from, Directory to) {
+      for (final entity in from.listSync(followLinks: false)) {
+        final baseName = entity.path.split(Platform.pathSeparator).last;
+        if (entity is File) {
+          final target = File('${to.path}/$baseName');
+          try {
+            target.writeAsBytesSync(entity.readAsBytesSync());
+            copied++;
+          } catch (_) {
+            // 跳过读不了的文件
+          }
+        } else if (entity is Directory) {
+          if (baseName.startsWith('.') || baseName == '__MACOSX') continue;
+          final target = Directory('${to.path}/$baseName');
+          target.createSync(recursive: true);
+          copyTree(entity, target);
+        }
+      }
+    }
+
+    copyTree(modelDir, targetDir);
+    if (copied == 0) return null;
+
+    final relativeModel = 'models/$safeName/${modelFile.path.split(Platform.pathSeparator).last}';
+    return relativeModel;
+  }
+
+  /// 删除已导入的模型目录（只允许删用户导入的，内置模型会被忽略）
   Future<void> deleteImportedModel(String modelRelativePath) async {
     final root = _webRoot;
     if (root == null) return;
-    if (!modelRelativePath.startsWith('models/')) return;
+    if (!isUserImported(modelRelativePath)) return;
     final name = modelRelativePath.split('/')[1];
     final dir = Directory('${root.path}/models/$name');
     if (dir.existsSync()) dir.deleteSync(recursive: true);
@@ -184,11 +457,15 @@ class Live2dService {
 
     Directory base;
     try {
-      base = (await getExternalStorageDirectory()) ?? await getApplicationDocumentsDirectory();
-    } catch (_) {
-      base = await getApplicationDocumentsDirectory();
+      base = await getExternalStorageDirectory() ?? await getApplicationSupportDirectory();
+    } catch (e) {
+      // ignore: avoid_print
+      print('[Live2D] getExternalStorageDirectory 失败: $e');
+      base = await getApplicationSupportDirectory();
     }
     final root = Directory('${base.path}/live2d');
+    // ignore: avoid_print
+    print('[Live2D] 资源目录: ${root.path}');
     if (!root.existsSync()) root.createSync(recursive: true);
 
     final marker = File('${root.path}/.asset_version');
@@ -272,8 +549,4 @@ class Live2dService {
     if (lower.endsWith('.webp')) return ContentType('image', 'webp');
     return ContentType.binary;
   }
-}
-
-extension _LastOrNull<T> on Iterable<T> {
-  T? get lastOrNull => isEmpty ? null : last;
 }

@@ -156,6 +156,281 @@ flutter build apk --release
 - 自动淡入淡出 + 轻微缩放，**不打断操作**（`IgnorePointer`，点击可以穿透）
 - 生命周期用单个 `AnimationController` 走完「入场 → 停留 → 退场」，不用 Timer（否则 widget 测试的 `pumpAndSettle` 会一直等下去）
 
+### 名单列表双列 + 拨号页布局
+
+**名单列表页：双列多行**
+
+```
+┌────────────┐ ┌────────────┐
+│ ① 中国移动客服 │ │ ② 中国联通客服 │
+│   手机号码    │ │   手机号码    │   ← 窄卡里号码竖排（标签在上）
+│   10086     │ │   10010     │
+│   办公电话    │ │   办公电话    │
+│   010-8888… │ │   010-8888… │
+│   部门: 客服热线│ │   部门: 客服热线│
+└────────────┘ └────────────┘
+```
+
+- 紧凑模式改成**两列网格**，左右留白收紧让每列更宽（号码不易换行），卡片高度只够「姓名 + 号码 + 拨打情况」（84），一屏能看 12+ 张卡
+- 拨号图标已移除（省下的空间全给号码，双列 15px、单列 17px）
+- 号码与列名**同一行**（手机号码 10086），长号码用 FittedBox 自动缩放，不换行不截断
+- 已标记的拨打情况显示为绿色小标签
+- **长按卡片**可弹出该行**完整信息**（弹窗整体下沉，从屏幕更下方升起）：所有号码（可直接点拨）+ 全部字段 + **拨打情况设置**（短按仍是拨号，单列/双列都支持）
+
+**拨打情况（表格末尾新增一列）**
+
+- 导入表格时**自动在末尾追加「拨打情况」列**；长按卡片的弹窗里可以一键标记：拨打成功 / 未接听 / 已关机 / **自定义填写**（弹输入框自己写，如「客户说下周一再联系」），也能清空
+- 标记结果写回该行的「拨打情况」列，并在卡片上显示为绿色小标签
+- 同时按「表格名 + 行号」存到本地，下次进同名表格会自动带回来
+- **导出为 xlsx**：列表页右上角菜单 →「导出为 xlsx（含拨打情况）」，把表头 + 全部数据行（拨打情况在最后一列并已填充）写成 xlsx
+  - 直接通过 **MediaStore 存到系统「下载」目录**（不需要任何存储权限，也不会被系统保存对话框卡住），提示里会给出文件路径
+  - 极端情况下退回系统「另存为」对话框
+- **清空所有拨打情况**：同一菜单里，二次确认后清空当前表格全部行（含本地缓存）
+- 导出的文件再导入时**不会**重复追加「拨打情况」列（会复用已有同名列）
+- 标题栏在**排版（密度）按钮左边**新增「双机联动播报」快捷跳转；切到详细模式仍是单列大卡片
+
+**拨号页（首页）**
+
+```
+┌───────────────┬───────────────┐
+│ 工作表          │ 统计          │  ← 两卡顶部对齐
+├───────────────┴───────────────┤
+│ 电话号码列（可多选）               │  ← 号码列在区号上面
+├───────────────────────────────┤
+│ 固话区号（chip 多列排开）           │
+└───────────────────────────────┘
+   ┌───────────────────────────┐
+   │ [导入其他表格] │ [开始拨号] │  ← 悬浮液态玻璃条
+   └───────────────────────────┘
+```
+
+- 「工作表」与「统计」两张卡**顶部对齐且等高**（IntrinsicHeight）；点左边卡片可弹出「表格信息」看完整文件名、数据行、列数、表头位置等（标题被截断时也能看全）
+- 「电话号码列」放在「固话区号」**上面**
+- 「导入其他表格」与「开始拨号」做成**悬浮液态玻璃条**（背景模糊 + 半透明渐变 + 高光描边 + 投影），始终可点、不随内容滚走
+
+**表格导入成功率提升**
+
+- 支持 **.xlsx / .xls / .csv / .txt**；csv、txt 直接按逗号或制表符分隔解析（支持双引号包裹与转义）
+- 解析失败时会把底层原因带出来（不再只给一句「无法解析」），并提示如何另存为 xlsx
+- 名单卡片的字段区**不展示「序号」项**（长按详情里仍能看到完整字段，含序号）
+- 号码识别新增**服务号**类型：5~6 位的公开服务电话（`10086` / `10010` / `10000` / `12345`）。服务号与「编号 10001」太像，所以**单独判断**：只有当该列**表头命中电话关键词**、且列里还有标准格式号码时，才把服务号计入 —— 否则编号列会被误当成号码列
+
+**内置示例名单**
+
+前 3 行是三大运营商的客服热线（`10086` / `10010` / `10000`）——都是**公开服务电话**，接通后是语音提示，既能跑通「接通 → 播报」全链路，也不会打扰到真人。
+
+### 数字人模型导入
+
+- **按文件后缀识别模型**：`*.model3.json`（大小写不敏感，`Hiyori.model3.json` 与 `model3.json` 都认）；后缀被改过时再按**内容**兜底（json 含 `FileReferences` + `Moc` 即认为是模型描述文件）
+- 「导入模型包（zip）」：选 zip 压缩包，自动找到里面的**模型描述文件**并连同贴图/动作/表情一起释放
+- 「**从文件夹导入模型**」：直接选一个文件夹，递归查找模型描述文件，把模型所在目录整体复制到应用目录（适合已经解压好的模型）
+  - 扫描会跟随符号链接、最多 8 层，并有一次性递归遍历兜底
+  - 失败时给出**具体原因**（目录读不到 / 有 json 但不是模型描述文件 / 确实没有），不再一律报「没有找到 .model3.json」
+  - **Android 11+ 分区存储**：需要「所有文件访问权限」（MANAGE_EXTERNAL_STORAGE）。没授权时点击「导入文件夹」会直接跳转到系统授权页，开启后再导入即可
+  - 目录选择走**系统 SAF**（ACTION_OPEN_DOCUMENT_TREE）并在原生侧把 documentId 解析成真实路径（MIUI/HyperOS 的 
+oot: 卷名也做了兼容），不依赖各 ROM 行为不一致的文件选择器
+  - 找不到模型时会说明原因（目录读不到 / 有 json 但不是模型描述文件 / 确实没有）
+
+### Windows 数字人的透明背景
+
+Windows 的 WebView2 默认是**白色不透明**背景，会导致：
+
+- 模型周围出现一圈白/灰块
+- 浮窗贴到屏幕左/右边缘时，超出部分露出灰白条
+
+处理方式（`live2d_avatar.dart` 的 `_bootstrapWindows`）：
+
+```dart
+await controller.setBackgroundColor(const Color(0x00000000));
+```
+
+- 只能传 **alpha = 0 的全透明**，传半透明会被 WebView2 当成不透明
+- 页面本身也必须是透明背景（`assets/live2d/index.html` 里 `html, body { background: transparent; }`）
+- Android 侧本来就通过 `webview_flutter` 设了同样的透明背景，两端表现一致
+### 数字人模型的移除
+
+「切换模型」列表里：
+
+- **内置模型**（Haru / Hiyori / Mao / Mark / Natori / Rice / Wanko）**不可移除** —— 没有删除按钮
+- **用户自己导入的模型**（路径以 `models/` 开头的）**可以移除**：点右侧的 🗑️ → 二次确认 → 连目录一起删除
+- 移除的如果是**当前正在使用**的模型，会自动切回默认模型（Hiyori）
+
+区分依据：内置模型放在资源根目录（`hiyori/`、`haru/` …），用户导入的统一放在 `models/` 下。
+
+### 弹窗与确认框
+
+- **长按详情弹窗**（名单页）：高度**随内容自适应**，内容少时弹窗就矮，不再在上方留大片空白；字段改成**双列**排布（标签 54px + 值），并去掉了与高亮 chip 重复的「当前拨打情况」行
+- **确认弹窗统一**用 `lib/widgets/confirm_dialog.dart`：
+  - 取消与确认按钮**固定在同一行**、宽度一致（`Row` + `Expanded`），不会被长文案挤成两行
+  - 确认按钮**实心主题色**，危险操作（清空 / 移除模型）用**红色**，一眼能找到
+  - 取消按钮为描边样式，不抢主操作的视觉权重
+  - 标题可带图标（清空=扫帚、移除=垃圾桶）
+
+### 开场白音频转文本（离线语音识别）
+
+「播报」标签页 → **开场白音频**卡片 →「把这段音频转成文本」→ 识别结果弹窗（可直接改）→「填入」回写到开场白文本框。
+
+**完全离线**：用 sherpa-onnx 的离线识别器（和端侧合成同一套技术栈），录音不会上传。
+
+**支持全格式**：新增 Android 原生解码器（`AudioDecoder.kt`，MediaExtractor + MediaCodec），
+mp3 / m4a / aac / ogg / wav / amr 等常见格式都能读，统一转成 16kHz 单声道 WAV 再送识别器。
+解码结果写成文件而不是走 MethodChannel，避免长录音超 Binder 事务 1MB 限制。
+
+**模型**（在「语音识别模型」卡片导入，`.tar.bz2` 格式，导入后自动识别，无需手动解压）：
+
+| 模型 | 体积 | 说明 |
+| --- | --- | --- |
+| `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2` | 155 MB | 推荐，中文效果最好、自带标点 |
+| `sherpa-onnx-paraformer-zh-small-2024-03-09.tar.bz2` | 74 MB | 更轻，速度快 |
+
+- 模型目录：`/storage/emulated/0/Android/data/<包名>/files/sherpa-asr/`，也可直接用 adb 推入
+- 识别开了**逆文本正规化**：数字会输出成「10086」而不是「一万零八十六」
+- 开了标点，输出自带逗号句号
+
+### PC 端（Windows / macOS / Linux）
+
+PC 端定位为**播放端**：替代第二台手机，接收手机拨号端发来的播报指令并朗读（可带 Live2D 数字人）。
+
+**平台差异（由 `lib/services/platform_bridge.dart` 统一收拢）**
+
+| 能力 | Android | 桌面端 |
+| --- | --- | --- |
+| 拨号跳转（系统拨号页） | ✅ | ❌ 改为**复制号码** |
+| 「拨号端」角色（检测接通） | ✅ | ❌ **隐藏**，PC 只当播放端 |
+| 无障碍通话检测 | ✅ | ❌ 不支持 |
+| 局域网双机联动 | ✅ | ✅ PC 与手机同 Wi-Fi 即可 |
+| 立即播报 | 广播给播放端 | **本机播报** |
+| Live2D 数字人 | ✅ | ✅（WebView2） |
+| 端侧 TTS / ASR | ✅ | ✅（ASR 的音频解码暂仅 Android） |
+| 保存导出文件 | 系统「下载」目录 | 系统保存对话框 |
+
+**宽屏适配**：桌面端**内容区**限宽 820px 居中（`DesktopBody`），但 **AppBar 仍然通栏**，更像桌面应用；两侧用页面背景色铺满，不会露出黑块。
+
+**桌面端的三个坑（都已处理）**
+
+| 坑 | 现象 | 处理 |
+| --- | --- | --- |
+| `flutter_tts` 在 Windows 上调 SAPI | 机器没装语音引擎时**原生层崩溃**（整个 App 闪退，try/catch 拦不住） | 桌面端**完全禁用**系统 TTS，统一走端侧合成（导入 TTS 模型即可） |
+| 缺 `webview_flutter_windows` | 数字人一片空白，报 `WebViewPlatform.instance != null` | pubspec 显式声明 `webview_flutter_windows`，并确认它出现在 `windows/flutter/generated_plugins.cmake` 里 |
+| `webview_flutter_windows` 1.x **不是** `webview_flutter` 的平台实现 | 它是**独立的 WebView2 组件**（`Webview` / `WebviewController`），`WebViewController` 那套 API 在 Windows 上完全不可用 | 数字人组件按平台分两套实现：Android 用 `webview_flutter`，Windows 用 `webview_flutter_windows` 的 `loadUrl` / `executeScript` / `loadingState` |
+| 缺 WebView2 Runtime | 数字人不加载（浏览器进程起不来，**不会**触发任何错误回调，只会一直白屏） | 安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)；App 内也有「下载 WebView2 Runtime」按钮 |
+
+
+**构建 Windows**
+
+```bash
+# 一次性准备：开启「开发者模式」（Flutter Windows 插件需要创建符号链接）
+#   设置 → 系统 → 开发者选项 → 开发人员模式
+#   或用管理员 PowerShell：
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
+
+flutter pub get
+flutter build windows --release        # 产物在 build/windows/x64/runner/Release/
+```
+
+> 没有管理员权限时无法创建符号链接，构建会提示
+> `Building with plugins requires symlink support`。
+
+**构建 Windows**（两个一次性前置条件）
+
+1. **开启「开发者模式」**（Flutter 插件构建需要创建符号链接）
+   - 设置 → 系统 → 开发者选项 → 开发人员模式
+   - 或用**管理员** PowerShell 执行：
+     ```
+     reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
+     ```
+2. **安装 nuget.exe 并放进 PATH**（`flutter_tts` 的 Windows 实现要用它拉取 Speech API）
+   ```
+   curl.exe -L -o d:\tools\nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+   $env:PATH="d:\tools;$env:PATH"     # 每次构建前确保它在 PATH 里
+   ```
+
+然后：
+
+```
+flutter pub get
+flutter build windows --release        # 产物在 build/windows/x64/runner/Release/
+```
+
+> 若报 `file cannot create directory: C:/Program Files/...`，说明上次构建把安装前缀缓存成了 Program Files，
+> 删掉 `build/windows` 目录重新构建即可。
+### 桌面端的分栏布局（Windows / macOS / Linux）
+
+桌面端**不再用浮窗**展示数字人，改成**左右分栏**：
+
+```
+┌──────────────┬────────────────────────────────┐
+│  数字人       │  主操作界面                      │
+│  ┌────────┐  │  ┌──────────────────────────┐  │
+│  │ Live2D │  │  │ 播放端 / 立即播报 / 停止   │  │
+│  └────────┘  │  │                          │  │
+│  提词气泡     │  │  本机角色 / 单机自测       │  │
+│  上一步 下一步 │  │  名单 / 数字人 / 日志       │  │
+└──────────────┴────────────────────────────────┘
+```
+
+**为什么改**：Windows 的 WebView2 是**原生控件**（hybrid composition），浮在 Flutter 内容之上时会出现一串问题 —— 透明背景要等控件创建后设置才生效、resize 后背景色会被重置、Flutter 的裁剪对原生控件无效导致贴边露灰条。改成固定分栏后，数字人就是普通布局的一部分，行为稳定。
+
+- 左栏宽度固定为**窗口宽度的 2/5**（DesktopSplitView.panelRatio，限制在 260~640px）
+- 中间是 Live2D 角色（白底卡片内渲染，**没有裁剪/透明问题**）
+- 下面是提词气泡（客户信息 + 话术提词，最大高度为**窗口高度的 40%**）
+- 再下面是「上一步 / 下一步」和**「切换模型」快捷入口**（与手机端共用 ModelPickerSheet）
+
+- **手机端保持原来的浮窗**（可拖动、可贴边收起）
+
+实现上把「数字人 + 提词气泡」抽成 `lib/widgets/avatar_stage.dart`（`AvatarStage` / `AvatarBubble`），手机浮窗和桌面分栏共用一份渲染逻辑。
+
+**Windows 数字人的几个坑（都已处理）**
+
+| 坑 | 现象 | 处理 |
+| --- | --- | --- |
+| `webview_flutter_windows` 1.x **不是** `webview_flutter` 的平台实现 | 它是**独立的 WebView2 组件**（`Webview` / `WebviewController`），`WebViewController` 那套 API 在 Windows 上完全不可用 | 数字人组件按平台分两套实现：Android 用 `webview_flutter`，Windows 用 `loadUrl` / `executeScript` / `loadingState` |
+| `setBackgroundColor` 调用时机 | 原生侧有 `IsValid()` 检查，控件没建好时**静默失败** | 放到 `loadUrl` 之后调用，并在导航完成时兜底重设 |
+| resize 后背景色被重置 | 展开→贴边后背景又变回默认灰色 | 用 `LayoutBuilder` 感知宽度变化，变了就重设一次透明 |
+| `dispose` 没释放原生控件 | 关掉数字人后还残留一块**擦不掉的灰色矩形** | `dispose` 里显式 `controller.dispose()` |
+| 背景色只能全透明 | 插件把任何 alpha>0 的值都当成不透明 | 传 `Color(0x00000000)`，页面侧 `html, body { background: transparent }` |
+### 开场白音频：固定一个文件
+
+开场白音频**始终是同一个文件**（应用项目目录 `documents/opening_audio.wav`）：
+
+- **端侧合成**（sherpa-onnx）直接写到这个文件，每次生成**覆盖**上一次的
+- **导入外部音频**（mp3 / wav / m4a / aac / ogg）时复制过去，同样是覆盖
+- 清除时连同 `.env.json`（嘴型包络）一起删掉
+- 旧版本留下的 `opening_tts_<时间戳>.wav` 会在下次合成时自动清理，路径也会在启动时迁移到固定文件
+
+好处：不会越攒越多临时文件，偏好设置里存的路径永远是同一个，也方便用户自己从应用目录取走。
+
+### Windows 字体发虚的修复
+
+Windows 的 Flutter 默认用 **Impeller** 渲染器，在部分显卡驱动上**文字（尤其中文）渲染发虚**。
+
+修复方式是在引擎层直接关掉 Impeller（`windows/runner/main.cpp`）：
+
+```cpp
+flutter::DartProject project(L"data");
+// Impeller 在部分 Windows 显卡驱动上文字渲染发虚，改用 Skia
+project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+```
+
+- 写进代码里，**不需要每次构建都加 `--no-enable-impeller`**（release 构建 tool 也不支持这个参数）
+- Android / iOS 不受影响（Impeller 在移动端表现良好）
+- 代价：Skia 在部分场景下性能略低于 Impeller，桌面端够用
+
+### Windows 上本地服务起不来的坑
+
+`path_provider` 在 Windows 上**不支持** `getExternalStorageDirectory()`（抛 `UnimplementedError`），`getApplicationDocumentsDirectory()` 同样不支持 —— 只有 `getApplicationSupportDirectory()` 能用。原来的写法是 `external ?? documents`，因为异常在 `??` 之前就抛出，两个都不支持时整个函数静默失败，表现为**数字人打不开、「切换模型」点了没反应**。
+
+修法：`getExternalStorageDirectory()` 失败时回退到 `getApplicationSupportDirectory()`（`%APPDATA%\<company>\<app>\live2d`），并补了日志。
+
+### 桌面端分栏里的弹窗 / Toast
+
+`MaterialApp.builder` 返回的内容位于 **Navigator 之外**，所以桌面分栏里的控件：
+
+- `showModalBottomSheet` 会抛「找不到 Navigator」→ **点了没反应**
+- `Overlay.maybeOf(context)` 返回 null → **Toast 静默不显示**
+
+修法：新增 `lib/services/app_navigator.dart`，用 `GlobalKey<NavigatorState>` 拿到全局 Navigator，弹窗和 Toast 都改走 `resolveNavigator(context)` / `resolveOverlay(context)`（优先用 context 上的，回退到全局 key）。
+
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

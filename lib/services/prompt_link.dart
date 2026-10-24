@@ -6,12 +6,13 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/active_lead.dart';
+import 'asr_recognizer.dart';
 import 'call_log_store.dart';
 import 'call_state_watcher.dart';
+import 'platform_bridge.dart';
 import 'lan_link.dart';
 import 'live2d_service.dart';
 import 'tts_synthesizer.dart';
@@ -309,6 +310,12 @@ class PromptLink extends ChangeNotifier {
     if (_initialized) return;
     _initialized = true;
 
+    // 检测是否已安装语音识别模型（支持手动把模型目录推入）
+    unawaited(() async {
+      await AsrRecognizer.instance.detectModel();
+      notifyListeners();
+    }());
+
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString(_kDeviceId) ?? _newDeviceId();
     await prefs.setString(_kDeviceId, _deviceId);
@@ -325,9 +332,32 @@ class PromptLink extends ChangeNotifier {
     _script = prefs.getString(_kScript) ?? defaultScript;
     _autoTrigger = prefs.getBool(_kAutoTrigger) ?? false;
     _asPlayer = prefs.getBool(_kAsPlayer) ?? false;
+    // 桌面端（PC）没有系统拨号能力，只能当播放端
+    if (PlatformBridge.isDesktop) {
+      _autoTrigger = false;
+      _asPlayer = true;
+    }
     _rate = prefs.getDouble(_kRate) ?? 0.5;
     final savedAudio = prefs.getString(_kAudioPath);
-    if (savedAudio != null && File(savedAudio).existsSync()) _audioPath = savedAudio;
+    if (savedAudio != null && File(savedAudio).existsSync()) {
+      // 旧版本存的是带时间戳的文件，迁移到固定的开场白文件后删掉旧的
+      final fixed = await TtsSynthesizer.openingAudioFile();
+      if (savedAudio != fixed.path) {
+        try {
+          await File(savedAudio).copy(fixed.path);
+          final env = File('$savedAudio.env.json');
+          if (env.existsSync()) await env.copy('${fixed.path}.env.json');
+          await File(savedAudio).delete();
+          if (env.existsSync()) await env.delete();
+          _audioPath = fixed.path;
+          await prefs.setString(_kAudioPath, fixed.path);
+        } catch (_) {
+          _audioPath = savedAudio;
+        }
+      } else {
+        _audioPath = savedAudio;
+      }
+    }
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
     _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
@@ -359,7 +389,7 @@ class PromptLink extends ChangeNotifier {
       _log('已按配置启动拨号端服务（等待接通检测）');
       // 前台保活：避免进程被回收导致无障碍授权被系统移除
       await CallStateWatcher.requestNotificationPermission();
-      await CallStateWatcher.startKeepAlive();
+      await PlatformBridge.startKeepAlive();
     }
     if (_asPlayer) {
       _log('已按配置启动播放端服务（等待播报指令）');
@@ -376,7 +406,18 @@ class PromptLink extends ChangeNotifier {
     return List<String>.generate(6, (_) => random.nextInt(16).toRadixString(16)).join();
   }
 
+  /// 系统 TTS 是否可用。
+  ///
+  /// 桌面端**完全禁用** flutter_tts：它的 Windows 实现直接调用 SAPI，
+  /// 机器没装语音引擎时会在**原生层崩溃**（try/catch 拦不住，整个 App 闪退）。
+  /// 桌面端统一走端侧合成（sherpa-onnx）。
+  bool get _systemTtsAvailable => !PlatformBridge.isDesktop;
+
   Future<void> _initTts() async {
+    if (!_systemTtsAvailable) {
+      _ttsReady = false;
+      return;
+    }
     try {
       await _tts.setLanguage('zh-CN');
       await _tts.setSpeechRate(_rate);
@@ -464,11 +505,38 @@ class PromptLink extends ChangeNotifier {
   }
 
   /// 把指定音频文件设为播报音频
+  ///
+  /// 开场白音频**固定为一个文件**（documents/opening_audio.wav）：
+  /// - 端侧合成直接写到它
+  /// - 导入外部音频时复制过去覆盖
+  /// 这里再做一次「搬移」，兼容旧版本留下的带时间戳的文件。
   Future<void> useAudioFile(String path) async {
-    _audioPath = path;
-    _envelope = await TtsSynthesizer.instance.loadEnvelope(path);
+    var target = path;
+    final fixed = await TtsSynthesizer.openingAudioFile();
+    if (path != fixed.path && File(path).existsSync()) {
+      try {
+        await File(path).copy(fixed.path);
+        // 包络文件一起搬（嘴型数据）
+        final env = File('$path.env.json');
+        if (env.existsSync()) {
+          await env.copy('${fixed.path}.env.json');
+        }
+        target = fixed.path;
+        // 旧文件删掉，避免残留
+        try {
+          await File(path).delete();
+          if (env.existsSync()) await env.delete();
+        } catch (_) {
+          // 忽略
+        }
+      } catch (_) {
+        target = path;
+      }
+    }
+    _audioPath = target;
+    _envelope = await TtsSynthesizer.instance.loadEnvelope(target);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kAudioPath, path);
+    await prefs.setString(_kAudioPath, target);
     notifyListeners();
   }
 
@@ -543,6 +611,112 @@ class PromptLink extends ChangeNotifier {
       _log('导入数字人模型失败：$e');
       return false;
     }
+  }
+
+  /// 从文件夹导入数字人模型（递归找 .model3.json 并复制整个模型目录）
+  Future<bool> importAvatarModelFromFolder() async {
+    try {
+      // Android 11+ 分区存储：没有「所有文件访问权限」就读不了用户选的目录，
+      // 所以在打开目录选择器之前先检查并引导开启
+      // Android 11+ 需要「所有文件访问权限」才能读取外部目录；
+      // 桌面端没有这个限制
+      if (PlatformBridge.isAndroid && !await CallStateWatcher.hasAllFilesAccess()) {
+        _log('需要「所有文件访问权限」才能读取文件夹，正在跳转到系统设置…', important: true);
+        await CallStateWatcher.requestAllFilesAccess();
+        return false;
+      }
+      final dirPath = await PlatformBridge.pickDirectory();
+      if (dirPath == null) return false;
+      _log('正在从文件夹导入数字人模型…', important: true);
+      notifyListeners();
+      final model = await Live2dService.instance.importModelFolder(Directory(dirPath));
+      if (model == null) {
+        final reason = Live2dService.instance.lastImportError ?? '没有找到 .model3.json';
+        _log('导入失败：$reason');
+        return false;
+      }
+      await setAvatarModel(model);
+      _log('数字人模型已从文件夹导入：$model', important: true);
+      return true;
+    } catch (e) {
+      _log('从文件夹导入数字人模型失败：$e');
+      return false;
+    }
+  }
+
+  /// 识别模型是否已安装
+  bool get asrModelReady => AsrRecognizer.instance.isModelReady;
+
+  /// 当前识别模型名
+  String get asrModelName => AsrRecognizer.instance.modelName;
+
+  /// 导入语音识别模型（.tar.bz2）
+  Future<bool> importAsrModel(File archiveFile) async {
+    try {
+      _log('正在导入语音识别模型…', important: true);
+      notifyListeners();
+      final dir = await AsrRecognizer.instance.importArchive(archiveFile);
+      if (dir == null) {
+        _log('导入失败：压缩包里没有找到模型文件（*.onnx + tokens.txt）');
+        return false;
+      }
+      notifyListeners();
+      _log('语音识别模型已导入：${AsrRecognizer.instance.modelName}', important: true);
+      return true;
+    } catch (e) {
+      _log('导入语音识别模型失败：$e');
+      return false;
+    }
+  }
+
+  /// 把当前开场白音频识别成文本（失败返回 null）
+  Future<String?> recognizeOpeningAudio() async {
+    final path = _audioPath;
+    if (path == null || !File(path).existsSync()) {
+      _log('还没有设置开场白音频，无法识别');
+      return null;
+    }
+    if (!AsrRecognizer.instance.isModelReady) {
+      await AsrRecognizer.instance.detectModel();
+      if (!AsrRecognizer.instance.isModelReady) {
+        _log('还没有安装语音识别模型');
+        return null;
+      }
+    }
+    _log('正在识别开场白音频…', important: true);
+    notifyListeners();
+    try {
+      final text = await AsrRecognizer.instance.recognize(path);
+      if (text == null || text.isEmpty) {
+        _log('识别失败：没有得到识别结果');
+        return null;
+      }
+      _log('识别完成：$text', important: true);
+      return text;
+    } catch (e) {
+      _log('识别失败：$e');
+      return null;
+    }
+  }
+
+  /// 最近一次模型导入失败的原因（界面提示用）
+  String? get lastImportError => Live2dService.instance.lastImportError;
+
+  /// 移除用户导入的模型（内置模型不允许移除）
+  ///
+  /// 如果移除的是当前正在用的模型，会自动切回默认模型。
+  Future<bool> deleteAvatarModel(String modelRelativePath) async {
+    if (!Live2dService.isUserImported(modelRelativePath)) {
+      _log('内置模型不能移除', important: true);
+      return false;
+    }
+    await Live2dService.instance.deleteImportedModel(modelRelativePath);
+    if (_avatarModel == modelRelativePath || _avatarModel.startsWith('$modelRelativePath/')) {
+      await setAvatarModel(Live2dService.defaultModel);
+    }
+    notifyListeners();
+    _log('已移除模型：$modelRelativePath', important: true);
+    return true;
   }
 
   DateTime? _mouthClock;
@@ -641,10 +815,9 @@ class PromptLink extends ChangeNotifier {
         _log('无法读取所选文件');
         return false;
       }
-      final dir = await getApplicationDocumentsDirectory();
-      final dot = srcPath.lastIndexOf('.');
-      final ext = dot >= 0 ? srcPath.substring(dot) : '.mp3';
-      final target = File('${dir.path}/opening_${DateTime.now().millisecondsSinceEpoch}$ext');
+      // 固定存成同一个文件（覆盖替换），不再每次生成带时间戳的新文件
+      final target = await TtsSynthesizer.openingAudioFile();
+      await target.parent.create(recursive: true);
       await File(srcPath).copy(target.path);
       _audioPath = target.path;
       final prefs = await SharedPreferences.getInstance();
@@ -662,7 +835,12 @@ class PromptLink extends ChangeNotifier {
     final path = _audioPath;
     _audioPath = null;
     try {
-      if (path != null && File(path).existsSync()) await File(path).delete();
+      if (path != null && File(path).existsSync()) {
+        await File(path).delete();
+        // 包络文件一起清掉
+        final env = File('$path.env.json');
+        if (env.existsSync()) await env.delete();
+      }
     } catch (_) {
       // 忽略
     }
@@ -747,6 +925,7 @@ class PromptLink extends ChangeNotifier {
   Future<void> setRate(double value) async {
     _rate = value;
     notifyListeners();
+    if (!_systemTtsAvailable) return;
     try {
       await _tts.setSpeechRate(value);
     } catch (_) {
@@ -791,7 +970,7 @@ class PromptLink extends ChangeNotifier {
     if (!_autoTrigger && _callStateSubscribed) {
       _callStateSubscribed = false;
       _armed = false;
-      await CallStateWatcher.stopKeepAlive();
+      await PlatformBridge.stopKeepAlive();
     }
   }
 
@@ -804,7 +983,7 @@ class PromptLink extends ChangeNotifier {
   }
 
   Future<bool> refreshAccessibility() async {
-    _accessibilityEnabled = await CallStateWatcher.isEnabled();
+    _accessibilityEnabled = await PlatformBridge.isCallDetectionEnabled();
     notifyListeners();
     return _accessibilityEnabled;
   }
@@ -871,6 +1050,12 @@ class PromptLink extends ChangeNotifier {
 
   /// 手动触发一次播报（测试用）
   Future<void> triggerManually() async {
+    // 桌面端没有「另一台播放端」，点立即播报就本机播
+    if (PlatformBridge.isDesktop) {
+      _log('手动触发播报（本机）', important: true);
+      await speak(_script);
+      return;
+    }
     _broadcastAnswered('手动触发');
     _log('手动触发播报', important: true);
   }
@@ -1043,6 +1228,14 @@ class PromptLink extends ChangeNotifier {
     }
     final content = text.trim();
     if (content.isEmpty) return;
+
+    // 桌面端：系统 TTS（flutter_tts）在 Windows 上直接调用 SAPI，
+    // 机器没装语音引擎时会在原生层崩溃（整个 App 闪退），所以只走端侧合成。
+    if (PlatformBridge.isDesktop) {
+      await _speakByLocalSynth(content);
+      return;
+    }
+
     if (!_ttsReady) {
       await _initTts();
       if (!_ttsReady) {
@@ -1050,6 +1243,7 @@ class PromptLink extends ChangeNotifier {
         return;
       }
     }
+    if (!_systemTtsAvailable) return;
     try {
       await _tts.stop();
       await _tts.speak(content);
@@ -1061,12 +1255,48 @@ class PromptLink extends ChangeNotifier {
     }
   }
 
+  /// 桌面端播报：用端侧模型合成后播放（不依赖系统语音引擎）
+  Future<void> _speakByLocalSynth(String content) async {
+    if (!ttsModelReady) {
+      _log('桌面端需要端侧语音模型才能朗读（请先导入 TTS 模型）');
+      return;
+    }
+    try {
+      final result = await TtsSynthesizer.instance.synthesize(
+        text: content,
+        speed: _rate <= 0 ? 1.0 : _rate / 0.5,
+      );
+      if (result == null) {
+        _log('端侧合成失败，请检查模型文件是否完整');
+        return;
+      }
+      await _playLocalWav(result);
+    } catch (e) {
+      _log('端侧合成失败：$e');
+    }
+  }
+
+  /// 播放端侧合成的 wav，并按包络驱动嘴型（复用音频播放的嘴型逻辑）
+  Future<void> _playLocalWav(SynthesisResult result) async {
+    _envelope = result.envelope;
+    try {
+      await _player.stop();
+      await _player.play(DeviceFileSource(result.wavPath));
+      _startAudioMouth();
+      _log('开始朗读（端侧合成 ${result.duration.inMilliseconds}ms）');
+    } catch (e) {
+      _log('播放失败：$e');
+    }
+  }
+
   Future<void> stopSpeaking() async {
     _stopMouth();
-    try {
-      await _tts.stop();
-    } catch (_) {
-      // 忽略
+    if (_systemTtsAvailable) {
+      try {
+        await _tts.stop();
+      } catch (_) {
+        // 忽略
+      }
     }
     try {
       await _player.stop();
@@ -1093,7 +1323,9 @@ class PromptLink extends ChangeNotifier {
     _disposed = true;
     _mouthTimer?.cancel();
     _link.close();
-    _tts.stop();
+    if (_systemTtsAvailable) {
+      _tts.stop();
+    }
     _player.dispose();
     mouth.dispose();
     super.dispose();

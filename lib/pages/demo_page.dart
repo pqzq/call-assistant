@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/prompt_link.dart';
 import '../widgets/live2d_avatar.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/desktop_body.dart';
 
 /// 演示模式：全屏数字人 + 字幕，播报开场白。
 /// 适合给客户/领导演示、录屏出素材。
@@ -159,7 +160,7 @@ class _DemoPageState extends State<DemoPage> {
           ),
         ],
       ),
-      body: SafeArea(
+      body: DesktopBody(child: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             // 话术框至少 4 行（每行约 24px + 内边距），剩下的高度给数字人
@@ -275,6 +276,7 @@ class _DemoPageState extends State<DemoPage> {
           },
         ),
       ),
+      ),   // DesktopBody
     );
   }
 }

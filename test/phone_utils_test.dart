@@ -44,6 +44,21 @@ void main() {
       expect(PhoneUtils.looksLikePhone('1'), isFalse);
       expect(PhoneUtils.looksLikePhone('2024'), isFalse);
     });
+
+    test('运营商客服号（5~6 位）走独立判断，不混进普通号码规则', () {
+      // 服务号和「编号 10001」长得一样，不能混进 looksLikePhone
+      expect(PhoneUtils.looksLikePhone('10086'), isFalse);
+      expect(PhoneUtils.looksLikeServiceNumber('10086'), isTrue);
+      expect(PhoneUtils.looksLikeServiceNumber('10010'), isTrue);
+      expect(PhoneUtils.looksLikeServiceNumber('10000'), isTrue);
+      expect(PhoneUtils.looksLikeServiceNumber('12345'), isTrue);
+      // 编号不该被当服务号
+      expect(PhoneUtils.looksLikeServiceNumber('2024'), isFalse);
+      expect(PhoneUtils.looksLikeServiceNumber('100'), isFalse);
+      // 类型与可拨号码仍正常
+      expect(PhoneUtils.kindOf('10086'), PhoneKind.service);
+      expect(PhoneUtils.dialTarget('10086'), '10086');
+    });
   });
 
   group('PhoneUtils.hasPhoneKeyword', () {

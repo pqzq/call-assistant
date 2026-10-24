@@ -66,7 +66,7 @@ void main() {
       expect(sheet.name, '客户名单');
       expect(sheet.hasHeader, isTrue);
       expect(sheet.headerRow, 1);
-      expect(sheet.headers, <String>['序号', '姓名', '部门', '手机号码', '备注']);
+      expect(sheet.headers, <String>['序号', '姓名', '部门', '手机号码', '备注', '拨打情况']);
       expect(sheet.rowCount, 5);
       // 「手机号码」列（第 4 列）应被自动选中
       expect(sheet.phoneColumn, 3);
@@ -102,7 +102,7 @@ void main() {
       ).first;
 
       expect(parsed.hasHeader, isFalse);
-      expect(parsed.headers, <String>['A', 'B', 'C']);
+      expect(parsed.headers, <String>['A', 'B', 'C', '拨打情况']);
       expect(parsed.rowCount, 2);
       expect(parsed.phoneColumn, 1);
     });
@@ -127,7 +127,11 @@ void main() {
     expect(mobile.name, '客户名单');
     expect(mobile.phoneColumn, 3); // 主号码列仍是「手机号码」
     expect(mobile.phoneColumns, <int>[3, 4]); // 手机号码 + 办公电话
-    expect(mobile.rowCount, 8);
+    expect(mobile.rowCount, 11);
+    // 前三行是三大运营商客服号（公开服务电话，拨通不会有骚扰）
+    expect(mobile.cellAt(0, 3), '10086');
+    expect(mobile.cellAt(1, 3), '10010');
+    expect(mobile.cellAt(2, 3), '10000');
 
     final landline = sheets[1];
     expect(landline.name, '固话名单');
@@ -143,19 +147,25 @@ void main() {
     });
 
     test('phonesAt 按列顺序返回多个号码，座机补区号', () {
+      // 第 1 行是运营商客服号（服务号）
       final phones = sheet.phonesAt(0, '021');
       expect(phones.length, 2);
       expect(phones[0].label, '手机号码');
-      expect(phones[0].display, '13800138000');
-      expect(phones[0].kind, PhoneKind.mobile);
+      expect(phones[0].display, '10086');
+      expect(phones[0].kind, PhoneKind.service);
       expect(phones[0].note, isNull);
       expect(phones[1].label, '办公电话');
       expect(phones[1].display, '010-88886666');
       expect(phones[1].note, isNull);
 
-      // 第 6 行办公电话是本地座机，需补区号
-      final local = sheet.phonesAt(5, '021');
-      expect(local[1].display, '021-88886669');
+      // 「张伟」那行（第 4 行）是手机号
+      final mobile = sheet.phonesAt(3, '021');
+      expect(mobile[0].display, '13800138000');
+      expect(mobile[0].kind, PhoneKind.mobile);
+
+      // 「陈晨」那行（第 8 行）办公电话是本地座机，需补区号
+      final local = sheet.phonesAt(7, '021');
+      expect(local[1].display, '021-88886668');
       expect(local[1].note, '已补区号 021');
       expect(local[1].kind, PhoneKind.landlineLocal);
     });
@@ -178,4 +188,112 @@ void main() {
       expect(updated.phoneColumns, <int>[3]);
     });
   });
-}
+
+  group('拨打情况列', () {
+    test('导入时自动追加「拨打情况」列且为空', () {
+      final sheet = ExcelService.demoSheets().first;
+      expect(sheet.hasStatusColumn, isTrue);
+      expect(sheet.headers.last, statusColumnName);
+      expect(sheet.statusAt(0), isEmpty);
+      // 追加列不改变原有数据
+      expect(sheet.cellAt(0, 1), '中国移动客服');
+      expect(sheet.rowCount, 11);
+    });
+
+    test('写入拨打情况只影响目标行', () {
+      final sheet = ExcelService.demoSheets().first;
+      final next = sheet.withStatusAt(0, '拨打成功');
+      expect(next.statusAt(0), '拨打成功');
+      expect(next.statusAt(1), isEmpty);
+      expect(next.rowCount, sheet.rowCount);
+      // 原对象不被修改（不可变）
+      expect(sheet.statusAt(0), isEmpty);
+    });
+
+    test('自定义文本也能写入', () {
+      final sheet = ExcelService.demoSheets().first.ensureStatusColumn();
+      final next = sheet.withStatusAt(2, '客户说下周一再联系');
+      expect(next.statusAt(2), '客户说下周一再联系');
+    });
+
+    test('切换号码列后拨打情况列不丢失', () {
+      final sheet = ExcelService.demoSheets().first;
+      final marked = sheet.withStatusAt(0, '未接听');
+      final toggled = marked.togglePhoneColumn(4);
+      expect(toggled.hasStatusColumn, isTrue);
+      expect(toggled.statusAt(0), '未接听');
+    });
+  });
+  group('导出 xlsx', () {
+    test('导出的字节能被重新解析，且包含拨打情况列及其数据', () {
+      final sheet = ExcelService.demoSheets().first.withStatusAt(0, '拨打成功');
+      final bytes = ExcelService.exportToXlsx(sheet);
+      expect(bytes.isNotEmpty, isTrue);
+
+      final parsed = ExcelService.parse(bytes, fileName: '导出.xlsx').first;
+      // 表头含拨打情况
+      expect(parsed.headers.last, statusColumnName);
+      // 数据行完整
+      expect(parsed.rowCount, sheet.rowCount);
+      // 拨打情况已填充到最后一列
+      expect(parsed.statusAt(0), '拨打成功');
+      expect(parsed.statusAt(1), isEmpty);
+      // 原有数据没丢
+      expect(parsed.cellAt(0, 1), '中国移动客服');
+    });
+
+    test('自定义文本也能导出', () {
+      final sheet =
+          ExcelService.demoSheets().first.withStatusAt(2, '客户说下周一再联系');
+      final parsed = ExcelService.parse(ExcelService.exportToXlsx(sheet), fileName: 'a.xlsx').first;
+      expect(parsed.statusAt(2), '客户说下周一再联系');
+    });
+  });
+  group('号码列识别不被非号码列干扰', () {
+    test('「编号」列（10001/10002 这类）不会被当成号码列', () {
+      final excel = Excel.createExcel();
+      final sheet = excel['名单'];
+      sheet.appendRow(<CellValue?>[
+        TextCellValue('姓名'),
+        TextCellValue('编号'),
+        TextCellValue('手机号码'),
+      ]);
+      for (var i = 0; i < 6; i++) {
+        sheet.appendRow(<CellValue?>[
+          TextCellValue('客户$i'),
+          TextCellValue('${10001 + i}'),
+          TextCellValue('1380013800$i'),
+        ]);
+      }
+      final parsed = ExcelService.parse(Uint8List.fromList(excel.encode()!), fileName: 'a.xlsx').first;
+      // 只选中手机号码列，编号列不能被选中
+      expect(parsed.phoneColumns, <int>[2]);
+      expect(parsed.phoneColumns.contains(1), isFalse);
+    });
+
+    test('「客服电话」列里的 10086 可以被识别', () {
+      final excel = Excel.createExcel();
+      final sheet = excel['名单'];
+      sheet.appendRow(<CellValue?>[
+        TextCellValue('姓名'),
+        TextCellValue('客服电话'),
+      ]);
+      sheet.appendRow(<CellValue?>[TextCellValue('甲'), TextCellValue('10086')]);
+      sheet.appendRow(<CellValue?>[TextCellValue('乙'), TextCellValue('13800138000')]);
+      final parsed = ExcelService.parse(Uint8List.fromList(excel.encode()!), fileName: 'a.xlsx').first;
+      expect(parsed.phoneColumns, <int>[1]);
+    });
+
+    test('只有服务号、没有标准号码的列不会被选中', () {
+      final excel = Excel.createExcel();
+      final sheet = excel['名单'];
+      sheet.appendRow(<CellValue?>[
+        TextCellValue('姓名'),
+        TextCellValue('联系电话'),
+      ]);
+      sheet.appendRow(<CellValue?>[TextCellValue('甲'), TextCellValue('10086')]);
+      sheet.appendRow(<CellValue?>[TextCellValue('乙'), TextCellValue('10010')]);
+      final parsed = ExcelService.parse(Uint8List.fromList(excel.encode()!), fileName: 'a.xlsx').first;
+      expect(parsed.phoneColumns, isEmpty);
+    });
+  });}

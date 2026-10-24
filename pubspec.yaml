@@ -1,7 +1,7 @@
 name: call_assistant
 description: "导入 Excel 表格，自动识别手机号列，点击号码跳转系统拨号页并自动填充号码。"
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -25,6 +25,10 @@ dependencies:
   archive: ^3.6.1
   webview_flutter: ^4.14.1
   webview_flutter_android: ^4.14.1
+  # 桌面端（Windows/macOS/Linux）Live2D 数字人需要
+  # 注意：1.3.0 起改成独立 API（不再实现 webview_flutter 的 WebViewPlatform），
+  # 与 webview_flutter 4.x 不兼容，必须锁在 1.2.x
+  webview_flutter_windows: '>=1.0.0 <1.3.0'
 
 dev_dependencies:
   flutter_test:

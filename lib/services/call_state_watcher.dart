@@ -103,6 +103,68 @@ class CallStateWatcher {
     }
   }
 
+  /// 用 Android 原生解码器把音频转成 16kHz 单声道 WAV，返回 wav 路径
+  ///
+  /// 支持 mp3 / m4a / aac / ogg / wav / amr 等常见格式；
+  /// 输出走文件而不是 MethodChannel，避免长音频超 Binder 事务限制。
+  static Future<String?> decodeAudioToWav(String path) async {
+    try {
+      return await _methodChannel.invokeMethod<String>(
+        'decodeAudioToWav',
+        <String, Object>{'path': path},
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 把文件保存到系统「下载」目录，返回展示路径（失败返回 null）
+  ///
+  /// 用 MediaStore 写入，不需要任何存储权限；比系统「另存为」对话框可靠得多。
+  static Future<String?> saveToDownloads(String name, List<int> bytes) async {
+    try {
+      final result = await _methodChannel.invokeMethod<String>(
+        'saveToDownloads',
+        <String, Object>{'name': name, 'bytes': Uint8List.fromList(bytes)},
+      );
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 选一个文件夹，返回真实文件系统路径（取消返回 null）
+  ///
+  /// 走系统 SAF（ACTION_OPEN_DOCUMENT_TREE）并在原生侧解析 documentId，
+  /// 比 file_picker 在部分 ROM（MIUI/HyperOS）上返回的路径可靠。
+  static Future<String?> pickDirectory() async {
+    try {
+      return await _methodChannel.invokeMethod<String>('pickDirectory');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 是否已获得「所有文件访问权限」（Android 11+ 读取外部目录需要）
+  static Future<bool> hasAllFilesAccess() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('hasAllFilesAccess');
+      return result ?? true;
+    } catch (_) {
+      return true; // 老系统或通道不可用时按已授权处理
+    }
+  }
+
+  /// 跳转到系统「所有文件访问权限」设置页
+  static Future<bool> requestAllFilesAccess() async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('requestAllFilesAccess');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 打开系统无障碍设置页
   static Future<bool> openAccessibilitySettings() async {
     try {

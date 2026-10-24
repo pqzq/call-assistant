@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import 'pages/home_page.dart';
+import 'services/app_navigator.dart';
+import 'services/platform_bridge.dart';
 import 'services/prompt_link.dart';
+import 'widgets/desktop_split.dart';
 import 'widgets/floating_avatar.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // 双机联动：提前初始化（恢复设置、启动局域网监听、订阅通话状态）
   PromptLink.instance.init();
+  PlatformBridge.logPlatformInfo();
   runApp(const CallAssistantApp());
 }
 
@@ -23,8 +27,17 @@ class CallAssistantApp extends StatelessWidget {
     return MaterialApp(
       title: '话务助手',
       debugShowCheckedModeBanner: false,
-      // 数字人浮在所有页面之上，可拖动
-      builder: (context, child) => FloatingAvatarHost(child: child ?? const SizedBox.shrink()),
+      // 桌面端分栏在 Navigator 之外，需要全局 key 才能弹窗/弹 toast
+      navigatorKey: appNavigatorKey,
+      // 桌面端：左数字人 / 右主界面 分栏（数字人是原生 WebView，不再浮在内容上）
+      // 手机端：数字人浮在所有页面之上，可拖动
+      builder: (context, child) {
+        final content = child ?? const SizedBox.shrink();
+        if (PlatformBridge.isDesktop) {
+          return DesktopSplitView(child: content);
+        }
+        return FloatingAvatarHost(child: content);
+      },
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,

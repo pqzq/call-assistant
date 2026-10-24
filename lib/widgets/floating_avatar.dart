@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../services/platform_bridge.dart';
 import '../services/prompt_link.dart';
 import '../utils/avatar_layout.dart';
+import 'avatar_stage.dart';
 import 'live2d_avatar.dart';
 
 /// 全局浮动的 Live2D 数字人：
@@ -189,7 +191,10 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                     const SizedBox(height: 8),
                     // 话术框与上方「角色 + 操作栏」整体左对齐、宽度一致
                     // （宽度用 double.infinity 继承容器宽度，避免出现偏差）
-                    _buildBubble(link),
+                    AvatarBubble(
+                      link: link,
+                      maxHeight: FloatingAvatarHost.bubbleMaxHeight,
+                    ),
                   ],
                 ],
               ),
@@ -224,6 +229,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         child: Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
+            // 贴边时也显示模型（小挂件），点一下展开
             Live2dAvatar(
               modelPath: link.avatarModel,
               mouth: link.mouth,
@@ -277,14 +283,33 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   // ---------------- 右侧操作栏 ----------------
 
   Widget _buildSideBar(PromptLink link, Size free) {
+    // 桌面端用深色玻璃：浅灰背景上不会糊成一条「灰条」，
+    // 深色背景上也能保持清晰
+    final dark = PlatformBridge.isDesktop;
+    final barColor = dark
+        ? const Color(0xFF2A3242).withValues(alpha: _dragging ? 0.95 : 0.82)
+        : Colors.white.withValues(alpha: _dragging ? 0.95 : 0.85);
+    final iconColor = dark ? Colors.white : const Color(0xFF6B7A99);
+    final iconColorOff = dark ? Colors.white38 : Colors.black26;
     return Container(
       width: FloatingAvatarHost.barWidth,
       margin: const EdgeInsets.only(left: FloatingAvatarHost.barGap),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: _dragging ? 0.95 : 0.85),
+        color: barColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        border: Border.all(
+          color: dark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.06),
+        ),
+        boxShadow: dark
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -296,19 +321,23 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             onPanUpdate: (details) => _onDragUpdate(link, free, details.delta),
             onPanEnd: (_) => _onDragEnd(link, free),
             onPanCancel: () => setState(() => _dragging = false),
-            child: const SizedBox(
+            child: SizedBox(
               width: FloatingAvatarHost.barWidth,
               height: 36,
-              child: Icon(Icons.drag_indicator, size: 18, color: Color(0xFF6B7A99)),
+              child: Icon(Icons.drag_indicator, size: 18, color: iconColor),
             ),
           ),
           _sideButton(
+            iconColor: iconColor,
+            iconColorOff: iconColorOff,
             icon: Icons.chevron_left,
             tooltip: '上一步',
             enabled: link.stepIndex > 0,
             onTap: link.previousStep,
           ),
           _sideButton(
+            iconColor: iconColor,
+            iconColorOff: iconColorOff,
             icon: Icons.chevron_right,
             tooltip: '下一步',
             enabled: link.stepIndex < link.scriptSteps.length - 1,
@@ -316,16 +345,22 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
           ),
           // 话术框收起/展开
           _sideButton(
+            iconColor: iconColor,
+            iconColorOff: iconColorOff,
             icon: link.bubbleCollapsed ? Icons.chat_bubble_outline : Icons.chat_bubble,
             tooltip: link.bubbleCollapsed ? '展开话术框' : '收起话术框',
             onTap: () => link.setBubbleCollapsed(!link.bubbleCollapsed),
           ),
           _sideButton(
+            iconColor: iconColor,
+            iconColorOff: iconColorOff,
             icon: Icons.compress_rounded,
             tooltip: '贴边收起',
             onTap: _dockToEdge,
           ),
           _sideButton(
+            iconColor: iconColor,
+            iconColorOff: iconColorOff,
             icon: Icons.close,
             tooltip: '关闭数字人',
             onTap: () => link.setAvatarEnabled(false),
@@ -339,6 +374,8 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     required IconData icon,
     required String tooltip,
     required VoidCallback? onTap,
+    required Color iconColor,
+    required Color iconColorOff,
     bool enabled = true,
   }) {
     return Tooltip(
@@ -351,7 +388,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
           child: Icon(
             icon,
             size: 17,
-            color: enabled ? const Color(0xFF6B7A99) : Colors.black26,
+            color: enabled ? iconColor : iconColorOff,
           ),
         ),
       ),
@@ -359,135 +396,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   }
 
   // ---------------- 话术框（含状态信息） ----------------
-
-  Widget _buildBubble(PromptLink link) {
-    final lead = link.activeLead;
-    final steps = link.scriptSteps;
-    final step = link.currentStep;
-    final status = link.avatarStatus;
-    // 纯展示：整体不可命中，避免挡住下面的内容
-    return IgnorePointer(
-      child: Container(
-        width: double.infinity,
-        constraints: const BoxConstraints(maxHeight: FloatingAvatarHost.bubbleMaxHeight),
-        padding: const EdgeInsets.fromLTRB(11, 8, 11, 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE1E7F2)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.10),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // 状态行（整合到话术框顶部）
-              Row(
-                children: <Widget>[
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: _statusColor(status),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    status.label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _statusColor(status),
-                    ),
-                  ),
-                  if (lead != null) ...<Widget>[
-                    const SizedBox(width: 6),
-                    const Text('·', style: TextStyle(fontSize: 12, color: Colors.black26)),
-                    const SizedBox(width: 6),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 130),
-                      child: Text(
-                        lead.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Colors.black54),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 6),
-                child: Divider(height: 1, color: Color(0xFFEEF1F7)),
-              ),
-              if (lead == null)
-                const Text(
-                  '拨号后这里会显示客户信息与话术提词',
-                  style: TextStyle(fontSize: 12, color: Colors.black45, height: 1.5),
-                )
-              else ...<Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        lead.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      lead.lastCalledLabel,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: lead.lastCalled == null ? const Color(0xFF17A05A) : Colors.black38,
-                      ),
-                    ),
-                  ],
-                ),
-                if (lead.subtitle.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 2),
-                  Text(
-                    lead.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: Colors.black54),
-                  ),
-                ],
-              ],
-              if (step != null) ...<Widget>[
-                const SizedBox(height: 5),
-                Text(
-                  '话术 ${link.stepIndex + 1}/${steps.length}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2F6BFF),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  step,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12.5, height: 1.4, color: Colors.black87),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   // ---------------- 拖动 / 贴边 ----------------
 
