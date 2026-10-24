@@ -1,6 +1,6 @@
 # 话务助手（call_assistant）
 
-[![APK 构建与发布](https://github.com/pqzq/call-assistant/actions/workflows/apk.yml/badge.svg)](https://github.com/pqzq/call-assistant/actions/workflows/apk.yml)
+[![APK 构建与发布](https://github.com/pqzq/call-assistant/actions/workflows/release.yml/badge.svg)](https://github.com/pqzq/call-assistant/actions/workflows/release.yml)
 
 导入一份 Excel 名单 → 自动识别「手机号」列 → 点击号码跳转系统拨号页并自动填充号码。
 
@@ -849,24 +849,30 @@ lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现
 
 ## CI 自动发布 APK（GitHub Actions）
 
-工作流：`.github/workflows/apk.yml`，两个 job：
+工作流：[`.github/workflows/release.yml`](https://github.com/pqzq/call-assistant/blob/main/.github/workflows/release.yml)，四个 job（ci / elease-android / elease-windows / publish）：
+
+> 发布产物在这里下载：<https://github.com/pqzq/call-assistant/releases>
+
 
 | Job | 触发 | 产物 |
 | --- | --- | --- |
 | `ci` | push 到 main / PR / 手动触发 | 分析 + 测试 + Debug APK（Artifact，保留 14 天） |
-| `release` | **打 `v*` 标签时** | 正式签名 APK（按 ABI 拆分，**只发布 ARM 架构**），重命名为 `call-assistant-版本号-架构.apk`，并创建 GitHub Release |
+| `release-android` | **打 `v*` 标签时** | 正式签名 APK（按 ABI 拆分，**只发布 ARM 架构**），重命名为 `call-assistant-版本号-架构.apk` |
+| `release-windows` | 同上 | Windows 免安装包 `call-assistant-版本号-windows-x64.zip` |
+| `publish` | 上面两个都成功 | 汇总各自产物，创建 GitHub Release |
 
-流程（release job）：checkout → JDK 21 + Flutter → 从 Secrets 还原密钥 → `flutter pub get` → 校验标签版本与 pubspec 版本一致 → `flutter build apk --release --split-per-abi` → 只保留 ARM 架构并重命名 → 创建 GitHub Release。
+流程（release job）：checkout → JDK 21 + Flutter → 从 Secrets 还原密钥 → `flutter pub get` → **给 `flutter_live2d` 打本地补丁** → 校验标签版本与 pubspec 版本一致 → `flutter build apk --release --split-per-abi` → 只保留 ARM 架构并重命名 → 创建 GitHub Release。
 
-发布产物（以 v1.1.0 为例）：
+发布产物（以 v1.2.1 为例）：
 
 | 文件名 | 体积 | 适用设备 |
 | --- | --- | --- |
-| `call-assistant-1.1.0-arm64-v8a.apk` | ~63.6 MB | 绝大多数现代手机（**推荐**） |
-| `call-assistant-1.1.0-armeabi-v7a.apk` | ~53.2 MB | 32 位老旧机型（Android 5~7 时代） |
+| `call-assistant-1.2.1-arm64-v8a.apk` | ~149 MB | 绝大多数现代手机（**推荐**） |
+| `call-assistant-1.2.1-armeabi-v7a.apk` | ~140 MB | 32 位老旧机型（Android 5~7 时代） |
+| `call-assistant-1.2.1-windows-x64.zip` | ~230 MB | Windows 10/11（需 WebView2 Runtime） |
 
 - 用 `--split-per-abi` 拆分后每个包只含一套 so；`x86_64` 仅用于模拟器，不发布
-- 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）与 Live2D 运行时 + **8 个官方样例模型（约 22MB assets）**；通用包会到 145MB，所以**必须按 ABI 拆分**
+- 体积比早期版本（17.5MB）大，是因为内置了离线 TTS 引擎（sherpa-onnx + onnxruntime，约 26MB so）与 Live2D 运行时 + **8 个官方样例模型（约 22MB assets）**；通用包会到 149MB，所以**必须按 ABI 拆分**
 - 只想带一个模型时：从 `pubspec.yaml` 的 `assets:` 里删掉其它模型目录，并同步清理 `assets/live2d/` 下对应文件夹（每个模型约 0.7~4.7MB）
 - 两个包共用同一签名密钥，可互相覆盖安装
 
@@ -898,8 +904,8 @@ lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现
    # version: 1.1.0+2  ->  版本号取 1.1.0
    git add pubspec.yaml && git commit -m "chore: bump version to 1.1.0"
    git push origin main
-   git tag v1.1.0
-   git push origin v1.1.0
+   git tag v1.2.1
+   git push origin v1.2.1
    ```
 
    标签推送后 `release` job 会跑，校验标签版本与 `pubspec.yaml` 版本一致（不一致直接报错终止），构建正式签名包并重命名为 `call-assistant-1.1.0.apk`，挂到 GitHub Release 上。
