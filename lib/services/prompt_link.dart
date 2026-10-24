@@ -144,7 +144,7 @@ class PromptLink extends ChangeNotifier {
   String _avatarAspectModel = '';
 
   /// 模型放大系数（1.0 = 不额外放大）。默认 1.25 是为了抵消 canvas 留白。
-  double _avatarModelZoom = 1.25;
+  double _avatarModelZoom = 1.0;
   AvatarBackend _avatarBackend = kDefaultAvatarBackend;
   double _avatarPosX = defaultAvatarX;
   double _avatarPosY = defaultAvatarY;
@@ -392,7 +392,7 @@ class PromptLink extends ChangeNotifier {
       _avatarModelAspect = savedAspect;
       _avatarAspectModel = savedAspectModel;
     }
-    _avatarModelZoom = prefs.getDouble(_kAvatarZoom) ?? 1.25;
+    _avatarModelZoom = prefs.getDouble(_kAvatarZoom) ?? 1.0;
     _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
     _avatarPosY = prefs.getDouble(_kAvatarPosY) ?? defaultAvatarY;
     _bubbleCollapsed = prefs.getBool(_kBubbleCollapsed) ?? false;

@@ -44,9 +44,12 @@
     // canvas 尺寸会让两侧空出一大片。
     // 还没加载好时返回空串，Flutter 侧会稍后重试。
     modelAspect() {
-      if (!model || !model.getLocalBounds) return '';
+      // 注意：这里必须用 avatar._model（boot 里赋的值）。
+      // 直接写 model 会 ReferenceError —— 它在 boot 的闭包里，不在这个对象里
+      const m = avatar._model;
+      if (!m || !m.getLocalBounds) return '';
       try {
-        const b = model.getLocalBounds();
+        const b = m.getLocalBounds();
         if (!b || !b.width || !b.height) return '';
         // 只保留 4 位小数，避免科学计数法
         return (b.width / b.height).toFixed(4);
@@ -73,7 +76,8 @@
   // 这里允许从 URL 传入覆盖默认值。
   function fitOverscanFromQuery() {
     const raw = parseFloat(new URLSearchParams(location.search).get('zoom') || '');
-    if (!isFinite(raw) || raw <= 0) return 1.25;
+    // 1.0 = 模型完整显示（默认）；>1 会放大但底部可能被裁
+    if (!isFinite(raw) || raw <= 0) return 1.0;
     return Math.min(1.8, Math.max(0.8, raw));
   }
 
@@ -148,11 +152,17 @@
         const scale = Math.min(w / baseW, (h / baseH) * fitOverscan) * 0.99;
         model.scale.set(scale);
         model.x = (w - baseW * scale) / 2;
-        model.y = h - baseH * scale;   // 贴底显示
+        const scaledH = baseH * scale;
+        // 放大系数 > 1 时模型会比容器高，此时**顶部对齐**：
+        // 多余部分从底部（脚）裁掉，保证脸和上半身始终完整。
+        // （之前是贴底对齐，放大后 y<0 会把头裁掉）
+        model.y = scaledH > h ? 0 : h - scaledH;
       };
       fit();
-      // 暴露给 Flutter：滑杆调「模型大小」时直接重排，不用重载页面
+      // 暴露给 Flutter：滑杆调「模型大小」时直接重排，不用重载页面；
+      // _model 给 modelAspect 用（不能直接引用闭包里的 model）
       avatar._fit = fit;
+      avatar._model = model;
       window.addEventListener('resize', () => { app.renderer.resize(window.innerWidth, window.innerHeight); fit(); });
 
       // 嘴型：在动作更新之后覆盖，避免被 idle 动作覆盖

@@ -47,7 +47,7 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   AvatarBackend? _currentBackend;
 
   /// 当前已下发到页面的放大系数（用于判断是否需要重新推送）
-  double _currentZoom = 1.25;
+  double _currentZoom = 1.0;
 
   @override
   void initState() {

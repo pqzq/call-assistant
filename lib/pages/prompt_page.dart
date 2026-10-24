@@ -311,7 +311,8 @@ class _PromptPageState extends State<PromptPage> {
           ),
           const SizedBox(height: 10),
           // 模型大小：Live2D 的 canvas 四周留白各模型差异很大，自动适配
-          // 常出现「有的显得太小、有的被裁」，这里开放给用户微调。
+          // 常出现「有的显得太小」，这里开放给用户微调。
+          // 原生渲染暂不支持（放大参数在 C++ 侧固定），只对 WebView 生效。
           Row(
             children: <Widget>[
               const Text('模型大小',
@@ -337,6 +338,10 @@ class _PromptPageState extends State<PromptPage> {
                 ),
               ),
             ],
+          ),
+          const Text(
+            '1.00x 为完整显示；调大会放大，超出的部分从脚部裁掉（不会挡脸）。仅 WebView 后端生效。',
+            style: TextStyle(fontSize: 11, color: Colors.black38, height: 1.4),
           ),
           Wrap(
             spacing: 8,

@@ -18,7 +18,7 @@ class Live2dService {
   static const String _assetRoot = 'assets/live2d/';
 
   /// 资源版本：改了 assets 里的文件就 +1，启动时会重新释放
-  static const String assetVersion = '8';
+  static const String assetVersion = '10';
 
   static const String defaultModel = 'hiyori/Hiyori.model3.json';
 
