@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../services/platform_bridge.dart';
 import '../services/prompt_link.dart';
+import 'arc_action_bar.dart';
 import '../utils/avatar_layout.dart';
 import 'avatar_stage.dart';
 import 'live2d_avatar.dart';
@@ -17,15 +17,15 @@ class FloatingAvatarHost extends StatefulWidget {
 
   final Widget child;
 
-  /// 右侧竖排操作栏宽度
-  static const double barWidth = 36;
+  /// 弧形操作栏宽度（月亮型，图标 40 点击区 + 弧线外扩空间）
+  static const double barWidth = ArcActionBar.barWidth;
 
   /// 贴边时（缩小）尺寸
   static const double dockedWidth = 112;
   static const double dockedHeight = 152;
 
   /// 角色盒与操作栏之间的间隔
-  static const double barGap = 2;
+  static const double barGap = 8;
 
   /// 贴边判定阈值（距屏幕边缘多少像素内触发）
   static const double dockThreshold = 36;
@@ -163,6 +163,10 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
       style: textStyle,
       child: SizedBox(
         width: unitWidth,
+        // 注意：这里**不能**用 Transform/AnimatedScale 做拖动反馈 ——
+        // Android 的平台视图（WebView / TextureView）不支持任意变换，
+        // 一旦被 transform 包裹就整块不渲染（表现成模型消失）。
+        // 拖动反馈改在图标上体现（见 _buildArcBar 的 dragging 参数）。
         child: docked
             ? _buildDockedChip(link, avatarHeight)
             : Column(
@@ -173,18 +177,29 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                     // 操作栏高度自适应，靠 crossAxisAlignment 垂直居中于角色
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
-                      // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
-                      // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
-                      SizedBox(
-                        width: groupWidth - FloatingAvatarHost.barWidth - FloatingAvatarHost.barGap,
-                        height: avatarHeight,
-                        child: Live2dAvatar(
-                          modelPath: link.avatarModel,
-                          mouth: link.mouth,
+                      // 月亮型操作栏放在**角色左侧**
+                      _buildArcBar(link, free, avatarHeight),
+                      // 数字人本体：可拖动（translucent 保证点击仍能穿透到下层）
+                      GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onPanStart: (_) => setState(() => _dragging = true),
+                        onPanUpdate: (d) => _onDragUpdate(link, free, d.delta),
+                        onPanEnd: (_) => _onDragEnd(link, free),
+                        onPanCancel: () => setState(() => _dragging = false),
+                        child: SizedBox(
+                          // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
+                          // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
+                          width: groupWidth -
+                              FloatingAvatarHost.barWidth -
+                              FloatingAvatarHost.barGap,
                           height: avatarHeight,
+                          child: Live2dAvatar(
+                            modelPath: link.avatarModel,
+                            mouth: link.mouth,
+                            height: avatarHeight,
+                          ),
                         ),
                       ),
-                      _buildSideBar(link, free),
                     ],
                   ),
                   if (!link.bubbleCollapsed) ...<Widget>[
@@ -203,6 +218,62 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   }
 
   // ---------------- 贴边小挂件 ----------------
+
+  /// 月亮型弧形操作栏（放在角色左侧）
+  ///
+  /// - 无背景，只有带投影的白色图标（浅色页面上也看得清）
+  /// - 图标沿凸向角色的弧线排布，整体像一弯月牙
+  /// - 话术只有一步时不显示上一步/下一步（避免无用按钮）
+  Widget _buildArcBar(PromptLink link, Size free, double avatarHeight) {
+    final steps = link.scriptSteps;
+    final multiStep = steps.length > 1;
+    final actions = <ArcAction>[
+      const ArcAction(
+        icon: Icons.drag_indicator,
+        tooltip: '拖动',
+        isDragHandle: true,
+      ),
+      if (multiStep) ...<ArcAction>[
+        ArcAction(
+          icon: Icons.chevron_left,
+          tooltip: '上一步',
+          enabled: link.stepIndex > 0,
+          onTap: link.previousStep,
+        ),
+        ArcAction(
+          icon: Icons.chevron_right,
+          tooltip: '下一步',
+          enabled: link.stepIndex < steps.length - 1,
+          onTap: link.nextStep,
+        ),
+      ],
+      ArcAction(
+        icon: link.bubbleCollapsed ? Icons.chat_bubble_outline : Icons.chat_bubble,
+        tooltip: link.bubbleCollapsed ? '展开话术框' : '收起话术框',
+        onTap: () => link.setBubbleCollapsed(!link.bubbleCollapsed),
+      ),
+      ArcAction(
+        icon: Icons.compress_rounded,
+        tooltip: '贴边收起',
+        onTap: _dockToEdge,
+      ),
+      ArcAction(
+        icon: Icons.close,
+        tooltip: '关闭数字人',
+        onTap: () => link.setAvatarEnabled(false),
+      ),
+    ];
+    return ArcActionBar(
+      height: avatarHeight,
+      actions: actions,
+      // 拖动时把拖动柄高亮成主题色（不能用 transform 做反馈，会影响平台视图渲染）
+      dragging: _dragging,
+      onDragStart: () => setState(() => _dragging = true),
+      onDragUpdate: (details) => _onDragUpdate(link, free, details.delta),
+      onDragEnd: () => _onDragEnd(link, free),
+      onDragCancel: () => setState(() => _dragging = false),
+    );
+  }
 
   Widget _buildDockedChip(PromptLink link, double avatarHeight) {
     final status = link.avatarStatus;
@@ -279,123 +350,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
       _dragPos = AvatarLayout.clampPixel(current, free);
     });
   }
-
-  // ---------------- 右侧操作栏 ----------------
-
-  Widget _buildSideBar(PromptLink link, Size free) {
-    // 桌面端用深色玻璃：浅灰背景上不会糊成一条「灰条」，
-    // 深色背景上也能保持清晰
-    final dark = PlatformBridge.isDesktop;
-    final barColor = dark
-        ? const Color(0xFF2A3242).withValues(alpha: _dragging ? 0.95 : 0.82)
-        : Colors.white.withValues(alpha: _dragging ? 0.95 : 0.85);
-    final iconColor = dark ? Colors.white : const Color(0xFF6B7A99);
-    final iconColorOff = dark ? Colors.white38 : Colors.black26;
-    return Container(
-      width: FloatingAvatarHost.barWidth,
-      margin: const EdgeInsets.only(left: FloatingAvatarHost.barGap),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: barColor,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: dark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.06),
-        ),
-        boxShadow: dark
-            ? <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 12,
-                  offset: const Offset(0, 3),
-                ),
-              ]
-            : null,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          // 拖动
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (_) => setState(() => _dragging = true),
-            onPanUpdate: (details) => _onDragUpdate(link, free, details.delta),
-            onPanEnd: (_) => _onDragEnd(link, free),
-            onPanCancel: () => setState(() => _dragging = false),
-            child: SizedBox(
-              width: FloatingAvatarHost.barWidth,
-              height: 32,
-              child: Icon(Icons.drag_indicator, size: 18, color: iconColor),
-            ),
-          ),
-          _sideButton(
-            iconColor: iconColor,
-            iconColorOff: iconColorOff,
-            icon: Icons.chevron_left,
-            tooltip: '上一步',
-            enabled: link.stepIndex > 0,
-            onTap: link.previousStep,
-          ),
-          _sideButton(
-            iconColor: iconColor,
-            iconColorOff: iconColorOff,
-            icon: Icons.chevron_right,
-            tooltip: '下一步',
-            enabled: link.stepIndex < link.scriptSteps.length - 1,
-            onTap: link.nextStep,
-          ),
-          // 话术框收起/展开
-          _sideButton(
-            iconColor: iconColor,
-            iconColorOff: iconColorOff,
-            icon: link.bubbleCollapsed ? Icons.chat_bubble_outline : Icons.chat_bubble,
-            tooltip: link.bubbleCollapsed ? '展开话术框' : '收起话术框',
-            onTap: () => link.setBubbleCollapsed(!link.bubbleCollapsed),
-          ),
-          _sideButton(
-            iconColor: iconColor,
-            iconColorOff: iconColorOff,
-            icon: Icons.compress_rounded,
-            tooltip: '贴边收起',
-            onTap: _dockToEdge,
-          ),
-          _sideButton(
-            iconColor: iconColor,
-            iconColorOff: iconColorOff,
-            icon: Icons.close,
-            tooltip: '关闭数字人',
-            onTap: () => link.setAvatarEnabled(false),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sideButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onTap,
-    required Color iconColor,
-    required Color iconColorOff,
-    bool enabled = true,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        child: SizedBox(
-          width: FloatingAvatarHost.barWidth,
-          height: 32,
-          child: Icon(
-            icon,
-            size: 17,
-            color: enabled ? iconColor : iconColorOff,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---------------- 话术框（含状态信息） ----------------
 
   // ---------------- 拖动 / 贴边 ----------------
 

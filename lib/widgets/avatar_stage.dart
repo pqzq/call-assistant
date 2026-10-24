@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/active_lead.dart';
 import '../services/avatar_renderer.dart';
 import '../services/prompt_link.dart';
+import 'glass_surface.dart';
 import 'live2d_avatar.dart';
 
 /// 数字人舞台：Live2D 角色 + 提词气泡。
@@ -107,25 +108,9 @@ class AvatarBubble extends StatelessWidget {
     final status = link.avatarStatus;
     // 纯展示：整体不可命中，避免挡住下面的内容
     return IgnorePointer(
-      child: Container(
-        width: double.infinity,
-        // maxHeight 传 double.infinity 表示让父级（Expanded）决定高度
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        padding: const EdgeInsets.fromLTRB(11, 8, 11, 8),
-        decoration: BoxDecoration(
-          color: solid
-              ? Colors.white
-              : Colors.white.withValues(alpha: 0.94),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE1E7F2)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.10),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
+      child: _bubbleShell(
+        maxHeight: maxHeight,
+        solid: solid,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -200,6 +185,47 @@ class AvatarBubble extends StatelessWidget {
   }
 }
 
+  /// 话术框外壳
+  ///
+  /// - 手机浮窗（solid = false）：**液态玻璃**，模糊下层页面，文字仍然清晰
+  /// - 桌面分栏（solid = true）：实心白底，避免和分栏背景叠色影响阅读
+  Widget _bubbleShell({
+    required double maxHeight,
+    required bool solid,
+    required Widget child,
+  }) {
+    if (solid) {
+      return Container(
+        width: double.infinity,
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        padding: const EdgeInsets.fromLTRB(11, 8, 11, 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE1E7F2)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: child,
+      );
+    }
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: GlassSurface(
+        borderRadius: 18,
+        blur: 20,
+        opacity: 0.62,
+        padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
+        child: child,
+      ),
+    );
+  }
 /// 状态行：状态圆点 + 状态文案 + 当前客户名
 class _StatusLine extends StatelessWidget {
   const _StatusLine({required this.status, required this.lead});

@@ -520,10 +520,20 @@ flutter build apk --release
 | `avatarHeight(screenWidth)` | `screenWidth * 0.58`（clamp 260~420） | **角色盒高度先定**，竖屏下约 401 |
 | `avatarAspect` | `0.72` | 角色盒宽 / 高 |
 | `avatarBoxWidth` | `avatarHeight * 0.72` | 约 289 |
-| `groupWidth` | `avatarBoxWidth + 36 + 2` | 约 327（整组宽度） |
-| `barWidth` / 格子高 | `36` / `32` | 右侧操作栏 |
-| `barGap` | `2` | 角色盒与操作栏间距 |
+| `groupWidth` | `avatarBoxWidth + 84 + 8` | 约 381（整组宽度） |
+| `barWidth` | `ArcActionBar.barWidth` = 84 | **左侧**弧形操作栏 |
+| 图标 / 点击区 | `27` / `46` | 图标加大，方便点 |
+| `barGap` | `8` | 角色盒与操作栏间距 |
 | 话术框间距 | `6` | 与角色盒之间 |
+
+**操作栏与拖动**
+
+- 操作栏在角色**左侧**，图标沿凸向角色的弧线排布（月亮型），**无背景**，只有深色图标 + 白色外发光描边（浅/深背景都能看清）
+- **角色本体也能拖动**（`GestureDetector` + `HitTestBehavior.translucent`，点击仍穿过到下层）
+- 拖动时拖动柄变成主题蓝；**不要用 `Transform`/`AnimatedScale` 做拖动反馈** —— Android 平台视图（WebView/TextureView）不支持任意变换，一旦被 transform 包裹就整块不渲染（表现为模型消失）
+- 话术只有一步时，**不显示上一步/下一步**（`scriptSteps.length > 1` 才加）
+
+**话术框**：手机端用 `GlassSurface`（液态玻璃，blur 20 + 白色 0.62），文字依然清晰；桌面分栏仍用实心白底。
 
 **为什么改成「以高度定宽度」**：Live2D 人物模型本身是**竖长**的（宽高比约 0.5~0.7）。早期把角色盒做成横向（420×330），模型按高度适配后**宽度只用了一半**，两侧全是空白 —— 就是「数字人比框小很多、看着松散」的原因。改成竖比例后模型宽度利用率从 ~52% 提到 ~71%，整组宽度也从 460 收窄到 327。
 
