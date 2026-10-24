@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_navigator.dart';
 import '../services/live2d_service.dart';
 import '../services/prompt_link.dart';
 import 'app_toast.dart';
@@ -22,8 +23,11 @@ class ModelPickerSheet {
       AppToast.error(context, '没有可用模型');
       return Future<String?>.value(null);
     }
+    // 桌面端分栏在 Navigator 之外，必须用全局 navigator 弹
+    final navigator = resolveNavigator(context);
+    if (navigator == null) return Future<String?>.value(null);
     return showModalBottomSheet<String>(
-      context: context,
+      context: navigator.context,
       showDragHandle: true,
       builder: (sheetContext) => _ModelList(
         link: link,

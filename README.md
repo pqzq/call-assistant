@@ -415,6 +415,22 @@ project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 - 写进代码里，**不需要每次构建都加 `--no-enable-impeller`**（release 构建 tool 也不支持这个参数）
 - Android / iOS 不受影响（Impeller 在移动端表现良好）
 - 代价：Skia 在部分场景下性能略低于 Impeller，桌面端够用
+
+### Windows 上本地服务起不来的坑
+
+`path_provider` 在 Windows 上**不支持** `getExternalStorageDirectory()`（抛 `UnimplementedError`），`getApplicationDocumentsDirectory()` 同样不支持 —— 只有 `getApplicationSupportDirectory()` 能用。原来的写法是 `external ?? documents`，因为异常在 `??` 之前就抛出，两个都不支持时整个函数静默失败，表现为**数字人打不开、「切换模型」点了没反应**。
+
+修法：`getExternalStorageDirectory()` 失败时回退到 `getApplicationSupportDirectory()`（`%APPDATA%\<company>\<app>\live2d`），并补了日志。
+
+### 桌面端分栏里的弹窗 / Toast
+
+`MaterialApp.builder` 返回的内容位于 **Navigator 之外**，所以桌面分栏里的控件：
+
+- `showModalBottomSheet` 会抛「找不到 Navigator」→ **点了没反应**
+- `Overlay.maybeOf(context)` 返回 null → **Toast 静默不显示**
+
+修法：新增 `lib/services/app_navigator.dart`，用 `GlobalKey<NavigatorState>` 拿到全局 Navigator，弹窗和 Toast 都改走 `resolveNavigator(context)` / `resolveOverlay(context)`（优先用 context 上的，回退到全局 key）。
+
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

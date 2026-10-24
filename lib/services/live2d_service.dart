@@ -46,7 +46,9 @@ class Live2dService {
       _server = server;
       _baseUrl = 'http://127.0.0.1:${server.port}';
       return _baseUrl;
-    } catch (_) {
+    } catch (e) {
+      // ignore: avoid_print
+      print('[Live2D] 本地服务启动失败: $e');
       return null;
     } finally {
       _preparingFuture = null;
@@ -91,14 +93,35 @@ class Live2dService {
     final root = _webRoot;
     if (root == null) return const <String>[];
     final result = <String>[];
-    for (final entity in root.listSync(recursive: true)) {
-      if (entity is File && entity.path.endsWith('.model3.json')) {
-        final relative = entity.path.substring(root.path.length + 1).replaceAll(r'\', '/');
-        if (await isSupportedModel(entity)) {
-          result.add(relative);
-        } else {
-          incompatibleModels.add(relative);
+    // 只递归遍历**目录**、只挑 .model3.json：
+    // 直接 listSync(recursive: true) 会把上千张贴图也列一遍，很慢，
+    // 表现出来就是点「切换模型」之后半天没反应。
+    final modelFiles = <File>[];
+    void scan(Directory dir, int depth) {
+      if (depth > 8) return;
+      List<FileSystemEntity> children;
+      try {
+        children = dir.listSync(followLinks: true);
+      } catch (_) {
+        return;
+      }
+      for (final entity in children) {
+        if (entity is File) {
+          if (entity.path.toLowerCase().endsWith('.model3.json')) modelFiles.add(entity);
+        } else if (entity is Directory) {
+          scan(entity, depth + 1);
         }
+      }
+    }
+
+    scan(root, 0);
+
+    for (final entity in modelFiles) {
+      final relative = entity.path.substring(root.path.length + 1).replaceAll(r'\', '/');
+      if (await isSupportedModel(entity)) {
+        result.add(relative);
+      } else {
+        incompatibleModels.add(relative);
       }
     }
     result.sort();
@@ -434,11 +457,15 @@ class Live2dService {
 
     Directory base;
     try {
-      base = (await getExternalStorageDirectory()) ?? await getApplicationDocumentsDirectory();
-    } catch (_) {
-      base = await getApplicationDocumentsDirectory();
+      base = await getExternalStorageDirectory() ?? await getApplicationSupportDirectory();
+    } catch (e) {
+      // ignore: avoid_print
+      print('[Live2D] getExternalStorageDirectory 失败: $e');
+      base = await getApplicationSupportDirectory();
     }
     final root = Directory('${base.path}/live2d');
+    // ignore: avoid_print
+    print('[Live2D] 资源目录: ${root.path}');
     if (!root.existsSync()) root.createSync(recursive: true);
 
     final marker = File('${root.path}/.asset_version');

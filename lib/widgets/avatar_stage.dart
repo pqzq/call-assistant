@@ -38,6 +38,19 @@ class AvatarStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 不显示气泡时只放角色本身：
+    // 多包一层 Column 会因为 SizedBox 的高度与父约束差几个像素而溢出
+    if (!showBubble) {
+      return SizedBox(
+        width: avatarBoxWidth,
+        height: avatarHeight,
+        child: Live2dAvatar(
+          modelPath: link.avatarModel,
+          mouth: link.mouth,
+          height: avatarHeight,
+        ),
+      );
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -51,7 +64,7 @@ class AvatarStage extends StatelessWidget {
             height: avatarHeight,
           ),
         ),
-        if (showBubble && !link.bubbleCollapsed) ...<Widget>[
+        if (!link.bubbleCollapsed) ...<Widget>[
           const SizedBox(height: 8),
           AvatarBubble(
             link: link,
@@ -89,6 +102,7 @@ class AvatarBubble extends StatelessWidget {
     return IgnorePointer(
       child: Container(
         width: double.infinity,
+        // maxHeight 传 double.infinity 表示让父级（Expanded）决定高度
         constraints: BoxConstraints(maxHeight: maxHeight),
         padding: const EdgeInsets.fromLTRB(11, 8, 11, 8),
         decoration: BoxDecoration(

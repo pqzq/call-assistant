@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/prompt_link.dart';
+import 'app_toast.dart';
 import 'avatar_stage.dart';
 import 'model_picker_sheet.dart';
 
@@ -24,8 +25,14 @@ class DesktopSplitView extends StatelessWidget {
   /// 左栏最大宽度
   static const double maxPanelWidth = 640;
 
-  /// 提词气泡最大高度占窗口高度的比例
-  static const double bubbleHeightRatio = 0.4;
+  /// 数字人区域占左栏高度的比例
+  static const double avatarHeightRatio = 0.5;
+
+  /// 提词气泡占左栏高度的比例
+  static const double bubbleHeightRatio = 0.3;
+
+  /// 按钮区占左栏高度的比例
+  static const double actionHeightRatio = 0.2;
 
   @override
   Widget build(BuildContext context) {
@@ -69,13 +76,6 @@ class _AvatarPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    // 数字人区域高度：跟随窗口高度，留出上下空间
-    final avatarHeight = (media.size.height * 0.52).clamp(220.0, 620.0);
-    // 话术框最大高度：窗口高度的 40%
-    final bubbleHeight = (media.size.height * DesktopSplitView.bubbleHeightRatio)
-        .clamp(180.0, 520.0);
-
     return Container(
       width: panelWidth,
       color: const Color(0xFFF7F9FC),
@@ -83,41 +83,53 @@ class _AvatarPanel extends StatelessWidget {
         children: <Widget>[
           _panelHeader(context),
           Expanded(
-            child: SingleChildScrollView(
+            // 高度按比例分配：数字人 50% / 气泡 30% / 按钮区 20%
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  // 数字人本体
-                  Container(
-                    height: avatarHeight,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE3E8F0)),
+                  // 数字人本体（50%）
+                  Expanded(
+                    flex: 50,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE3E8F0)),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        alignment: Alignment.center,
+                        child: link.avatarEnabled
+                            ? AvatarStage(
+                                link: link,
+                                avatarHeight: constraints.maxHeight,
+                                showBubble: false,
+                                avatarBoxWidth: panelWidth - 32,
+                              )
+                            : const _AvatarOffHint(),
+                      ),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    alignment: Alignment.center,
-                    child: link.avatarEnabled
-                        ? AvatarStage(
-                            link: link,
-                            avatarHeight: avatarHeight,
-                            showBubble: false,
-                            avatarBoxWidth: panelWidth - 32,
-                          )
-                        : const _AvatarOffHint(),
                   ),
                   const SizedBox(height: 12),
-                  // 提词气泡
-                  AvatarBubble(
-                    link: link,
-                    maxHeight: bubbleHeight,
-                    solid: true,
+                  // 提词气泡（30%）
+                  Expanded(
+                    flex: 30,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => AvatarBubble(
+                        link: link,
+                        maxHeight: constraints.maxHeight,
+                        solid: true,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  _ActionRow(link: link),
-                  const SizedBox(height: 12),
-                  _ModelShortcut(link: link),
+                  // 按钮区（20%）：上一步 / 下一步 / 切换模型
+                  Expanded(
+                    flex: 20,
+                    child: _ActionArea(link: link),
+                  ),
                 ],
               ),
             ),
@@ -170,31 +182,57 @@ class _AvatarOffHint extends StatelessWidget {
   }
 }
 
-/// 话术上下步
-class _ActionRow extends StatelessWidget {
-  const _ActionRow({required this.link});
+/// 按钮区：上一步 / 下一步 / 切换模型
+class _ActionArea extends StatelessWidget {
+  const _ActionArea({required this.link});
 
   final PromptLink link;
 
   @override
   Widget build(BuildContext context) {
     final steps = link.scriptSteps;
-    return Row(
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: link.stepIndex > 0 ? link.previousStep : null,
-            icon: const Icon(Icons.chevron_left, size: 18),
-            label: const Text('上一步', style: TextStyle(fontSize: 13)),
-            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
-          ),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: link.stepIndex > 0 ? link.previousStep : null,
+                icon: const Icon(Icons.chevron_left, size: 18),
+                label: const Text('上一步', style: TextStyle(fontSize: 13)),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: link.stepIndex < steps.length - 1 ? link.nextStep : null,
+                icon: const Icon(Icons.chevron_right, size: 18),
+                label: const Text('下一步', style: TextStyle(fontSize: 13)),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
+        const SizedBox(height: 10),
+        // 切换模型：放在按钮区，保证始终可见（之前放在最底部会被挤到视口外）
+        SizedBox(
+          width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: link.stepIndex < steps.length - 1 ? link.nextStep : null,
-            icon: const Icon(Icons.chevron_right, size: 18),
-            label: const Text('下一步', style: TextStyle(fontSize: 13)),
+            onPressed: () async {
+              final models = await link.availableAvatarModels();
+              if (!context.mounted) return;
+              if (models.isEmpty) {
+                AppToast.error(context, '没有可用模型');
+                return;
+              }
+              final chosen = await ModelPickerSheet.show(context, link: link, models: models);
+              if (chosen == null || !context.mounted) return;
+              await link.setAvatarModel(chosen);
+            },
+            icon: const Icon(Icons.swap_horiz, size: 18),
+            label: const Text('切换模型', style: TextStyle(fontSize: 13)),
             style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
           ),
         ),
@@ -203,25 +241,3 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-/// 切换模型快捷入口
-class _ModelShortcut extends StatelessWidget {
-  const _ModelShortcut({required this.link});
-
-  final PromptLink link;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: () async {
-        final models = await link.availableAvatarModels();
-        if (!context.mounted) return;
-        final chosen = await ModelPickerSheet.show(context, link: link, models: models);
-        if (chosen == null || !context.mounted) return;
-        await link.setAvatarModel(chosen);
-      },
-      icon: const Icon(Icons.swap_horiz, size: 18),
-      label: const Text('切换模型', style: TextStyle(fontSize: 13)),
-      style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
-    );
-  }
-}

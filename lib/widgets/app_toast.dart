@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_navigator.dart';
+
 /// 全局主题色（与 App 主色一致）
 const Color kAppThemeColor = Color(0xFF2F6BFF);
 
@@ -50,7 +52,8 @@ class AppToast {
     required bool isError,
     required Duration duration,
   }) {
-    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    // MaterialApp.builder 里的 context 没有 Overlay 祖先，退回全局 navigatorKey
+    final overlay = resolveOverlay(context);
     if (overlay == null) return;
     late OverlayEntry entry;
     entry = OverlayEntry(
