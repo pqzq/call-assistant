@@ -431,6 +431,31 @@ project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 
 修法：新增 `lib/services/app_navigator.dart`，用 `GlobalKey<NavigatorState>` 拿到全局 Navigator，弹窗和 Toast 都改走 `resolveNavigator(context)` / `resolveOverlay(context)`（优先用 context 上的，回退到全局 key）。
 
+
+### 数字人渲染引擎可切换
+
+数字人有两种渲染后端，可在「双机联动播报 → 数字人 → 模型与展示 → **渲染引擎**」里切换：
+
+| 后端 | 实现 | 平台 | 特点 |
+| --- | --- | --- | --- |
+| **WebView**（默认） | WebView + PIXI + Cubism Web SDK | 全平台（Android / iOS / Windows） | 零额外依赖，行为经过长期验证 |
+| **原生渲染** | Cubism Native SDK + OpenGL ES 2（`flutter_live2d`） | **仅 Android / iOS** | 不用起本地 HttpServer、不占 WebView 内存、启动更快；Windows 上该选项置灰 |
+
+- 选择会记住（`prompt_avatar_backend`），重启后保持
+- 切换后数字人立即按新后端重新加载，模型/嘴型/导入等逻辑完全复用
+- 原生后端直接读磁盘上的模型文件，所以**不需要 HttpServer**（`Live2dService.ensureWebRoot()`）
+
+代码结构：
+
+```
+lib/services/avatar_renderer.dart              # AvatarRenderer 抽象 + AvatarBackend 枚举 + 平台可用性
+lib/widgets/live2d_avatar.dart                 # 壳：按后端创建 renderer，转发嘴型
+lib/widgets/renderers/webview_avatar_renderer.dart   # WebView 实现（原 live2d_avatar 的逻辑）
+lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现（flutter_live2d）
+```
+
+**引入 `flutter_live2d` 的代价**：APK +4MB（自带 Cubism Core 静态库，支持 `.moc3` 3.0–5.3），并且 Android 构建需要 **CMake 3.10.2 + NDK 27.2**（CI 里已自动装）。
+
 ### 液态玻璃风格（Liquid Glass）
 
 新增 `lib/widgets/glass_surface.dart`，提供统一的玻璃质感组件：

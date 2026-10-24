@@ -14,6 +14,7 @@ import 'call_log_store.dart';
 import 'call_state_watcher.dart';
 import 'platform_bridge.dart';
 import 'lan_link.dart';
+import 'avatar_renderer.dart';
 import 'live2d_service.dart';
 import 'tts_synthesizer.dart';
 
@@ -68,6 +69,9 @@ class PromptLink extends ChangeNotifier {
   static const String _kAudioPath = 'prompt_audio_path';
   static const String _kAvatarEnabled = 'prompt_avatar_enabled';
   static const String _kAvatarModel = 'prompt_avatar_model';
+
+  /// 数字人渲染后端（webview / native）
+  static const String _kAvatarBackend = 'prompt_avatar_backend';
   static const String _kAvatarPosX = 'prompt_avatar_pos_x';
   static const String _kAvatarPosY = 'prompt_avatar_pos_y';
   static const String _kBubbleCollapsed = 'prompt_bubble_collapsed';
@@ -122,6 +126,7 @@ class PromptLink extends ChangeNotifier {
   bool _initialized = false;
   bool _avatarEnabled = false;
   String _avatarModel = Live2dService.defaultModel;
+  AvatarBackend _avatarBackend = kDefaultAvatarBackend;
   double _avatarPosX = defaultAvatarX;
   double _avatarPosY = defaultAvatarY;
 
@@ -360,6 +365,7 @@ class PromptLink extends ChangeNotifier {
     }
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
+  _avatarBackend = AvatarBackend.fromName(prefs.getString(_kAvatarBackend));
     _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
     _avatarPosY = prefs.getDouble(_kAvatarPosY) ?? defaultAvatarY;
     _bubbleCollapsed = prefs.getBool(_kBubbleCollapsed) ?? false;
@@ -564,6 +570,7 @@ class PromptLink extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAvatarModel, model);
+  notifyListeners();
     _log('数字人模型：$model');
   }
 
@@ -701,6 +708,23 @@ class PromptLink extends ChangeNotifier {
 
   /// 最近一次模型导入失败的原因（界面提示用）
   String? get lastImportError => Live2dService.instance.lastImportError;
+
+  /// 当前渲染后端
+  AvatarBackend get avatarBackend => _avatarBackend;
+
+  /// 切换渲染后端（webview / native），切换后数字人会重新加载
+  Future<void> setAvatarBackend(AvatarBackend backend) async {
+    if (_avatarBackend == backend) return;
+    _avatarBackend = backend;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kAvatarBackend, backend.name);
+    } catch (_) {
+      // 忽略
+    }
+    _log('数字人渲染后端已切换为：${backend.displayName}', important: true);
+  }
 
   /// 移除用户导入的模型（内置模型不允许移除）
   ///

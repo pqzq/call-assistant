@@ -38,6 +38,21 @@ class Live2dService {
     return _preparingFuture ??= _startService();
   }
 
+  /// 只准备资源目录（释放 assets + 保留用户导入的模型），**不启动 HttpServer**
+  ///
+  /// 原生渲染后端（Cubism Native SDK）直接读磁盘文件，不需要本地 HTTP 服务。
+  Future<Directory?> ensureWebRoot() async {
+    if (_webRoot != null) return _webRoot;
+    try {
+      await _prepareWebRoot();
+    } catch (e) {
+      // ignore: avoid_print
+      print('[Live2D] 准备资源目录失败: $e');
+      return null;
+    }
+    return _webRoot;
+  }
+
   Future<String?> _startService() async {
     try {
       await _prepareWebRoot();

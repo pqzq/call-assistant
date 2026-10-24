@@ -2,26 +2,26 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'package:webview_flutter_windows/webview_flutter_windows.dart' as wv;
 
-import '../services/live2d_service.dart';
-import '../services/platform_bridge.dart';
+import '../services/avatar_renderer.dart';
+import '../services/prompt_link.dart';
+import 'renderers/native_avatar_renderer.dart';
+import 'renderers/webview_avatar_renderer.dart';
 
-/// Live2D 数字人：WebView 渲染，嘴型由外部 [mouth]（0~1）实时驱动。
+/// Live2D 数字人：按用户选择的渲染后端展示，嘴型由外部 [mouth]（0~1）实时驱动。
 ///
-/// WebView 按平台分两套实现：
-/// - Android / iOS：`webview_flutter`（平台实现包自动注册）
-/// - Windows：`webview_flutter_windows` 1.x 是**独立组件**（自带 WebView2），
-///   不再实现 `webview_flutter` 的 WebViewPlatform，必须单独走一套 API
+/// 渲染后端可切换（设置项 `avatar_backend`）：
+/// - **WebView**：WebView 加载 PIXI + Cubism Web SDK，全平台可用（默认）
+/// - **原生**：Cubism Native SDK + OpenGL ES，目前仅 Android / iOS
+///
+/// 两种后端都实现 [AvatarRenderer]，本类只做调度：创建 / 切换 / 转发嘴型。
 class Live2dAvatar extends StatefulWidget {
   const Live2dAvatar({
     super.key,
     required this.modelPath,
     required this.mouth,
     this.height = 220,
+    this.backend,
   });
 
   /// 相对模型路径，如 hiyori/Hiyori.model3.json
@@ -32,372 +32,168 @@ class Live2dAvatar extends StatefulWidget {
 
   final double height;
 
+  /// 渲染后端（不传则用全局设置）
+  final AvatarBackend? backend;
+
   @override
   State<Live2dAvatar> createState() => _Live2dAvatarState();
 }
 
 class _Live2dAvatarState extends State<Live2dAvatar> {
-  /// Android / iOS 用的控制器
-  WebViewController? _controller;
-
-  /// Windows 用的控制器（webview_flutter_windows 1.x 独立组件）
-  wv.WebviewController? _winController;
-
+  AvatarRenderer? _renderer;
   String? _error;
-  bool _pageReady = false;
-  Timer? _throttle;
-
-  /// 加载超时检测定时器
-  Timer? _loadTimer;
-  double _pendingMouth = -1;
-
-  /// Windows 上 WebView 的上一次宽度（用来感知 resize）
-  double _lastWinWidth = 0;
-
-  bool get _isWindows => PlatformBridge.isDesktop;
 
   @override
   void initState() {
     super.initState();
     widget.mouth.addListener(_onMouthChanged);
-    _bootstrap();
+    _initRenderer();
   }
 
   @override
   void didUpdateWidget(covariant Live2dAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.backend != widget.backend) {
+      _initRenderer();
+      return;
+    }
     if (oldWidget.modelPath != widget.modelPath) {
-      _bootstrap();
+      _loadModel();
     }
   }
 
   @override
   void dispose() {
     widget.mouth.removeListener(_onMouthChanged);
-    _throttle?.cancel();
-    _loadTimer?.cancel();
-    // 必须显式释放：Windows 的 WebView2 是**原生控件**，
-    // 只把引用置空的话它会继续留在界面上，表现为一块擦不掉的灰色矩形。
-    // （Android 的 WebViewController 由平台自动回收，没有 dispose）
-    final win = _winController;
-    _winController = null;
-    if (win != null) {
-      unawaited(win.dispose().catchError((_) {}));
+    final renderer = _renderer;
+    _renderer = null;
+    if (renderer != null) {
+      unawaited(renderer.dispose().catchError((_) {}));
     }
-    _controller = null;
     super.dispose();
   }
 
-  Future<void> _bootstrap() async {
-    final base = await Live2dService.instance.ensureStarted();
-    if (!mounted) return;
-    if (base == null) {
-      setState(() => _error = '本地资源服务启动失败');
-      return;
-    }
-    final url = '$base/index.html?model=${Uri.encodeComponent(widget.modelPath)}';
-    if (_isWindows) {
-      await _bootstrapWindows(url);
+  /// 创建渲染后端（切换后端时会重建）
+  Future<void> _initRenderer() async {
+    final backend = widget.backend ?? PromptLink.instance.avatarBackend;
+
+    // 平台不支持时给明确提示，并回退到 WebView
+    var effective = backend;
+    final reason = backendUnsupportedReason(backend);
+    if (reason != null) {
+      _error = reason;
+      effective = AvatarBackend.webview;
     } else {
-      await _bootstrapMobile(url);
-    }
-  }
-  /// Android / iOS：webview_flutter
-  Future<void> _bootstrapMobile(String url) async {
-    // 复用同一个 WebViewController：Android 上替换平台视图的 controller 不会刷新页面，
-    // 换模型时必须对同一个 controller 再次 loadRequest
-    if (_controller == null) {
-      final controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setBackgroundColor(const Color(0x00000000))
-        ..setOnConsoleMessage((message) => debugPrint('[Live2D] ${message.message}'))
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageFinished: (_) {
-              if (!mounted) return;
-              setState(() {
-                _pageReady = true;
-                _error = null;
-              });
-              _pushMouth(widget.mouth.value, force: true);
-            },
-            onWebResourceError: (error) {
-              if (!mounted || _pageReady) return;
-              setState(() => _error = '页面加载失败：${error.description}');
-            },
-          ),
-        );
-
-      // Android 上允许无手势播放、放开调试日志
-      final platform = controller.platform;
-      if (platform is AndroidWebViewController) {
-        try {
-          await platform.setMediaPlaybackRequiresUserGesture(false);
-        } catch (_) {
-          // 忽略
-        }
-      }
-      if (!mounted) return;
-      setState(() => _controller = controller);
-    }
-
-    final controller = _controller;
-    if (controller == null) return;
-    setState(() {
-      _pageReady = false;
       _error = null;
-    });
+    }
 
-    try {
-      await controller.loadRequest(Uri.parse(url));
-    } catch (e) {
-      if (mounted) setState(() => _error = '加载数字人失败：$e');
+    final old = _renderer;
+    _renderer = null;
+    if (old != null) {
+      await old.dispose();
+    }
+
+    final renderer = effective == AvatarBackend.native
+        ? NativeAvatarRenderer(
+            onReady: _onRendererReady,
+            onError: _onRendererError,
+          )
+        : WebViewAvatarRenderer(
+            onReady: _onRendererReady,
+            onError: _onRendererError,
+          );
+
+    if (!mounted) {
+      await renderer.dispose();
       return;
     }
-    _startLoadWatchdog();
+    setState(() => _renderer = renderer);
+    await _loadModel();
   }
 
-  /// Windows：webview_flutter_windows 1.x（独立 WebView2 组件）
-  Future<void> _bootstrapWindows(String url) async {
-    if (_winController == null) {
-      final controller = wv.WebviewController();
-      try {
-        await controller.initialize();
-      } catch (e) {
-        if (mounted) {
-          setState(() => _error = 'WebView2 初始化失败：$e\n'
-              '请确认已安装 Microsoft Edge WebView2 Runtime');
-        }
-        return;
-      }
-      if (!mounted) {
-        controller.dispose();
-        return;
-      }
-      controller.loadingState.listen((state) {
-        if (!mounted) return;
-        if (state == wv.LoadingState.navigationCompleted) {
-          // 兜底：导航完成后 WebView2 控件一定已创建，此时再确保一次透明背景
-          _applyTransparentBackground(controller);
-          setState(() {
-            _pageReady = true;
-            _error = null;
-          });
-          _pushMouth(widget.mouth.value, force: true);
-        }
-      });
-      controller.onLoadError.listen((error) {
-        if (!mounted || _pageReady) return;
-            setState(() => _error = '页面加载失败：');
-      });
-      setState(() => _winController = controller);
-    }
-
-    final controller = _winController;
-    if (controller == null) return;
-    setState(() {
-      _pageReady = false;
-      _error = null;
-    });
-
-    try {
-      await controller.loadUrl(url);
-      // 背景设为全透明：WebView2 默认是白色，不透明的话模型周围会有一圈白块，
-      // 浮窗贴到屏幕左/右边缘时更会露出整块灰白条。
-      //
-      // 注意两点：
-      // 1. 必须在原生 WebView2 控件创建之后调用（插件原生侧有 IsValid() 检查，
-      //    控件没建好时会静默失败）—— 所以放在 loadUrl 之后，而不是 initialize 之后
-      // 2. 只能传 alpha=0 的全透明；插件会把任何 alpha>0 的值当成不透明
-      await _applyTransparentBackground(controller);
-    } catch (e) {
-      if (mounted) setState(() => _error = '加载数字人失败：$e');
-      return;
-    }
-    _startLoadWatchdog();
-  }
-  /// 把 WebView2 背景设为全透明
-  Future<void> _applyTransparentBackground(wv.WebviewController controller) async {
-    try {
-      await controller.setBackgroundColor(const Color(0x00000000));
-    } catch (_) {
-      // 忽略：控件还没建好时插件会直接失败
-    }
-  }
-  /// 超时兜底：缺 WebView2 Runtime 时浏览器进程根本起不来，
-  /// 不会触发任何错误回调，只会一直白屏 —— 超时后给出可操作的提示。
-  void _startLoadWatchdog() {
-    _loadTimer?.cancel();
-    _loadTimer = Timer(const Duration(seconds: 20), () {
-      if (!mounted || _pageReady) return;
-      setState(() {
-        _error = PlatformBridge.isDesktop
-            ? '数字人加载超时：\nWindows 需要「Microsoft Edge WebView2 Runtime」，'
-                '请到微软官网下载安装后重试。\n（没装也不影响播报功能）'
-            : '数字人加载超时，请检查模型文件是否完整';
-      });
-    });
+  Future<void> _loadModel() async {
+    final renderer = _renderer;
+    if (renderer == null) return;
+    setState(() => _error = null);
+    await renderer.load(widget.modelPath);
   }
 
-  void _onMouthChanged() => _pushMouth(widget.mouth.value);
-
-  /// 节流到 ~100ms 一次，避免频繁跨端调用
-  void _pushMouth(double value, {bool force = false}) {
-    _pendingMouth = value;
-    if ((_throttle?.isActive ?? false)) return;
-    if (!force && !_pageReady) return;
-    _flushMouth();
-    _throttle = Timer(const Duration(milliseconds: 100), _flushMouth);
+  void _onRendererReady() {
+    if (!mounted) return;
+    setState(() => _error = null);
+    // 页面就绪后立刻同步当前嘴型
+    final renderer = _renderer;
+    renderer?.setMouth(widget.mouth.value);
   }
 
-  DateTime _lastMouthLog = DateTime.fromMillisecondsSinceEpoch(0);
+  void _onRendererError(String message) {
+    if (!mounted) return;
+    setState(() => _error = message);
+  }
 
-  void _flushMouth() {
-    if (!_pageReady) return;
-    final value = _pendingMouth;
-    _pendingMouth = -1;
-    // 夹到 0~1，保留两位小数减少传输体积
-    final clamped = value.clamp(0.0, 1.0).toStringAsFixed(2);
-    final script = 'window.avatar; avatar.setMouth($clamped);';
-
-    if (_isWindows) {
-      final win = _winController;
-      if (win == null) return;
-      unawaited(win.executeScript(script).catchError((_) {}));
-      return;
-    }
-
-    final controller = _controller;
-    if (controller == null) return;
-    unawaited(
-      controller.runJavaScript(script).catchError((_) {}),
-    );
-
-    // 说话期间每秒回读一次实际嘴型值，便于现场排查（模型没反应时看这里）
-    if (value > 0.05 && DateTime.now().difference(_lastMouthLog).inMilliseconds > 800) {
-      _lastMouthLog = DateTime.now();
-      unawaited(
-        controller
-            .runJavaScriptReturningResult('window.avatar ? avatar.mouthSmooth : -1')
-            .then((smooth) => debugPrint('[Live2D] mouth=$clamped smooth=$smooth'))
-            .catchError((Object _) => -1),
-      );
-    }
+  void _onMouthChanged() {
+    _renderer?.setMouth(widget.mouth.value);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) {
-      return _placeholder(_error!, isError: true);
-    }
-    // 背景保持透明（不能有底色，否则挡住下面的界面内容）；
-    // IgnorePointer 必须包在 ClipRect 外面：ClipRect 自身也会吃掉矩形内的点击，
-    // 不加它浮窗会挡住下面的号码/按钮（拨号时点不到号码）
-    if (_isWindows) {
-      final win = _winController;
-      if (win == null) {
-        return _placeholder('数字人初始化中…');
-      }
-      return IgnorePointer(
-        child: ClipRect(
-          child: SizedBox(
-            height: widget.height,
-            width: double.infinity,
-            // WebView2 在尺寸变化（展开 <-> 贴边）后会把背景色重置回默认灰色，
-            // 所以尺寸一变就重新设一次透明背景，否则贴边后会露出一条灰带。
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                _syncWindowsBackground(win, constraints.maxWidth);
-                return wv.Webview(win);
-              },
-            ),
-          ),
-        ),
-      );
-    }
-    final controller = _controller;
-    if (controller == null) {
+    final renderer = _renderer;
+    if (renderer == null) {
       return _placeholder('数字人初始化中…');
     }
-    return IgnorePointer(
-      child: ClipRect(
-        child: SizedBox(
-          height: widget.height,
-          width: double.infinity,
-          child: WebViewWidget(controller: controller),
-        ),
-      ),
+    if (_error != null) {
+      // WebView 后端的错误提示带 WebView2 下载入口
+      if (renderer is WebViewAvatarRenderer) {
+        return renderer.buildError(_error!);
+      }
+      return _errorBox(_error!);
+    }
+    return SizedBox(
+      height: widget.height,
+      width: double.infinity,
+      child: renderer.build(),
     );
   }
 
-  /// Windows：宽度变化时重设一次透明背景（WebView2 resize 会重置背景色）
-  void _syncWindowsBackground(wv.WebviewController controller, double width) {
-    if (width <= 0) return;
-    if ((width - _lastWinWidth).abs() < 1) return;
-    _lastWinWidth = width;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _applyTransparentBackground(controller);
-    });
-  }
-  Widget _placeholder(String message, {bool isError = false}) {
+  Widget _placeholder(String message) {
     return Container(
       height: widget.height,
       width: double.infinity,
       decoration: BoxDecoration(
-        // 加载/失败都用半透明，避免浮窗上出现一块实心色块
-        color: isError
-            ? const Color(0xFFFDECEC).withValues(alpha: 0.75)
-            : Colors.white.withValues(alpha: 0.5),
+        color: Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(14),
       ),
       alignment: Alignment.center,
-      padding: const EdgeInsets.all(16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (!isError) const SizedBox(
+          const SizedBox(
             width: 18,
             height: 18,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          if (!isError) const SizedBox(height: 10),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              color: isError ? const Color(0xFFD03B3B) : Colors.black45,
-            ),
-          ),
-          // 桌面端缺 WebView2 时，直接给一个下载入口（省得用户自己找官网）
-          if (isError && PlatformBridge.isDesktop) ...<Widget>[
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _openWebView2Download,
-              icon: const Icon(Icons.download_outlined, size: 16),
-              label: const Text('下载 WebView2 Runtime', style: TextStyle(fontSize: 12)),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 34),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-              ),
-            ),
-          ],
+          const SizedBox(height: 10),
+          Text(message, style: const TextStyle(fontSize: 12, color: Colors.black45)),
         ],
       ),
     );
   }
 
-  /// 打开微软官方的 WebView2 Runtime 下载页
-  Future<void> _openWebView2Download() async {
-    const url = 'https://developer.microsoft.com/microsoft-edge/webview2/';
-    try {
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      }
-    } catch (_) {
-      // 忽略
-    }
+  Widget _errorBox(String message) {
+    return Container(
+      height: widget.height,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDECEC).withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(16),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 12, color: Color(0xFFD03B3B)),
+      ),
+    );
   }
 }

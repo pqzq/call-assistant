@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/asr_recognizer.dart';
 import '../services/call_state_watcher.dart';
 import '../services/platform_bridge.dart';
+import '../services/avatar_renderer.dart';
 import '../services/live2d_service.dart';
 import '../services/prompt_link.dart';
 import '../widgets/glass_surface.dart';
@@ -270,6 +271,41 @@ class _PromptPageState extends State<PromptPage> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 10),
+          // 渲染后端切换：WebView（全平台） / 原生（仅 Android、iOS）
+          Row(
+            children: <Widget>[
+              const Text('渲染引擎', style: TextStyle(fontSize: 12, color: Colors.black54)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SegmentedButton<AvatarBackend>(
+                  segments: <ButtonSegment<AvatarBackend>>[
+                    for (final backend in AvatarBackend.values)
+                      ButtonSegment<AvatarBackend>(
+                        value: backend,
+                        label: Text(backend.displayName, style: const TextStyle(fontSize: 12)),
+                        tooltip: backendUnsupportedReason(backend),
+                      ),
+                  ],
+                  selected: <AvatarBackend>{_link.avatarBackend},
+                  showSelectedIcon: false,
+                  style: SegmentedButton.styleFrom(
+                    minimumSize: const Size(0, 34),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                  onSelectionChanged: (selection) async {
+                    final backend = selection.first;
+                    final reason = backendUnsupportedReason(backend);
+                    if (reason != null) {
+                      AppToast.error(context, reason);
+                      return;
+                    }
+                    await _link.setAvatarBackend(backend);
+                  },
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Wrap(

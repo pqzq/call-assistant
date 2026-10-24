@@ -26,13 +26,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 释放磁盘空间
-        # runner 预装的组件占了 30GB+（NDK / dotnet / boost / ghc 等），
-        # 本项目一个都用不到；不清理的话 gradle 下 lint jar 时会报
-        # "No space left on device"
+        # runner 预装的组件占了 30GB+；NDK 不能删（flutter_live2d 的原生代码需要），
+        # 只清本项目确定用不到的大件
         run: |
           echo "===== 清理前 ====="
           df -h /
-          sudo rm -rf /usr/local/lib/android/sdk/ndk
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/share/boost
           sudo rm -rf /opt/ghc /usr/local/.ghcup
@@ -41,6 +39,13 @@ jobs:
           sudo apt-get clean -qq >/dev/null 2>&1 || true
           echo "===== 清理后 ====="
           df -h /
+
+      - name: 安装 Android SDK 组件（CMake / NDK）
+        # flutter_live2d 用 Cubism Native SDK，需要 CMake 3.10.2 + NDK 27.2
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --install \
+            "cmake;3.10.2.4988404" "ndk;27.2.12479018"
 
       - name: 配置 JDK 21（与本地 flutter config --jdk-dir 一致）
         uses: actions/setup-java@v4
@@ -104,11 +109,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 释放磁盘空间
-        # 同 ci：runner 预装组件占 30GB+，本项目用不到
+        # 同 ci：runner 预装组件占 30GB+，本项目用不到（NDK 保留，原生渲染需要）
         run: |
           echo "===== 清理前 ====="
           df -h /
-          sudo rm -rf /usr/local/lib/android/sdk/ndk
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/share/boost
           sudo rm -rf /opt/ghc /usr/local/.ghcup
@@ -117,6 +121,13 @@ jobs:
           sudo apt-get clean -qq >/dev/null 2>&1 || true
           echo "===== 清理后 ====="
           df -h /
+
+      - name: 安装 Android SDK 组件（CMake / NDK）
+        # flutter_live2d 用 Cubism Native SDK，需要 CMake 3.10.2 + NDK 27.2
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --install \
+            "cmake;3.10.2.4988404" "ndk;27.2.12479018"
 
       - name: 配置 JDK 21
         uses: actions/setup-java@v4
@@ -221,7 +232,6 @@ jobs:
         run: |
           "===== 清理前 ====="
           Get-PSDrive C | Select-Object Used, Free
-          Remove-Item -Recurse -Force "C:\Program Files (x86)\Android\android-sdk\ndk\*" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\com.android.tools.build" -ErrorAction SilentlyContinue
           "===== 清理后 ====="
           Get-PSDrive C | Select-Object Used, Free
