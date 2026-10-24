@@ -39,7 +39,7 @@ class FloatingAvatarHost extends StatefulWidget {
   /// 之前把角色盒做成横向（420×330）时，模型按高度适配后
   /// 宽度只用到一半，两侧全是空白 —— 看起来「数字人比框小很多」。
   /// 这里改成竖比例，模型能填满 90% 以上宽度。
-  static const double avatarAspect = 0.72;
+  static const double avatarAspect = 0.60;
 
   /// 角色盒高度：按屏幕宽度推导（竖屏下约 58%），限制在 260~420
   static double avatarHeight(double screenWidth) =>
@@ -169,48 +169,51 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         // 拖动反馈改在图标上体现（见 _buildArcBar 的 dragging 参数）。
         child: docked
             ? _buildDockedChip(link, avatarHeight)
-            : Column(
-                mainAxisSize: MainAxisSize.min,
+            : Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(
-                    // 操作栏高度自适应，靠 crossAxisAlignment 垂直居中于角色
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      // 月亮型操作栏放在**角色左侧**
-                      _buildArcBar(link, free, avatarHeight),
-                      // 数字人本体：可拖动（translucent 保证点击仍能穿透到下层）
-                      GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onPanStart: (_) => setState(() => _dragging = true),
-                        onPanUpdate: (d) => _onDragUpdate(link, free, d.delta),
-                        onPanEnd: (_) => _onDragEnd(link, free),
-                        onPanCancel: () => setState(() => _dragging = false),
-                        child: SizedBox(
-                          // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
-                          // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
-                          width: groupWidth -
-                              FloatingAvatarHost.barWidth -
-                              FloatingAvatarHost.barGap,
-                          height: avatarHeight,
-                          child: Live2dAvatar(
-                            modelPath: link.avatarModel,
-                            mouth: link.mouth,
+                  // 月亮型操作栏（凹面朝向角色），高度与角色一致
+                  _buildArcBar(link, free, avatarHeight),
+                  const SizedBox(width: FloatingAvatarHost.barGap),
+                  // 角色 + 话术框：**同宽、左边缘对齐**，
+                  // 不再让话术框横跨整组宽度（那样右边会空出一块）
+                  SizedBox(
+                    width: groupWidth -
+                        FloatingAvatarHost.barWidth -
+                        FloatingAvatarHost.barGap,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        // 数字人本体：可拖动（translucent 保证点击仍能穿透到下层）
+                        GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onPanStart: (_) => setState(() => _dragging = true),
+                          onPanUpdate: (d) => _onDragUpdate(link, free, d.delta),
+                          onPanEnd: (_) => _onDragEnd(link, free),
+                          onPanCancel: () => setState(() => _dragging = false),
+                          child: SizedBox(
+                            // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
+                            // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
+                            width: double.infinity,
                             height: avatarHeight,
+                            child: Live2dAvatar(
+                              modelPath: link.avatarModel,
+                              mouth: link.mouth,
+                              height: avatarHeight,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  if (!link.bubbleCollapsed) ...<Widget>[
-                    const SizedBox(height: 6),
-                    // 话术框与上方「角色 + 操作栏」整体左对齐、宽度一致
-                    // （宽度用 double.infinity 继承容器宽度，避免出现偏差）
-                    AvatarBubble(
-                      link: link,
-                      maxHeight: FloatingAvatarHost.bubbleMaxHeight,
+                        if (!link.bubbleCollapsed) ...<Widget>[
+                          const SizedBox(height: 6),
+                          AvatarBubble(
+                            link: link,
+                            maxHeight: FloatingAvatarHost.bubbleMaxHeight,
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
       ),
@@ -259,6 +262,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
       ),
       ArcAction(
         icon: Icons.close,
+        danger: true,
         tooltip: '关闭数字人',
         onTap: () => link.setAvatarEnabled(false),
       ),

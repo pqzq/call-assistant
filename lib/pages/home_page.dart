@@ -357,7 +357,7 @@ class _HomePageState extends State<HomePage> {
           child: GlassSurface(
             borderRadius: 28,
             blur: 22,
-            opacity: 0.86,
+            opacity: 0.68,
             padding: const EdgeInsets.all(8),
             child: Row(
               children: <Widget>[

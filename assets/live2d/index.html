@@ -107,8 +107,11 @@
         const baseW = model.width;
         const baseH = model.height;
         if (!baseW || !baseH) return;
-        // 角色盒本身已是竖比例（0.72），这里只留 1% 边距即可填满
-        const scale = Math.min(w / baseW, h / baseH) * 0.99;
+        // Live2D 的 canvas 通常比角色本体大一圈（四周留白），
+        // 纯 Math.min 适配会让角色显得很小、两侧空一大片。
+        // 这里允许高度方向多溢出 12%，让角色更饱满（溢出部分在顶部，多是空白）。
+        const FIT_OVERSCAN = 1.12;
+        const scale = Math.min(w / baseW, (h / baseH) * FIT_OVERSCAN) * 0.99;
         model.scale.set(scale);
         model.x = (w - baseW * scale) / 2;
         model.y = h - baseH * scale;   // 贴底显示

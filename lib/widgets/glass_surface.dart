@@ -15,7 +15,7 @@ class GlassSurface extends StatelessWidget {
     required this.child,
     this.borderRadius = 26,
     this.blur = 20,
-    this.opacity = 0.78,
+    this.opacity = 0.60,
     this.padding,
     this.margin,
     this.elevated = true,
@@ -82,7 +82,7 @@ class GlassSurface extends StatelessWidget {
                 stops: const <double>[0, 0.55, 1],
               ),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.85),
+                color: Colors.white.withValues(alpha: 0.62),
                 width: 1,
               ),
             ),

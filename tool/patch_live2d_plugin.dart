@@ -125,7 +125,7 @@ const List<_Edit> _edits = <_Edit>[
     // SetHeight 保证完整显示，且高度方向最大化利用。
     {
         const float aspect = (float)view->height / (float)view->width;
-        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f);
+        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f) * 1.12f;
         view->model->GetModelMatrix()->SetHeight(targetH);
     }
 
@@ -142,7 +142,7 @@ const List<_Edit> _edits = <_Edit>[
             view->model->GetModelMatrix()->SetWidth(2.0f);''',
     '''        // 与 ReloadModelInternal 保持一致的「按高度填满」策略
         const float aspect = (float)view->height / (float)view->width;
-        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f);
+        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f) * 1.12f;
         view->model->GetModelMatrix()->SetHeight(targetH);''',
     marker: '与 ReloadModelInternal 保持一致的',
   ),

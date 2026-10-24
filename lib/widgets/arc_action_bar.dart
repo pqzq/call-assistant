@@ -10,6 +10,7 @@ class ArcAction {
     this.onTap,
     this.enabled = true,
     this.isDragHandle = false,
+    this.danger = false,
   });
 
   final IconData icon;
@@ -19,6 +20,9 @@ class ArcAction {
 
   /// 拖动柄（用 pan 手势而不是 tap）
   final bool isDragHandle;
+
+  /// 危险操作（关闭）—— 图标用红色
+  final bool danger;
 }
 
 /// 月亮型（弧形）动作栏
@@ -85,8 +89,10 @@ class ArcActionBar extends StatelessWidget {
       final t = n == 1 ? 0.0 : (i / (n - 1)) * 2 - 1;
       final angle = t * spread;
 
-      // 弧心在容器左侧外面：中间最靠右（贴近角色），两端向外收
-      final xCenter = barWidth - half - radius * (1 - math.cos(angle));
+      // 弧心在容器右侧外面：**凹面朝向角色** ——
+      // 中间最靠左（离角色最远）、两端靠右（迎向角色轮廓），
+      // 整体像一弯「包住」角色的月牙。
+      final xCenter = half + radius * (1 - math.cos(angle));
       final yCenter = cy + radius * math.sin(angle);
 
       children.add(
@@ -135,12 +141,20 @@ class _ArcButton extends StatelessWidget {
     final enabled = action.enabled;
     // 无背景的纯图标要在**浅色和深色**页面上都看得清：
     // 用深色图标 + 白色外发光当描边（深色背景上白晕把图标衬出来）
+    final Color tint;
+    if (!enabled) {
+      tint = const Color(0x662B3B55);
+    } else if (action.danger) {
+      tint = const Color(0xFFE5484D); // 关闭：红色
+    } else if (dragging && action.isDragHandle) {
+      tint = const Color(0xFF2F6BFF); // 拖动中：主题蓝
+    } else {
+      tint = const Color(0xFF2B3B55);
+    }
     final icon = Icon(
       action.icon,
       size: ArcActionBar.iconSize,
-      color: !enabled
-          ? const Color(0x662B3B55)
-          : (dragging && action.isDragHandle ? const Color(0xFF2F6BFF) : const Color(0xFF2B3B55)),
+      color: tint,
       shadows: enabled
           ? const <Shadow>[
               Shadow(color: Color(0xFFFFFFFF), blurRadius: 6),

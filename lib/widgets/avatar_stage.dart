@@ -219,8 +219,8 @@ class AvatarBubble extends StatelessWidget {
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: GlassSurface(
         borderRadius: 18,
-        blur: 20,
-        opacity: 0.62,
+        blur: 32,
+        opacity: 0.42,
         padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
         child: child,
       ),
