@@ -78,6 +78,12 @@ jobs:
           ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
         run: flutter pub get
 
+      - name: 给 flutter_live2d 打本地补丁
+        # 上游 1.0.2 有两个 bug：CubismFramework 在无 GL context 线程初始化、
+        # shader 文件没打进 APK，导致「加载成功但画面空白」。补丁脚本幂等。
+        run: dart run tool/patch_live2d_plugin.dart
+
+
       - name: 静态分析
         run: flutter analyze
 
@@ -178,6 +184,12 @@ jobs:
           ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
         run: flutter pub get
 
+      - name: 给 flutter_live2d 打本地补丁
+        # 上游 1.0.2 有两个 bug：CubismFramework 在无 GL context 线程初始化、
+        # shader 文件没打进 APK，导致「加载成功但画面空白」。补丁脚本幂等。
+        run: dart run tool/patch_live2d_plugin.dart
+
+
       - name: 校验标签版本与 pubspec 版本一致
         id: version
         run: |
@@ -255,8 +267,8 @@ jobs:
       - name: 安装依赖
         run: flutter pub get
 
-      - name: 校验标签版本与 pubspec 版本一致
-        id: version
+      - name: 给 flutter_live2d 打本地补丁
+        # 上游 1.0.2 有两个 bug：CubismFramework 在无 GL context 线程初始化、
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"

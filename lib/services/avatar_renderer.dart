@@ -9,11 +9,11 @@ enum AvatarBackend {
 
   /// 原生（Cubism Native SDK + OpenGL ES）—— 目前仅 Android / iOS
   ///
-  /// ⚠️ 实验性：依赖 `flutter_live2d` 插件，实测「模型加载成功
-  /// （loadModel 返回 true、Cubism Core 正常初始化）但画面不绘制」，
-  /// 属插件自身的 TextureView 渲染问题。保留该后端是为了架构完整，
-  /// 等插件修复或换成自研实现即可直接启用。
-  native('native', '原生（实验性）');
+  /// 依赖 `flutter_live2d` 插件。该插件 1.0.2 有两个上游 bug
+  /// （CubismFramework 在没有 GL context 的线程初始化、shader 文件没打进 APK），
+  /// 会导致「模型加载成功但画面永远空白」。
+  /// 构建前必须执行 `dart run tool/patch_live2d_plugin.dart` 打补丁（已接入 CI）。
+  native('native', '原生');
 
   const AvatarBackend(this.name, this.displayName);
 

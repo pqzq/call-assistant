@@ -422,6 +422,64 @@ project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 
 修法：`getExternalStorageDirectory()` 失败时回退到 `getApplicationSupportDirectory()`（`%APPDATA%\<company>\<app>\live2d`），并补了日志。
 
+
+### 原生渲染（`flutter_live2d`）的两个上游 bug 与修复
+
+原生后端依赖 `flutter_live2d` 1.0.2。这个插件开箱即用时**模型能加载但画面永远空白**，排查后确认是两个上游 bug（都已通过 `tool/patch_live2d_plugin.dart` 本地修补）：
+
+#### Bug 1：CubismFramework 在没有 GL context 的线程初始化
+
+```cpp
+// 插件原始代码
+nativeCreateView(JNIEnv*, jclass) {
+    FrameworkRetain();          // ← 在 Android 主线程调用，无 EGL context
+    Live2DView* view = new Live2DView();
+    return ...;
+}
+```
+
+`CubismFramework::Initialize()` 内部会 `CreateRenderer` → 生成 OpenGL **shader program**。没有 current context 时 shader 全部编译失败，program 恒为 `0`，之后每帧 `glUniform*` / `glDrawElements` 都报 `GL_INVALID_OPERATION (0x502)`。
+
+**修复**：把初始化延迟到 `nativeOnSurfaceCreated()` —— 它在 render hub 线程执行，已 `eglMakeCurrent`，是唯一安全的时机。同时在 `Live2DView` 上加 `frameworkRetained` 标志，保证 `FrameworkRetain/FrameworkRelease` 配对。
+
+#### Bug 2：shader 源文件没被打进 APK
+
+Cubism 通过下面的方式读 shader：
+
+```cpp
+Live2DPal::LoadFileAsBytes("FrameworkShaders/VertShaderSrc.vert")   // → AAssetManager_open
+```
+
+也就是从 **APK assets** 里找 `FrameworkShaders/`。但插件的 `build.gradle.kts` 只配了 `java.srcDirs`，shader 文件一直躺在 `cpp/CubismFramework/Rendering/OpenGL/Shaders/StandardES/` 里，**从未进入 assets** → shader 加载返回 null → program 同样为 0。
+
+**修复**：把 `StandardES/*.vert` / `*.frag`（36 个）复制到 `android/src/main/assets/FrameworkShaders/`。
+
+#### 排查过程中确认过的「正常」项（避免误判）
+
+| 检查项 | 结果 |
+| --- | --- |
+| 模型加载 | `LoadAssets done, IsLoaded=1` ✓ |
+| 纹理上传 | `tex[0] id=1 1024x1024 texture_00.png` ✓ |
+| MVP 矩阵 | `mvp=[1.57 0 0 0 \| 0 0 0 1]` ✓ |
+| 渲染循环 | 每帧 `nativeOnDrawFrame` + `eglSwapBuffers` ✓ |
+| 投影/视口 | `viewSize=1155x907`，比例正确 ✓ |
+
+**唯一异常就是 `glErr`**：修好后从 `0x501 → 0x502` 变成恒为 `0x0`，模型立即正常显示。
+
+#### 补丁怎么用
+
+```bash
+flutter pub get
+dart run tool/patch_live2d_plugin.dart   # 幂等，重复执行安全
+flutter build apk --release
+```
+
+- 脚本从 `.dart_tool/package_config.json` 定位插件目录，找不到就回退扫 pub cache
+- 每一步都有幂等标记，已打过补丁会输出「已打过补丁」并跳过
+- **每次 `flutter pub get` 重建 pub cache 后需要重新执行一次**
+- CI 的 `ci` / `release-android` 两个 job 已在 `pub get` 之后自动执行
+
+
 ### 桌面端分栏里的弹窗 / Toast
 
 `MaterialApp.builder` 返回的内容位于 **Navigator 之外**，所以桌面分栏里的控件：
