@@ -72,6 +72,15 @@ class PromptLink extends ChangeNotifier {
 
   /// 数字人渲染后端（webview / native）
   static const String _kAvatarBackend = 'prompt_avatar_backend';
+
+  /// 模型实际宽高比（由 WebView 端量出来并缓存，切换后端也能复用）
+  static const String _kAvatarAspect = 'prompt_avatar_aspect';
+
+  /// 上面那个比例对应的模型路径，换模型后作废
+  static const String _kAvatarAspectModel = 'prompt_avatar_aspect_model';
+
+  /// 模型放大系数（各模型 canvas 留白差异大，需要用户可调）
+  static const String _kAvatarZoom = 'prompt_avatar_zoom';
   static const String _kAvatarPosX = 'prompt_avatar_pos_x';
   static const String _kAvatarPosY = 'prompt_avatar_pos_y';
   static const String _kBubbleCollapsed = 'prompt_bubble_collapsed';
@@ -126,6 +135,16 @@ class PromptLink extends ChangeNotifier {
   bool _initialized = false;
   bool _avatarEnabled = false;
   String _avatarModel = Live2dService.defaultModel;
+
+  /// 当前模型的实际宽高比（宽/高）。0 表示还没量出来，
+  /// 由 WebView 后端在页面加载后测量并写回（原生后端直接复用该值）。
+  double _avatarModelAspect = 0;
+
+  /// 上面那个比例是哪个模型量出来的
+  String _avatarAspectModel = '';
+
+  /// 模型放大系数（1.0 = 不额外放大）。默认 1.25 是为了抵消 canvas 留白。
+  double _avatarModelZoom = 1.25;
   AvatarBackend _avatarBackend = kDefaultAvatarBackend;
   double _avatarPosX = defaultAvatarX;
   double _avatarPosY = defaultAvatarY;
@@ -365,7 +384,15 @@ class PromptLink extends ChangeNotifier {
     }
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
-  _avatarBackend = AvatarBackend.fromName(prefs.getString(_kAvatarBackend));
+    _avatarBackend = AvatarBackend.fromName(prefs.getString(_kAvatarBackend));
+    // 模型比例：只有和当前模型匹配才复用，换过模型就作废等重新量
+    final savedAspectModel = prefs.getString(_kAvatarAspectModel) ?? '';
+    final savedAspect = prefs.getDouble(_kAvatarAspect) ?? 0;
+    if (savedAspectModel.isNotEmpty && savedAspectModel == _avatarModel) {
+      _avatarModelAspect = savedAspect;
+      _avatarAspectModel = savedAspectModel;
+    }
+    _avatarModelZoom = prefs.getDouble(_kAvatarZoom) ?? 1.25;
     _avatarPosX = prefs.getDouble(_kAvatarPosX) ?? defaultAvatarX;
     _avatarPosY = prefs.getDouble(_kAvatarPosY) ?? defaultAvatarY;
     _bubbleCollapsed = prefs.getBool(_kBubbleCollapsed) ?? false;
@@ -567,11 +594,62 @@ class PromptLink extends ChangeNotifier {
   Future<void> setAvatarModel(String model) async {
     if (model.isEmpty || model == _avatarModel) return;
     _avatarModel = model;
+    // 换了模型，之前量出来的宽高比不再有效
+    _avatarModelAspect = 0;
+    _avatarAspectModel = '';
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAvatarModel, model);
-  notifyListeners();
     _log('数字人模型：$model');
+  }
+
+  /// 当前模型的实际宽高比（宽/高）。0 表示还没测出来，调用方应回退到默认比例。
+  ///
+  /// 由 WebView 后端在加载完成后用 `model.getLocalBounds()` 量出并写回；
+  /// 原生后端直接复用这个缓存值（它本身是「填满高度」适配，
+  /// 容器宽度一匹配，模型自然填满）。
+  double get avatarModelAspect => _avatarModelAspect;
+
+  /// 模型放大系数（1.0 = 不额外放大）
+  ///
+  /// 各模型 canvas 四周留白差异很大，固定值总会出现「有的显得太小、有的被裁」，
+  /// 所以开放给用户调（设置里「模型大小」滑杆），调完持久化。
+  double get avatarModelZoom => _avatarModelZoom;
+
+  /// [persist] 为 false 时只更新内存并通知（滑杆拖动过程用），
+  /// 松手（onChangeEnd）再调一次带 persist 的落盘，避免每帧写磁盘。
+  Future<void> setAvatarModelZoom(double zoom, {bool persist = true}) async {
+    final v = zoom.clamp(0.8, 1.8).toDouble();
+    if ((_avatarModelZoom - v).abs() < 0.001) return;
+    _avatarModelZoom = v;
+    notifyListeners();
+    if (!persist) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_kAvatarZoom, v);
+    } catch (_) {
+      // 忽略
+    }
+  }
+  /// 记录 WebView 量到的模型宽高比
+  Future<void> setAvatarModelAspect(double aspect) async {
+    if (aspect <= 0.02 || aspect > 8) return;
+    // 同一模型、比例几乎没变就不重复通知
+    if (_avatarAspectModel == _avatarModel &&
+        (_avatarModelAspect - aspect).abs() < 0.01) {
+      return;
+    }
+    _avatarModelAspect = aspect;
+    _avatarAspectModel = _avatarModel;
+    _log('模型比例：${aspect.toStringAsFixed(3)}（宽/高）');
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_kAvatarAspect, aspect);
+      await prefs.setString(_kAvatarAspectModel, _avatarModel);
+    } catch (_) {
+      // 忽略：量出来只是用来调宽高，存不下也能用
+    }
   }
 
   /// 保存浮动数字人的位置（0~1 归一化），拖动结束时调用

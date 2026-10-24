@@ -310,6 +310,34 @@ class _PromptPageState extends State<PromptPage> {
             ],
           ),
           const SizedBox(height: 10),
+          // 模型大小：Live2D 的 canvas 四周留白各模型差异很大，自动适配
+          // 常出现「有的显得太小、有的被裁」，这里开放给用户微调。
+          Row(
+            children: <Widget>[
+              const Text('模型大小',
+                  style: TextStyle(fontSize: 12, color: Colors.black54)),
+              Expanded(
+                child: Slider(
+                  value: _link.avatarModelZoom.clamp(0.8, 1.8).toDouble(),
+                  min: 0.8,
+                  max: 1.8,
+                  divisions: 20,
+                  label: '${_link.avatarModelZoom.toStringAsFixed(2)}x',
+                  // 拖动过程只更新内存（不写磁盘），松手才持久化
+                  onChanged: (v) => _link.setAvatarModelZoom(v, persist: false),
+                  onChangeEnd: (v) => _link.setAvatarModelZoom(v),
+                ),
+              ),
+              SizedBox(
+                width: 44,
+                child: Text(
+                  '${_link.avatarModelZoom.toStringAsFixed(2)}x',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
+            ],
+          ),
           Wrap(
             spacing: 8,
             runSpacing: 8,

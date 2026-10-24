@@ -8,6 +8,7 @@ import 'package:webview_flutter_windows/webview_flutter_windows.dart' as wv;
 
 import '../../services/avatar_renderer.dart';
 import '../../services/live2d_service.dart';
+import '../../services/prompt_link.dart';
 import '../../services/platform_bridge.dart';
 
 /// WebView 渲染后端：WebView 加载 PIXI + Cubism Web SDK
@@ -53,7 +54,10 @@ class WebViewAvatarRenderer implements AvatarRenderer {
       onError?.call('本地资源服务启动失败');
       return;
     }
-    final url = '$base/index.html?model=${Uri.encodeComponent(relativePath)}';
+    // zoom = 模型放大系数（用户可调），页面按它决定适配时的 overscan
+    final zoom = PromptLink.instance.avatarModelZoom.toStringAsFixed(2);
+    final url =
+        '$base/index.html?model=${Uri.encodeComponent(relativePath)}&zoom=$zoom';
     if (_isWindows) {
       await _loadWindows(url);
     } else {
@@ -77,6 +81,9 @@ class WebViewAvatarRenderer implements AvatarRenderer {
               _pageReady = true;
               onReady?.call();
               setMouth(_pendingMouth >= 0 ? _pendingMouth : 0);
+              // 页面刚 finish 时模型可能还没加载完，这里异步重试量一次比例
+              // （用字段而不是局部 controller —— 它在级联构造里还没声明）
+              unawaited(_probeModelAspect(_controller));
             },
             onWebResourceError: (error) {
               if (_pageReady) return;
@@ -168,6 +175,46 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     }
   }
 
+  /// 实时调整模型的放大系数（用户在设置里拖「模型大小」时调用）。
+  /// 页面侧只是重排一下，不需要重新加载。
+  void setZoom(double zoom) {
+    final controller = _controller;
+    if (controller == null || !_pageReady) return;
+    final v = zoom.toStringAsFixed(2);
+    unawaited(
+      controller
+          .runJavaScript(
+              'window.avatar && avatar.setZoom ? avatar.setZoom($v) : 0')
+          .catchError((Object _) {}),
+    );
+  }
+  /// 量出模型的真实宽高比（宽/高），交给 PromptLink 把浮动框比例调准。
+  ///
+  /// Live2D 的 canvas 往往比角色本体大一圈，只用容器去「适配高度」
+  /// 会让角色显得又小又偏，两侧空一大片。这里直接问页面要
+  /// `model.getLocalBounds()` 的比例，容器就能贴着角色本体做。
+  Future<void> _probeModelAspect(WebViewController? controller) async {
+    if (controller == null) return;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+      }
+      try {
+        final raw = await controller.runJavaScriptReturningResult(
+          'window.avatar; avatar.modelAspect ? avatar.modelAspect() : ""',
+        );
+        // webview_flutter 返回的是带引号的字符串（或 double）
+        final text = raw.toString().replaceAll('"', '').trim();
+        final aspect = double.tryParse(text);
+        if (aspect != null && aspect > 0.05 && aspect < 8) {
+          await PromptLink.instance.setAvatarModelAspect(aspect);
+          return;
+        }
+      } catch (_) {
+        // 页面可能还没就绪，继续重试
+      }
+    }
+  }
   /// 超时兜底：缺 WebView2 Runtime 时浏览器进程根本起不来，
   /// 不会触发任何错误回调，只会一直白屏 —— 超时后给出可操作的提示。
   void _startLoadWatchdog() {

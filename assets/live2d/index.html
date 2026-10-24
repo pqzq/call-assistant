@@ -31,7 +31,29 @@
     speaking: false,
     setMouth(v) { avatar.mouth = Math.max(0, Math.min(1, v || 0)); },
     setSpeaking(on) { avatar.speaking = !!on; if (!on) avatar.mouth = 0; },
-    reset() { avatar.mouth = 0; avatar.mouthSmooth = 0; avatar.speaking = false; }
+    reset() { avatar.mouth = 0; avatar.mouthSmooth = 0; avatar.speaking = false; },
+    // Flutter 侧滑杆调「模型大小」时实时调用，不需要重新加载页面
+    setZoom(v) {
+      const z = parseFloat(v);
+      if (!isFinite(z)) return;
+      fitOverscan = Math.min(1.8, Math.max(0.8, z));
+      if (typeof avatar._fit === 'function') avatar._fit();
+    },
+    // 返回角色**实际渲染边界**的宽高比（宽/高），供 Flutter 把浮动框
+    // 调成贴合模型的比例 —— canvas 通常比角色本体大一圈，直接用
+    // canvas 尺寸会让两侧空出一大片。
+    // 还没加载好时返回空串，Flutter 侧会稍后重试。
+    modelAspect() {
+      if (!model || !model.getLocalBounds) return '';
+      try {
+        const b = model.getLocalBounds();
+        if (!b || !b.width || !b.height) return '';
+        // 只保留 4 位小数，避免科学计数法
+        return (b.width / b.height).toFixed(4);
+      } catch (e) {
+        return '';
+      }
+    }
   };
 
   const tip = document.getElementById('tip');
@@ -45,6 +67,18 @@
     const q = new URLSearchParams(location.search).get('model');
     return q || 'hiyori/Hiyori.model3.json';
   }
+
+  // 模型放大系数（用户可在设置里调）。
+  // Live2D 的 canvas 四周留白各模型差异很大，固定值总会「有的太小、有的被裁」，
+  // 这里允许从 URL 传入覆盖默认值。
+  function fitOverscanFromQuery() {
+    const raw = parseFloat(new URLSearchParams(location.search).get('zoom') || '');
+    if (!isFinite(raw) || raw <= 0) return 1.25;
+    return Math.min(1.8, Math.max(0.8, raw));
+  }
+
+  // 当前放大系数（可被 Flutter 通过 avatar.setZoom 实时修改）
+  let fitOverscan = fitOverscanFromQuery();
 
   try {
     if (!window.PIXI || !PIXI.live2d) throw new Error('PIXI 或 pixi-live2d-display 未加载');
@@ -109,14 +143,16 @@
         if (!baseW || !baseH) return;
         // Live2D 的 canvas 通常比角色本体大一圈（四周留白），
         // 纯 Math.min 适配会让角色显得很小、两侧空一大片。
-        // 这里允许高度方向多溢出 12%，让角色更饱满（溢出部分在顶部，多是空白）。
-        const FIT_OVERSCAN = 1.12;
-        const scale = Math.min(w / baseW, (h / baseH) * FIT_OVERSCAN) * 0.99;
+        // 这里允许高度方向多溢出 25%，让角色更饱满。
+        // 溢出的部分主要是 canvas 四周的透明留白，不会裁到角色本体。
+        const scale = Math.min(w / baseW, (h / baseH) * fitOverscan) * 0.99;
         model.scale.set(scale);
         model.x = (w - baseW * scale) / 2;
         model.y = h - baseH * scale;   // 贴底显示
       };
       fit();
+      // 暴露给 Flutter：滑杆调「模型大小」时直接重排，不用重载页面
+      avatar._fit = fit;
       window.addEventListener('resize', () => { app.renderer.resize(window.innerWidth, window.innerHeight); fit(); });
 
       // 嘴型：在动作更新之后覆盖，避免被 idle 动作覆盖

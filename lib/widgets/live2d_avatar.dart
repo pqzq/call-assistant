@@ -46,6 +46,9 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   /// 当前 renderer 用的后端（用于判断是否需要重建）
   AvatarBackend? _currentBackend;
 
+  /// 当前已下发到页面的放大系数（用于判断是否需要重新推送）
+  double _currentZoom = 1.25;
+
   @override
   void initState() {
     super.initState();
@@ -74,6 +77,16 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     final target = widget.backend ?? PromptLink.instance.avatarBackend;
     if (target != _currentBackend) {
       _initRenderer();
+      return;
+    }
+    // 「模型大小」滑杆变了就实时推给页面（重排即可，不用重新加载）
+    final zoom = PromptLink.instance.avatarModelZoom;
+    if ((zoom - _currentZoom).abs() > 0.001) {
+      _currentZoom = zoom;
+      final r = _renderer;
+      if (r is WebViewAvatarRenderer) {
+        r.setZoom(zoom);
+      }
     }
   }
 

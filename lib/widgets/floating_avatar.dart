@@ -31,27 +31,44 @@ class FloatingAvatarHost extends StatefulWidget {
   static const double dockThreshold = 36;
 
   /// 话术框最大高度
-  static const double bubbleMaxHeight = 150;
+  static const double bubbleMaxHeight = 190;
 
-  /// 角色盒的长宽比（宽 / 高）
+  /// 模型比例未知时的兜底值（多数人物模型在 0.45~0.60）
+  static const double defaultAvatarAspect = 0.58;
+
+  /// 比例的安全范围（异常值不能把布局撑坏）
+  static const double minAvatarAspect = 0.28;
+  static const double maxAvatarAspect = 0.90;
+
+  /// 角色盒的最小宽度
   ///
-  /// Live2D 人物模型本身是**竖长**的（约 0.6~0.75），
-  /// 之前把角色盒做成横向（420×330）时，模型按高度适配后
-  /// 宽度只用到一半，两侧全是空白 —— 看起来「数字人比框小很多」。
-  /// 这里改成竖比例，模型能填满 90% 以上宽度。
-  static const double avatarAspect = 0.60;
+  /// 话术框和角色同宽，太窄的话提词会疯狂换行、被高度裁掉。
+  /// 瘦高模型（如 Haru ≈0.45）按真实比例只有 180 宽，这里托底到 232，
+  /// 模型在框内居中 —— 左右留白对称，不会再出现「只有一边空一大片」。
+  static const double minAvatarBoxWidth = 232;
 
   /// 角色盒高度：按屏幕宽度推导（竖屏下约 58%），限制在 260~420
   static double avatarHeight(double screenWidth) =>
       (screenWidth * 0.58).clamp(260.0, 420.0).toDouble();
 
-  /// 角色盒宽度：由高度 × 长宽比得出（不再反过来定）
-  static double avatarBoxWidth(double screenWidth) =>
-      avatarHeight(screenWidth) * avatarAspect;
+  /// 角色盒宽度 = 高度 × 模型真实宽高比
+  ///
+  /// [modelAspect] 由 WebView 加载后用 `model.getLocalBounds()` 量出
+  /// 并缓存在 `PromptLink.avatarModelAspect`。拿不到（还没量过）时
+  /// 回退到 [defaultAvatarAspect]。这样每个模型都能**贴着自身轮廓**做框，
+  /// 不会出现「角色瘦、框很宽、两侧全空」的情况。
+  static double avatarBoxWidth(double screenWidth, {double modelAspect = 0}) {
+    final h = avatarHeight(screenWidth);
+    final aspect = modelAspect > 0
+        ? modelAspect.clamp(minAvatarAspect, maxAvatarAspect)
+        : defaultAvatarAspect;
+    final w = h * aspect;
+    return w < minAvatarBoxWidth ? minAvatarBoxWidth : w;
+  }
 
   /// 角色组宽度 = 角色盒 + 操作栏 + 间隔
-  static double groupWidth(double screenWidth) =>
-      avatarBoxWidth(screenWidth) + barWidth + barGap;
+  static double groupWidth(double screenWidth, {double modelAspect = 0}) =>
+      avatarBoxWidth(screenWidth, modelAspect: modelAspect) + barWidth + barGap;
 
   @override
   State<FloatingAvatarHost> createState() => _FloatingAvatarHostState();
@@ -84,7 +101,8 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final screen = Size(constraints.maxWidth, constraints.maxHeight);
-            final groupWidth = FloatingAvatarHost.groupWidth(screen.width);
+    final groupWidth = FloatingAvatarHost.groupWidth(screen.width,
+        modelAspect: PromptLink.instance.avatarModelAspect);
             final avatarHeight = FloatingAvatarHost.avatarHeight(screen.width);
             final bubbleHeight = link.bubbleCollapsed ? 0.0 : FloatingAvatarHost.bubbleMaxHeight;
             final expandedWidth = groupWidth;
@@ -359,7 +377,8 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
 
   Size _freeSizeForExpanded() {
     final media = MediaQuery.of(context);
-    final groupWidth = FloatingAvatarHost.groupWidth(media.size.width);
+    final groupWidth = FloatingAvatarHost.groupWidth(media.size.width,
+        modelAspect: PromptLink.instance.avatarModelAspect);
     final bubbleHeight =
         PromptLink.instance.bubbleCollapsed ? 0.0 : FloatingAvatarHost.bubbleMaxHeight;
     return Size(
@@ -386,7 +405,8 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     if (pos == null) return;
 
     final media = MediaQuery.of(context);
-    final unitWidth = FloatingAvatarHost.groupWidth(media.size.width);
+    final unitWidth = FloatingAvatarHost.groupWidth(media.size.width,
+        modelAspect: PromptLink.instance.avatarModelAspect);
     // 靠近左右边缘 -> 自动贴边收起
     final nearLeft = pos.dx <= FloatingAvatarHost.dockThreshold;
     final nearRight = (media.size.width - (pos.dx + unitWidth)) <= FloatingAvatarHost.dockThreshold;
@@ -408,7 +428,10 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     // 用实际位置判断贴哪一侧（_dragPos 为空时取已保存的位置）
     final currentLeft = _dragPos?.dx ??
         AvatarLayout.resolve(link.avatarPosX, link.avatarPosY, free).dx;
-    final center = currentLeft + FloatingAvatarHost.groupWidth(media.size.width) / 2;
+    final center = currentLeft +
+        FloatingAvatarHost.groupWidth(media.size.width,
+            modelAspect: PromptLink.instance.avatarModelAspect) /
+            2;
     setState(() {
       _dockRight = center > media.size.width / 2;
       _dockAnchor = _dragPos ?? Offset.zero;
