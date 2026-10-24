@@ -107,7 +107,8 @@
         const baseW = model.width;
         const baseH = model.height;
         if (!baseW || !baseH) return;
-        const scale = Math.min(w / baseW, h / baseH) * 0.96;
+        // 角色盒本身已是竖比例（0.72），这里只留 1% 边距即可填满
+        const scale = Math.min(w / baseW, h / baseH) * 0.99;
         model.scale.set(scale);
         model.x = (w - baseW * scale) / 2;
         model.y = h - baseH * scale;   // 贴底显示

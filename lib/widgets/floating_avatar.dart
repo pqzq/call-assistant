@@ -20,19 +20,12 @@ class FloatingAvatarHost extends StatefulWidget {
   /// 右侧竖排操作栏宽度
   static const double barWidth = 36;
 
-  /// 角色组（角色 + 操作栏）占屏幕宽度的比例
-  static const double groupRatio = 0.8;
-
-  /// 角色组宽度上下限
-  static const double groupMinWidth = 240;
-  static const double groupMaxWidth = 460;
-
   /// 贴边时（缩小）尺寸
-  static const double dockedWidth = 116;
-  static const double dockedHeight = 146;
+  static const double dockedWidth = 112;
+  static const double dockedHeight = 152;
 
   /// 角色盒与操作栏之间的间隔
-  static const double barGap = 4;
+  static const double barGap = 2;
 
   /// 贴边判定阈值（距屏幕边缘多少像素内触发）
   static const double dockThreshold = 36;
@@ -40,18 +33,25 @@ class FloatingAvatarHost extends StatefulWidget {
   /// 话术框最大高度
   static const double bubbleMaxHeight = 150;
 
-  /// 角色组宽度：约占屏幕一半
-  static double groupWidth(double screenWidth) => (screenWidth * groupRatio)
-      .clamp(groupMinWidth, groupMaxWidth)
-      .toDouble();
+  /// 角色盒的长宽比（宽 / 高）
+  ///
+  /// Live2D 人物模型本身是**竖长**的（约 0.6~0.75），
+  /// 之前把角色盒做成横向（420×330）时，模型按高度适配后
+  /// 宽度只用到一半，两侧全是空白 —— 看起来「数字人比框小很多」。
+  /// 这里改成竖比例，模型能填满 90% 以上宽度。
+  static const double avatarAspect = 0.72;
 
-  /// 角色盒宽度（角色组减去操作栏）
-  static double avatarBoxWidth(double screenWidth) =>
-      groupWidth(screenWidth) - barWidth - barGap;
-
-  /// 角色盒高度：与宽度成比例，看起来比之前更大
+  /// 角色盒高度：按屏幕宽度推导（竖屏下约 58%），限制在 260~420
   static double avatarHeight(double screenWidth) =>
-      (avatarBoxWidth(screenWidth) * 1.42).clamp(220.0, 330.0).toDouble();
+      (screenWidth * 0.58).clamp(260.0, 420.0).toDouble();
+
+  /// 角色盒宽度：由高度 × 长宽比得出（不再反过来定）
+  static double avatarBoxWidth(double screenWidth) =>
+      avatarHeight(screenWidth) * avatarAspect;
+
+  /// 角色组宽度 = 角色盒 + 操作栏 + 间隔
+  static double groupWidth(double screenWidth) =>
+      avatarBoxWidth(screenWidth) + barWidth + barGap;
 
   @override
   State<FloatingAvatarHost> createState() => _FloatingAvatarHostState();
@@ -188,7 +188,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                     ],
                   ),
                   if (!link.bubbleCollapsed) ...<Widget>[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     // 话术框与上方「角色 + 操作栏」整体左对齐、宽度一致
                     // （宽度用 double.infinity 继承容器宽度，避免出现偏差）
                     AvatarBubble(
@@ -323,7 +323,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             onPanCancel: () => setState(() => _dragging = false),
             child: SizedBox(
               width: FloatingAvatarHost.barWidth,
-              height: 36,
+              height: 32,
               child: Icon(Icons.drag_indicator, size: 18, color: iconColor),
             ),
           ),
@@ -384,7 +384,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         onTap: enabled ? onTap : null,
         child: SizedBox(
           width: FloatingAvatarHost.barWidth,
-          height: 36,
+          height: 32,
           child: Icon(
             icon,
             size: 17,

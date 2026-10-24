@@ -454,6 +454,27 @@ Live2DPal::LoadFileAsBytes("FrameworkShaders/VertShaderSrc.vert")   // → AAsse
 
 **修复**：把 `StandardES/*.vert` / `*.frag`（36 个）复制到 `android/src/main/assets/FrameworkShaders/`。
 
+#### Bug 3：模型适配用 SetWidth 导致瘦高模型被裁成半身
+
+```cpp
+// 插件原始代码
+if (view->width > view->height)
+    model->GetModelMatrix()->SetHeight(2.0f);   // 横容器：高度填满 ✓
+else
+    model->GetModelMatrix()->SetWidth(2.0f);    // 竖容器：宽度填满 → 高度溢出 ✗
+```
+
+竖容器里按**宽度**填满时，瘦高模型（如 Natori，宽高比约 0.49）的高度会达到视口高度的 1.4 倍以上 —— **头和脚都被裁掉，只剩半身**。
+
+**修复**：统一改成「按高度填满」：
+
+```cpp
+const float aspect = (float)view->height / (float)view->width;
+const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f);
+model->GetModelMatrix()->SetHeight(targetH);
+```
+
+实测：`fit view=795x1104 aspect=1.389 targetH=2.777` → 模型完整显示且高度最大化。
 #### 排查过程中确认过的「正常」项（避免误判）
 
 | 检查项 | 结果 |
@@ -490,27 +511,41 @@ flutter build apk --release
 修法：新增 `lib/services/app_navigator.dart`，用 `GlobalKey<NavigatorState>` 拿到全局 Navigator，弹窗和 Toast 都改走 `resolveNavigator(context)` / `resolveOverlay(context)`（优先用 context 上的，回退到全局 key）。
 
 
-### 数字人渲染引擎可切换（原生为实验性）
+### 手机端悬浮数字人的排版
+
+浮窗由「角色盒 + 右侧操作栏 + 下方话术框」组成，尺寸全部由 `FloatingAvatarHost` 的静态方法推导：
+
+| 参数 | 值 | 说明 |
+| --- | --- | --- |
+| `avatarHeight(screenWidth)` | `screenWidth * 0.58`（clamp 260~420） | **角色盒高度先定**，竖屏下约 401 |
+| `avatarAspect` | `0.72` | 角色盒宽 / 高 |
+| `avatarBoxWidth` | `avatarHeight * 0.72` | 约 289 |
+| `groupWidth` | `avatarBoxWidth + 36 + 2` | 约 327（整组宽度） |
+| `barWidth` / 格子高 | `36` / `32` | 右侧操作栏 |
+| `barGap` | `2` | 角色盒与操作栏间距 |
+| 话术框间距 | `6` | 与角色盒之间 |
+
+**为什么改成「以高度定宽度」**：Live2D 人物模型本身是**竖长**的（宽高比约 0.5~0.7）。早期把角色盒做成横向（420×330），模型按高度适配后**宽度只用了一半**，两侧全是空白 —— 就是「数字人比框小很多、看着松散」的原因。改成竖比例后模型宽度利用率从 ~52% 提到 ~71%，整组宽度也从 460 收窄到 327。
+
+WebView 侧的适配系数同步从 `0.96` 提到 `0.99`（几乎贴边），见 `assets/live2d/index.html` 的 `fit()`。
+### 数字人渲染引擎可切换
 
 数字人有两种渲染后端，可在「双机联动播报 → 数字人 → 模型与展示 → **渲染引擎**」里切换：
 
 | 后端 | 实现 | 平台 | 状态 |
 | --- | --- | --- | --- |
 | **WebView**（默认） | WebView + PIXI + Cubism Web SDK | 全平台 | ✅ 稳定，长期验证 |
-| **原生（实验性）** | Cubism Native SDK + OpenGL ES 2（`flutter_live2d`） | Android / iOS | ⚠️ 模型能加载但**画面不绘制**（插件缺陷） |
+| **原生** | Cubism Native SDK + OpenGL ES 2（`flutter_live2d`） | Android / iOS | ✅ 可用（构建前需跑补丁脚本，见下节） |
 
 - 选择会记住（`prompt_avatar_backend`），重启后保持
 - 切换后数字人立即按新后端重新加载，模型/嘴型/导入逻辑完全复用
+- **当前平台不支持的后端会置灰**（如 Windows 上的原生渲染 —— `flutter_live2d` 只声明了 Android / iOS）
 
-**原生后端当前的问题（已实测确认）**
+**原生后端踩过的坑（5 个，全部已修）**
 
-```
-[原生渲染] loadModel 最终返回: true
-D/CubismCore: Live2D Cubism SDK Core Version 6.0.1
-```
-原生侧**加载成功、Cubism Core 正常初始化**，但 TextureView 不上屏（画面空白）。属于 `flutter_live2d` 插件自身的 TextureView + 单 EGL context 渲染 hub 在部分 ROM 上的兼容问题。
+上游插件的 3 个（详见后文「两个上游 bug 与修复」一节，实际是 3 个）：GL context 初始化时机、shader 未打进 APK、`SetWidth` 导致瘦高模型裁成半身。
 
-排查过程中已修掉两个**我们这边**的坑：
+我们这边的 2 个：
 
 1. **`Live2DView` 必须始终在 widget 树里** —— 插件的 controller 靠视图挂载才 `_attach()`，`whenAttached` 才 resolve；按加载状态决定是否渲染它会造成死锁
 2. **加载中不要上报错误** —— 一旦上层用错误框替换掉 `Live2DView`，插件立即 detach，后续 `loadModel` 全部 `VIEW_NOT_ATTACHED`
@@ -522,7 +557,7 @@ D/CubismCore: Live2D Cubism SDK Core Version 6.0.1
 lib/services/avatar_renderer.dart                    # AvatarRenderer 抽象 + AvatarBackend 枚举 + 平台可用性
 lib/widgets/live2d_avatar.dart                       # 壳：按后端创建 renderer，转发嘴型
 lib/widgets/renderers/webview_avatar_renderer.dart   # WebView 实现
-lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现（实验性）
+lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现
 ```
 
 **代价**：APK +4MB（Cubism Core 静态库），Android 构建需要 CMake 3.10.2 + NDK 27.2（CI 已自动安装）。

@@ -110,6 +110,42 @@ const List<_Edit> _edits = <_Edit>[
 }''',
     marker: '只有真的在 surface created 时 retain 过',
   ),
+
+  // ---- 5. 模型适配改成「按高度填满」（修裁头/裁脚） ----
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    if (view->width > view->height)
+        view->model->GetModelMatrix()->SetHeight(2.0f);
+    else
+        view->model->GetModelMatrix()->SetWidth(2.0f);
+
+    return true;''',
+    '''    // 按「高度填满」适配：竖容器若用 SetWidth，瘦高模型（如 Natori）
+    // 的高度会远超视口，头和脚都被裁掉（只剩半身）。
+    // SetHeight 保证完整显示，且高度方向最大化利用。
+    {
+        const float aspect = (float)view->height / (float)view->width;
+        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f);
+        view->model->GetModelMatrix()->SetHeight(targetH);
+    }
+
+    return true;''',
+    marker: '按「高度填满」适配',
+  ),
+
+  // ---- 6. nativeOnSurfaceChanged 里同步同样的适配策略 ----
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''        if (view->width > view->height)
+            view->model->GetModelMatrix()->SetHeight(2.0f);
+        else
+            view->model->GetModelMatrix()->SetWidth(2.0f);''',
+    '''        // 与 ReloadModelInternal 保持一致的「按高度填满」策略
+        const float aspect = (float)view->height / (float)view->width;
+        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f);
+        view->model->GetModelMatrix()->SetHeight(targetH);''',
+    marker: '与 ReloadModelInternal 保持一致的',
+  ),
 ];
 
 Future<void> main() async {
