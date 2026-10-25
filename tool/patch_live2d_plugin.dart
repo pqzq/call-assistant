@@ -300,78 +300,6 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
     override fun onSurfaceTextureAvailable''',
     marker: '返回 false：让事件继续冒泡给 Flutter',
   ),
-
-  // ---- 5. 模型适配改成「按 canvas 长宽比」（修比例被压扁） ----
-  _Edit(
-    'android/src/main/cpp/live2d_flutter.cpp',
-    '''    if (view->width > view->height)
-        view->model->GetModelMatrix()->SetHeight(2.0f);
-    else
-        view->model->GetModelMatrix()->SetWidth(2.0f);
-
-    return true;''',
-    '''    // Cubism 官方标准适配：**等比缩放 + 由 Cubism 自己保持居中**。
-    // 投影是单位矩阵（视口 x,y ∈ [-1,1]），SetHeight/SetWidth 内部
-    // scaleX = scaleY，所以模型不会被拉伸；且以 canvas 中心为原点，
-    // 位置自然在视口中间（演示模式等不同画布尺寸也跟着对）。
-    //
-    // 之前试过按 drawable 顶点算「角色本体」边界来做居中补偿，
-    // 但那个数据在加载瞬间还没 Update、不可靠，会把位置算歪。
-    {
-        float cw = 0.0f, ch = 0.0f;
-        view->model->GetCanvasSize(cw, ch);
-        if (cw > 0.0f && ch > 0.0f)
-        {
-            const float modelAspect = cw / ch;
-            const float viewAspect = (view->width > 0 && view->height > 0)
-                ? (float)view->width / (float)view->height
-                : 1.0f;
-            if (viewAspect > modelAspect)
-            {
-                // 视口更宽 -> 按 canvas 高度填满（两侧可能留白）
-                view->model->GetModelMatrix()->SetHeight(2.0f);
-            }
-            else
-            {
-                // 视口更高 -> 按 canvas 宽度填满（上下可能留白）
-                view->model->GetModelMatrix()->SetWidth(2.0f);
-            }
-        }
-    }
-
-    return true;''',
-    marker: 'Cubism 官方标准适配：**等比缩放 + 由 Cubism 自己保持居中**',
-  ),
-
-  // ---- 6. nativeOnSurfaceChanged 里同步同样的适配策略 ----
-  _Edit(
-    'android/src/main/cpp/live2d_flutter.cpp',
-    '''        if (view->width > view->height)
-            view->model->GetModelMatrix()->SetHeight(2.0f);
-        else
-            view->model->GetModelMatrix()->SetWidth(2.0f);''',
-    '''        // 与 ReloadModelInternal 保持一致：Cubism 官方标准适配（等比 + 居中）
-        float cw = 0.0f, ch = 0.0f;
-        view->model->GetCanvasSize(cw, ch);
-        if (cw > 0.0f && ch > 0.0f)
-        {
-            const float modelAspect = cw / ch;
-            const float viewAspect = (view->width > 0 && view->height > 0)
-                ? (float)view->width / (float)view->height
-                : 1.0f;
-            if (viewAspect > modelAspect)
-            {
-                view->model->GetModelMatrix()->SetHeight(2.0f);
-            }
-            else
-            {
-                view->model->GetModelMatrix()->SetWidth(2.0f);
-            }
-        }''',
-    marker: '与 ReloadModelInternal 保持一致：Cubism 官方标准适配',
-  ),
-
-  // ---- 6.1 投影矩阵改成单位矩阵（比例由模型矩阵保证） ----
   _Edit(
     'android/src/main/cpp/live2d_flutter.cpp',
     '''    view->projection.LoadIdentity();
@@ -476,6 +404,176 @@ void Live2DModel::GetContentBounds(
     }
 }''',
     marker: 'void Live2DModel::GetContentBounds',
+  ),
+
+  // ---- 6.3 内容边界改成「缓存 + 每帧刷新」 ----
+  //
+  // 关键：drawable 顶点是 `_model->Update()` 写进去的，加载完那一帧
+  // 还没 Update 时顶点是空的 —— 边界必须等 Update 之后才算。
+  _Edit(
+    'android/src/main/cpp/Live2DModel.hpp',
+    '''    void GetContentBounds(
+        float& minX, float& minY, float& maxX, float& maxY) const;''',
+    '''    void GetContentBounds(
+        float& minX, float& minY, float& maxX, float& maxY) const;
+
+    /// 重新计算内容边界（每帧 Update 之后调用）
+    void RefreshContentBounds();''',
+    marker: 'void RefreshContentBounds',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.hpp',
+    '''    Csm::csmMap<Csm::csmString, Csm::csmFloat32> _externalParams;''',
+    '''    Csm::csmMap<Csm::csmString, Csm::csmFloat32> _externalParams;
+
+    /// 内容边界缓存（模型空间），每帧 Update 之后刷新
+    float _contentMinX = 0.0f;
+    float _contentMinY = 0.0f;
+    float _contentMaxX = 0.0f;
+    float _contentMaxY = 0.0f;
+    bool _contentBoundsValid = false;''',
+    marker: '_contentBoundsValid',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.cpp',
+    '''void Live2DModel::GetContentBounds(
+    float& minX, float& minY, float& maxX, float& maxY) const
+{
+    minX = minY = 1e9f;
+    maxX = maxY = -1e9f;
+    if (!_model) return;
+    const csmInt32 drawableCount = _model->GetDrawableCount();
+    for (csmInt32 d = 0; d < drawableCount; d++)
+    {
+        const csmInt32 vCount = _model->GetDrawableVertexCount(d);
+        if (vCount <= 0) continue;
+        // GetDrawableVertices 返回扁平数组：每顶点 x, y 两个 float
+        const csmFloat32* verts = _model->GetDrawableVertices(d);
+        if (!verts) continue;
+        for (csmInt32 i = 0; i < vCount; i++)
+        {
+            const float x = verts[i * 2];
+            const float y = verts[i * 2 + 1];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+    }
+}''',
+    '''void Live2DModel::RefreshContentBounds()
+{
+    if (!_model) return;
+    float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
+    const csmInt32 drawableCount = _model->GetDrawableCount();
+    for (csmInt32 d = 0; d < drawableCount; d++)
+    {
+        const csmInt32 vCount = _model->GetDrawableVertexCount(d);
+        if (vCount <= 0) continue;
+        const csmFloat32* verts = _model->GetDrawableVertices(d);
+        if (!verts) continue;
+        for (csmInt32 i = 0; i < vCount; i++)
+        {
+            const float x = verts[i * 2];
+            const float y = verts[i * 2 + 1];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+    }
+    if (maxX > minX && maxY > minY)
+    {
+        _contentMinX = minX;
+        _contentMinY = minY;
+        _contentMaxX = maxX;
+        _contentMaxY = maxY;
+        _contentBoundsValid = true;
+    }
+}
+
+void Live2DModel::GetContentBounds(
+    float& minX, float& minY, float& maxX, float& maxY) const
+{
+    minX = _contentMinX;
+    minY = _contentMinY;
+    maxX = _contentMaxX;
+    maxY = _contentMaxY;
+}''',
+    marker: 'void Live2DModel::RefreshContentBounds',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.cpp',
+    '''    _model->Update();
+}''',
+    '''    _model->Update();
+
+    // 顶点数据是 _model->Update() 写进去的，所以内容边界必须**之后**才算
+    // （加载完那一帧还没 Update 时顶点是空的，边界会算成 0）
+    RefreshContentBounds();
+}''',
+    marker: 'RefreshContentBounds();',
+  ),
+
+  // ---- 6.4 每帧按角色本体适配视口（比例 + 居中） ----
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''static bool ReloadModelInternal(Live2DView* view, const char* dir, const char* file)''',
+    '''/// 按**角色本体**（drawable 顶点并集）把模型适配到视口
+///
+/// Live2D 的 canvas 四周留白很大，若只按 canvas 适配，角色在竖长的
+/// 盒子里会被拉得很长（宽度填满、高度溢出视口）。
+/// 投影是单位矩阵（视口 x,y ∈ [-1,1]），所以让内容边界完整放入即可：
+///   缩放系数 s = min(2/内容宽, 2/内容高)
+///   SetHeight 等比缩放（内部 scaleX = scaleY，不会变形）
+///   SetCenterPosition 把**内容中心**移到视口中心
+///
+/// 内容边界由 Live2DModel 在每帧 Update() 之后缓存（那时顶点才有效），
+/// 所以这个函数要**每帧**调用一次。
+static void ApplyViewportFit(Live2DView* view)
+{
+    if (!view || !view->model || !view->model->IsLoaded()) return;
+
+    float minX = 0.0f, minY = 0.0f, maxX = 0.0f, maxY = 0.0f;
+    view->model->GetContentBounds(minX, minY, maxX, maxY);
+    const float bw = maxX - minX;
+    const float bh = maxY - minY;
+    float cw = 0.0f, ch = 0.0f;
+    view->model->GetCanvasSize(cw, ch);
+    if (bw <= 0.0f || bh <= 0.0f || cw <= 0.0f || ch <= 0.0f) return;
+
+    const float s = fminf(2.0f / bw, 2.0f / bh);
+    auto* mm = view->model->GetModelMatrix();
+    if (!mm) return;
+    // SetHeight 的参数是「目标高度」，这里换算成 canvas 高度
+    mm->SetHeight(ch * s);
+    // 内容中心 = canvas 中心 + 偏移，把它归零
+    mm->SetCenterPosition(
+        -(minX + maxX) * 0.5f * s, -(minY + maxY) * 0.5f * s);
+}
+
+static bool ReloadModelInternal(Live2DView* view, const char* dir, const char* file)''',
+    marker: 'static void ApplyViewportFit(Live2DView* view)',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    view->model->SetupTextures();
+    L2DLOG("SetupTextures done");''',
+    '''    view->model->SetupTextures();
+    L2DLOG("SetupTextures done");
+    // 按角色本体适配（见 ApplyViewportFit）
+    ApplyViewportFit(view);''',
+    marker: '按角色本体适配（见 ApplyViewportFit）',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''        view->model->Update();
+        CubismMatrix44 mvp = view->projection;''',
+    '''        view->model->Update();
+        // Update() 之后内容边界才是最新的 -> 每帧重新适配一次
+        ApplyViewportFit(view);
+        CubismMatrix44 mvp = view->projection;''',
+    marker: 'Update() 之后内容边界才是最新的',
   ),
 ];
 
