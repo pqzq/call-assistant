@@ -310,32 +310,37 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
         view->model->GetModelMatrix()->SetWidth(2.0f);
 
     return true;''',
-    '''    // 按**角色本体**（drawable 顶点的并集）适配视口：
-    // Live2D 的 canvas 四周留白很大，按 canvas 适配会让角色在竖长的
-    // 盒子里显得又细又长（WebView 侧用 model.getLocalBounds() 也是这个道理）。
-    // 投影是单位矩阵（视口 x,y ∈ [-1,1]），缩放系数取
-    // min(2/contentW, 2/contentH)，再把内容中心移到视口中心。
+    '''    // Cubism 官方标准适配：**等比缩放 + 由 Cubism 自己保持居中**。
+    // 投影是单位矩阵（视口 x,y ∈ [-1,1]），SetHeight/SetWidth 内部
+    // scaleX = scaleY，所以模型不会被拉伸；且以 canvas 中心为原点，
+    // 位置自然在视口中间（演示模式等不同画布尺寸也跟着对）。
+    //
+    // 之前试过按 drawable 顶点算「角色本体」边界来做居中补偿，
+    // 但那个数据在加载瞬间还没 Update、不可靠，会把位置算歪。
     {
         float cw = 0.0f, ch = 0.0f;
         view->model->GetCanvasSize(cw, ch);
-        float minX = 0.0f, minY = 0.0f, maxX = 0.0f, maxY = 0.0f;
-        view->model->GetContentBounds(minX, minY, maxX, maxY);
-        const float bw = maxX - minX;
-        const float bh = maxY - minY;
-        if (cw > 0.0f && ch > 0.0f && bw > 0.0f && bh > 0.0f)
+        if (cw > 0.0f && ch > 0.0f)
         {
-            const float s = fminf(2.0f / bw, 2.0f / bh);
-            auto* mm = view->model->GetModelMatrix();
-            // SetHeight 等比缩放（scaleX = scaleY），传 canvas 高度换算
-            mm->SetHeight(ch * s);
-            // 内容中心移到视口中心（SetCenterPosition 会按当前缩放换算平移）
-            mm->SetCenterPosition(
-                -(minX + maxX) * 0.5f * s, -(minY + maxY) * 0.5f * s);
+            const float modelAspect = cw / ch;
+            const float viewAspect = (view->width > 0 && view->height > 0)
+                ? (float)view->width / (float)view->height
+                : 1.0f;
+            if (viewAspect > modelAspect)
+            {
+                // 视口更宽 -> 按 canvas 高度填满（两侧可能留白）
+                view->model->GetModelMatrix()->SetHeight(2.0f);
+            }
+            else
+            {
+                // 视口更高 -> 按 canvas 宽度填满（上下可能留白）
+                view->model->GetModelMatrix()->SetWidth(2.0f);
+            }
         }
     }
 
     return true;''',
-    marker: '按**角色本体**（drawable 顶点的并集）适配视口',
+    marker: 'Cubism 官方标准适配：**等比缩放 + 由 Cubism 自己保持居中**',
   ),
 
   // ---- 6. nativeOnSurfaceChanged 里同步同样的适配策略 ----
@@ -345,22 +350,25 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
             view->model->GetModelMatrix()->SetHeight(2.0f);
         else
             view->model->GetModelMatrix()->SetWidth(2.0f);''',
-    '''        // 与 ReloadModelInternal 保持一致：按角色本体（drawable 顶点）适配
+    '''        // 与 ReloadModelInternal 保持一致：Cubism 官方标准适配（等比 + 居中）
         float cw = 0.0f, ch = 0.0f;
         view->model->GetCanvasSize(cw, ch);
-        float minX = 0.0f, minY = 0.0f, maxX = 0.0f, maxY = 0.0f;
-        view->model->GetContentBounds(minX, minY, maxX, maxY);
-        const float bw = maxX - minX;
-        const float bh = maxY - minY;
-        if (cw > 0.0f && ch > 0.0f && bw > 0.0f && bh > 0.0f)
+        if (cw > 0.0f && ch > 0.0f)
         {
-            const float s = fminf(2.0f / bw, 2.0f / bh);
-            auto* mm = view->model->GetModelMatrix();
-            mm->SetHeight(ch * s);
-            mm->SetCenterPosition(
-                -(minX + maxX) * 0.5f * s, -(minY + maxY) * 0.5f * s);
+            const float modelAspect = cw / ch;
+            const float viewAspect = (view->width > 0 && view->height > 0)
+                ? (float)view->width / (float)view->height
+                : 1.0f;
+            if (viewAspect > modelAspect)
+            {
+                view->model->GetModelMatrix()->SetHeight(2.0f);
+            }
+            else
+            {
+                view->model->GetModelMatrix()->SetWidth(2.0f);
+            }
         }''',
-    marker: '与 ReloadModelInternal 保持一致：按角色本体',
+    marker: '与 ReloadModelInternal 保持一致：Cubism 官方标准适配',
   ),
 
   // ---- 6.1 投影矩阵改成单位矩阵（比例由模型矩阵保证） ----
