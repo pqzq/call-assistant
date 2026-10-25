@@ -310,21 +310,32 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
         view->model->GetModelMatrix()->SetWidth(2.0f);
 
     return true;''',
-    '''    // 按**模型 canvas 的长宽比**适配视口：
-    // 投影已改成单位矩阵（视口 x,y ∈ [-1,1]），所以要让 canvas 完整放入，
-    // 缩放系数取 min(2/canvasW, 2/canvasH)（含 canvas 四周的留白）。
+    '''    // 按**角色本体**（drawable 顶点的并集）适配视口：
+    // Live2D 的 canvas 四周留白很大，按 canvas 适配会让角色在竖长的
+    // 盒子里显得又细又长（WebView 侧用 model.getLocalBounds() 也是这个道理）。
+    // 投影是单位矩阵（视口 x,y ∈ [-1,1]），缩放系数取
+    // min(2/contentW, 2/contentH)，再把内容中心移到视口中心。
     {
         float cw = 0.0f, ch = 0.0f;
         view->model->GetCanvasSize(cw, ch);
-        if (cw > 0.0f && ch > 0.0f)
+        float minX = 0.0f, minY = 0.0f, maxX = 0.0f, maxY = 0.0f;
+        view->model->GetContentBounds(minX, minY, maxX, maxY);
+        const float bw = maxX - minX;
+        const float bh = maxY - minY;
+        if (cw > 0.0f && ch > 0.0f && bw > 0.0f && bh > 0.0f)
         {
-            const float s = fminf(2.0f / cw, 2.0f / ch);
-            view->model->GetModelMatrix()->SetHeight(ch * s);
+            const float s = fminf(2.0f / bw, 2.0f / bh);
+            auto* mm = view->model->GetModelMatrix();
+            // SetHeight 等比缩放（scaleX = scaleY），传 canvas 高度换算
+            mm->SetHeight(ch * s);
+            // 内容中心移到视口中心（SetCenterPosition 会按当前缩放换算平移）
+            mm->SetCenterPosition(
+                -(minX + maxX) * 0.5f * s, -(minY + maxY) * 0.5f * s);
         }
     }
 
     return true;''',
-    marker: '按**模型 canvas 的长宽比**适配',
+    marker: '按**角色本体**（drawable 顶点的并集）适配视口',
   ),
 
   // ---- 6. nativeOnSurfaceChanged 里同步同样的适配策略 ----
@@ -334,15 +345,22 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
             view->model->GetModelMatrix()->SetHeight(2.0f);
         else
             view->model->GetModelMatrix()->SetWidth(2.0f);''',
-    '''        // 与 ReloadModelInternal 保持一致：按 canvas 长宽比适配（不压扁）
+    '''        // 与 ReloadModelInternal 保持一致：按角色本体（drawable 顶点）适配
         float cw = 0.0f, ch = 0.0f;
         view->model->GetCanvasSize(cw, ch);
-        if (cw > 0.0f && ch > 0.0f)
+        float minX = 0.0f, minY = 0.0f, maxX = 0.0f, maxY = 0.0f;
+        view->model->GetContentBounds(minX, minY, maxX, maxY);
+        const float bw = maxX - minX;
+        const float bh = maxY - minY;
+        if (cw > 0.0f && ch > 0.0f && bw > 0.0f && bh > 0.0f)
         {
-            const float s = fminf(2.0f / cw, 2.0f / ch);
-            view->model->GetModelMatrix()->SetHeight(ch * s);
+            const float s = fminf(2.0f / bw, 2.0f / bh);
+            auto* mm = view->model->GetModelMatrix();
+            mm->SetHeight(ch * s);
+            mm->SetCenterPosition(
+                -(minX + maxX) * 0.5f * s, -(minY + maxY) * 0.5f * s);
         }''',
-    marker: '与 ReloadModelInternal 保持一致：按 canvas 长宽比',
+    marker: '与 ReloadModelInternal 保持一致：按角色本体',
   ),
 
   // ---- 6.1 投影矩阵改成单位矩阵（比例由模型矩阵保证） ----
@@ -392,6 +410,64 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
 
 void Live2DModel::SetExternalParameter(const Csm::csmChar* parameterId, Csm::csmFloat32 value)''',
     marker: 'void Live2DModel::GetCanvasSize',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.hpp',
+    '''    void GetCanvasSize(float& width, float& height) const;''',
+    '''    void GetCanvasSize(float& width, float& height) const;
+
+    /// 取模型**内容**（所有 drawable 顶点的并集）在模型空间的包围盒
+    ///
+    /// Live2D 的 canvas 四周留白很大（角色只占中间一部分），
+    /// 按 canvas 适配会让角色在竖长的盒子里显得又细又长。
+    /// 用 drawable 顶点算出的才是角色**本体**的范围。
+    void GetContentBounds(
+        float& minX, float& minY, float& maxX, float& maxY) const;''',
+    marker: 'void GetContentBounds',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.cpp',
+    '''void Live2DModel::GetCanvasSize(float& width, float& height) const
+{
+    width = height = 0.0f;
+    if (!_model) return;
+    width = _model->GetCanvasWidth();
+    height = _model->GetCanvasHeight();
+}''',
+    '''void Live2DModel::GetCanvasSize(float& width, float& height) const
+{
+    width = height = 0.0f;
+    if (!_model) return;
+    width = _model->GetCanvasWidth();
+    height = _model->GetCanvasHeight();
+}
+
+void Live2DModel::GetContentBounds(
+    float& minX, float& minY, float& maxX, float& maxY) const
+{
+    minX = minY = 1e9f;
+    maxX = maxY = -1e9f;
+    if (!_model) return;
+    const csmInt32 drawableCount = _model->GetDrawableCount();
+    for (csmInt32 d = 0; d < drawableCount; d++)
+    {
+        const csmInt32 vCount = _model->GetDrawableVertexCount(d);
+        if (vCount <= 0) continue;
+        // GetDrawableVertices 返回扁平数组：每顶点 x, y 两个 float
+        const csmFloat32* verts = _model->GetDrawableVertices(d);
+        if (!verts) continue;
+        for (csmInt32 i = 0; i < vCount; i++)
+        {
+            const float x = verts[i * 2];
+            const float y = verts[i * 2 + 1];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+    }
+}''',
+    marker: 'void Live2DModel::GetContentBounds',
   ),
 ];
 

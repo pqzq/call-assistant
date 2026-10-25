@@ -5,6 +5,7 @@ import 'package:flutter_live2d/flutter_live2d.dart';
 
 import '../../services/avatar_renderer.dart';
 import '../../services/live2d_service.dart';
+import '../../services/prompt_link.dart';
 
 /// 原生渲染后端：Cubism Native SDK + OpenGL ES 2
 ///
@@ -29,6 +30,27 @@ class NativeAvatarRenderer implements AvatarRenderer {
   bool _loaded = false;
   bool _subscribed = false;
   double _lastMouth = 0;
+
+  /// 上一次下发的紧凑状态（避免重复下发）
+  bool? _lastCompact;
+
+  /// 监听 PromptLink 的贴边紧凑状态
+  ///
+  /// 不能只靠 `Live2dAvatar` 的回调转发 —— 浮窗裁剪会改变 widget 树结构，
+  /// 那边的回调时序不可靠，结果就是贴边时缩放指令发不出去。
+  /// renderer 自己监听最稳。
+  void _onLinkChanged() {
+    final link = PromptLink.instance;
+    if (link.avatarCompact == _lastCompact) return;
+    _lastCompact = link.avatarCompact;
+    setCompact(
+      link.avatarCompact,
+      side: link.avatarCompactSide,
+      width: link.avatarCompactWidth,
+      height: link.avatarCompactHeight,
+      boxHeight: boxHeight,
+    );
+  }
 
   @override
   bool get isSupported => true; // 平台过滤在 backendUnsupportedReason 里做
@@ -59,6 +81,8 @@ class NativeAvatarRenderer implements AvatarRenderer {
       if (!_subscribed) {
         _subscribed = true;
         _controller.addListener(_onStateChanged);
+        // 自己监听贴边紧凑状态（不依赖上层 widget 的回调时序）
+        PromptLink.instance.addListener(_onLinkChanged);
       }
 
       await _controller.whenAttached;
@@ -179,6 +203,7 @@ class NativeAvatarRenderer implements AvatarRenderer {
   Future<void> dispose() async {
     if (_subscribed) {
       _controller.removeListener(_onStateChanged);
+      PromptLink.instance.removeListener(_onLinkChanged);
       _subscribed = false;
     }
     _loaded = false;

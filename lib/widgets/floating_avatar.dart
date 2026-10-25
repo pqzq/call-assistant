@@ -422,6 +422,13 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         _docked = true;
         _dockRight = nearRight && !nearLeft;
       });
+      // 通知后端进入紧凑模式（模型在视图内部缩小）
+      PromptLink.instance.setAvatarCompact(
+        true,
+        side: 'right',
+        width: FloatingAvatarHost.dockedWidth,
+        height: FloatingAvatarHost.dockedHeight,
+      );
       return;
     }
     await _persistPosition(free: free);
