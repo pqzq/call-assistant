@@ -67,6 +67,8 @@ abstract class AvatarRenderer {
     String side = 'left',
     double width = 0,
     double height = 0,
+    /// 角色盒高度（缩放系数的分母：缩放系数 = 目标高度 / 角色盒高度）
+    double boxHeight = 0,
   }) {}
 
   /// 紧凑模式下模型在视图里的位置（用于决定裁剪露出哪一块）

@@ -618,6 +618,52 @@ class PromptLink extends ChangeNotifier {
 
   /// [persist] 为 false 时只更新内存并通知（滑杆拖动过程用），
   /// 松手（onChangeEnd）再调一次带 persist 的落盘，避免每帧写磁盘。
+  /// 贴边紧凑模式：模型在渲染视图内部缩小（不重建视图）
+  ///
+  /// 由浮窗在贴边/恢复时设置，通过 [notifyListeners] 通知 renderer ——
+  /// 不能只依赖 widget 的 didUpdateWidget（浮窗裁剪会改变 widget 树结构，
+  /// 子组件不一定收到更新，结果就是贴边时模型不缩放）。
+  bool _avatarCompact = false;
+
+  /// 紧凑模式下模型贴向哪一侧（`right` = 靠右）
+  String _avatarCompactSide = 'right';
+
+  /// 紧凑模式的目标尺寸（逻辑像素）
+  double _avatarCompactWidth = 0;
+  double _avatarCompactHeight = 0;
+
+  /// 是否处于贴边紧凑模式
+  bool get avatarCompact => _avatarCompact;
+
+  /// 紧凑模式的对齐侧
+  String get avatarCompactSide => _avatarCompactSide;
+
+  /// 紧凑模式的目标宽度
+  double get avatarCompactWidth => _avatarCompactWidth;
+
+  /// 紧凑模式的目标高度
+  double get avatarCompactHeight => _avatarCompactHeight;
+
+  /// 设置贴边紧凑模式
+  void setAvatarCompact(
+    bool enabled, {
+    String side = 'right',
+    double width = 0,
+    double height = 0,
+  }) {
+    if (_avatarCompact == enabled &&
+        _avatarCompactSide == side &&
+        (_avatarCompactWidth - width).abs() < 0.5 &&
+        (_avatarCompactHeight - height).abs() < 0.5) {
+      return;
+    }
+    _avatarCompact = enabled;
+    _avatarCompactSide = side;
+    _avatarCompactWidth = width;
+    _avatarCompactHeight = height;
+    notifyListeners();
+  }
+
   Future<void> setAvatarModelZoom(double zoom, {bool persist = true}) async {
     final v = zoom.clamp(0.8, 1.8).toDouble();
     if ((_avatarModelZoom - v).abs() < 0.001) return;

@@ -187,14 +187,14 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     unawaited(
       controller
           .runJavaScript(
-              'window.avatar && avatar.setZoom ? avatar.setZoom($v) : 0')
+              'window.avatar && window.avatar.setZoom ? window.avatar.setZoom($v) : 0')
           .catchError((Object _) {}),
     );
   }
 
   /// 紧凑模式下模型靠右（页面侧把模型缩到窄条尺寸后靠右放置）
   @override
-  String get compactAlignment => 'right';
+  String get compactAlignment => 'center';
   /// 贴边紧凑模式：让模型在页面内缩小并贴到指定一侧（不重建 WebView）
   @override
   void setCompact(
@@ -202,6 +202,7 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     String side = 'left',
     double width = 0,
     double height = 0,
+    double boxHeight = 0,
   }) {
     final controller = _controller;
     if (controller == null || !_pageReady) return;
@@ -211,7 +212,7 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     unawaited(
       controller
           .runJavaScript(
-              'window.avatar && avatar.setCompact ? avatar.setCompact('
+              'window.avatar && window.avatar.setCompact ? window.avatar.setCompact('
               '${enabled ? 'true' : 'false'}, "$s", $w, $h) : 0')
           .catchError((Object _) {}),
     );

@@ -603,7 +603,26 @@ flutter build apk --release
 | 模型缩小 | 页面侧 `avatar.setCompact(on, side, w, h)` → `fit()` 按窄条尺寸算 scale，把模型缩到 112×152 并**靠到视图右上角** |
 | 露出哪边 | WebView 露**右上角**（`Alignment.topRight`），原生露**顶部**（`Alignment.topCenter`） |
 | 贴边时 | 话术框与操作栏被裁掉，只留模型 |
-| 恢复展开 | 浮窗**外侧**有一个 Flutter 绘制的蓝色「展开」按钮（原生后端平台视图会挡住命中测试，点模型收不到事件） |
+| 恢复展开 | **直接点缩小后的模型**即可恢复（不需要额外的展开按钮） |
+两种后端都能缩到窄条尺寸、显示**缩小版的完整模型**：
+
+- **WebView**：页面内 `avatar.setCompact()` → `fit()` 按窄条尺寸算 scale，
+  模型缩到 112×152 并贴到视图右上角
+- **原生**：走 `__render_scale__` 特殊参数通道（复用 `setParameter`），
+  插件在投影空间做等比缩放，模型保持在视图中央
+
+原生侧踩过的坑：缩放系数是「窄条高度 / **角色盒高度**」，而角色盒高度一开始
+是 0（`boxHeight` 从没被赋值）→ 缩放指令被直接跳过，表现为「贴边后模型大小
+完全没变」。现在由 `Live2dAvatar` 把 `widget.height` 传下去。
+
+**点缩小模型能恢复的前提**：原生后端的 `Live2DView` 是**平台视图**，默认
+（`hitTestBehavior: opaque`）会**独吞所有触摸**，外层 Flutter 的
+`GestureDetector` 收不到事件。补丁里把它改成 `transparent`，触摸才能传到
+Flutter；WebView 侧则靠 CSS `pointer-events: none` 穿透。
+
+**拖动的跟手度**：`AnimatedPositioned` 在拖动过程中会不断重启一个 240ms 的位移动画，
+浮窗永远在追手指 → 看着「不灵敏」。现在**拖动中禁用位置动画**（`Duration.zero`），
+松手后才恢复动画。
 
 ⚠️ 两个必须注意的点：
 

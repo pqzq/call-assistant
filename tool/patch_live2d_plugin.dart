@@ -268,19 +268,24 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
         view->model->Draw(mvp);''',
     '''        view->model->Update();
         CubismMatrix44 mvp = view->projection;
-        // 贴边紧凑模式：把模型在视图内缩小并靠到右上角
+        // 贴边紧凑模式：把模型等比缩小（投影空间），模型保持在视图中央，
+        // Flutter 侧裁剪露出的正是中央，于是能完整看到缩小版模型。
         if (view->renderScale < 1.0f)
         {
             const float s = view->renderScale;
-            // 投影后可见范围是 x,y ∈ [-1,1]：
-            // 缩放后模型占 [-s, s]，把它推到右上角 —— 平移量就是「1 - s」
-            // （x 方向再按「模型宽约为高的 0.5」修正一半，避免右边被裁）
             mvp.Scale(s, s);
-            mvp.TranslateX(1.0f - 0.5f * s);  // 靠右
-            mvp.TranslateY(1.0f - s);          // 靠上
         }
         view->model->Draw(mvp);''',
     marker: '贴边紧凑模式：把模型在视图内缩小并靠到右上角',
+  ),
+  _Edit(
+    'lib/src/view.dart',
+    '''        hitTestBehavior: PlatformViewHitTestBehavior.opaque,''',
+    '''        // 用 transparent 而不是 opaque：opaque 会让平台视图**独吞所有触摸**，
+        // 外层 Flutter 的 GestureDetector（拖动数字人、点击缩小模型恢复展开）
+        // 都收不到事件。
+        hitTestBehavior: PlatformViewHitTestBehavior.transparent,''',
+    marker: 'PlatformViewHitTestBehavior.transparent',
   ),
   _Edit(
     'android/src/main/kotlin/com/linh18nd/flutter_live2d/Live2DPlatformView.kt',

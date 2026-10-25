@@ -118,7 +118,6 @@ class NativeAvatarRenderer implements AvatarRenderer {
   @override
   void setMouth(double value) {
     _lastMouth = value.clamp(0.0, 1.0);
-    if (!_loaded) return;
     _controller.setParameter('ParamMouthOpenY', _lastMouth);
   }
 
@@ -142,26 +141,26 @@ class NativeAvatarRenderer implements AvatarRenderer {
     String side = 'left',
     double width = 0,
     double height = 0,
+    double boxHeight = 0,
   }) {
-    // 通过 `__render_scale__` 特殊参数走 setParameter 通道：
-    // 原生侧把模型缩到窄条大小（插件里用 drawable 顶点算出角色**本体**
-    // 的中心再对齐，所以 canvas 有留白也不会偏）。
-    // 原生侧**不做视图内缩放**：Live2D 的 canvas 四周有留白，角色本体
-    // 不在 canvas 中心（drawable 顶点同样是外框，也含留白），
-    // 缩放后无法精确对齐 —— 试过矩阵平移和顶点对齐，结果都偏。
-    // 这里退化为「不缩放 + 裁剪露出模型顶部」：头和上半身完整可见，
-    // 模型不会消失，点击也能恢复展开。
-    if (_loaded) {
+    if (!enabled) {
       _controller.setParameter('__render_scale__', 1.0);
+      return;
     }
+    final box = boxHeight > 0 ? boxHeight : _boxHeight;
+    if (box <= 0 || height <= 0) return;
+    final scale = (height / box).clamp(0.1, 1.0).toDouble();
+    _controller.setParameter('__render_scale__', scale);
   }
 
-  /// 原生后端把模型缩到窄条大小并对齐角色本体 → 露出视图**中央**
+  /// 原生后端不缩放（canvas 留白导致缩放后无法对齐角色本体）→ 露出视图**顶部**
   @override
-  String get compactAlignment => 'center';
+  String get compactAlignment => 'top';
 
   /// 角色盒高度（用于算紧凑模式的缩放系数）
-  // ignore: unused_element
+  /// 角色盒高度（用于算紧凑模式的缩放系数）
+  double get _boxHeight => boxHeight;
+
 
   @override
   Widget build() {

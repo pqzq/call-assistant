@@ -110,19 +110,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             return Stack(
               children: <Widget>[
                 widget.child,
-                // 贴边时在浮窗**外侧**放一个 Flutter 绘制的「展开」按钮。
-                // 不能只靠点模型恢复：原生后端的 Live2DView 是平台视图，
-                // 它会挡住 Flutter 的命中测试，点击传不到外层 GestureDetector
-                // （WebView 侧能穿透是靠 CSS pointer-events，平台视图没有等价手段）。
-                if (_docked)
-                  Positioned(
-                    // 放在屏幕**内侧**（贴左边时靠右、贴右边时靠左），
-                    // 免得按钮被屏幕边缘切掉一半
-                    left: _dockRight ? 6 : null,
-                    right: _dockRight ? null : 6,
-                    bottom: 6,
-                    child: _ExpandChip(onTap: _restoreFromDock),
-                  ),
                 // 展开/贴边之间用尺寸插值做过渡
                 TweenAnimationBuilder<double>(
                   tween: Tween<double>(end: _docked ? 1 : 0),
@@ -141,7 +128,12 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                     );
                     final pos = _resolvePosition(link, free, screen);
                     return AnimatedPositioned(
-                      duration: const Duration(milliseconds: 240),
+                      // 拖动中**禁用位置动画**：每次手指移动都会重启一个
+                      // 240ms 的位移动画，浮窗永远在追手指 → 看起来「不灵敏」。
+                      // 松手后（或贴边切换）才用动画。
+                      duration: _dragging
+                          ? Duration.zero
+                          : const Duration(milliseconds: 240),
                       curve: Curves.easeOutCubic,
                       left: pos.dx,
                       top: pos.dy,
@@ -226,11 +218,14 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             // - WebView：模型缩到窄条尺寸后靠右 → 露右侧（缩小版全身）
             // - 原生：canvas 有留白，缩放后无法精确对齐角色本体
             //   → 不缩放，露**顶部**（头 + 上半身完整可见，模型不会消失）
+            // 紧凑时露出**中央**：两种后端都会把模型等比缩小并保持在
+            // 视图中央（WebView 侧 setCompact 居中、原生侧矩阵缩放），
+            // 裁剪露中央就能完整看到缩小版的模型。
             alignment: !compact
                 ? Alignment.topLeft
-                : (link.avatarBackend == AvatarBackend.webview
-                    ? Alignment.topRight
-                    : Alignment.topCenter),
+                : (link.avatarBackend == AvatarBackend.native
+                    ? Alignment.center
+                    : Alignment.topRight),
             // 内层保持**固定尺寸**：动画只改裁剪框，
             // 平台视图（WebView）不会被 resize
             minWidth: groupWidth,
@@ -381,6 +376,8 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
       _docked = false;
       _dragPos = AvatarLayout.clampPixel(current, free);
     });
+    // 退出紧凑模式，恢复完整尺寸
+    link.setAvatarCompact(false);
   }
 
   // ---------------- 拖动 / 贴边 ----------------
@@ -445,6 +442,13 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
       _dockRight = center > media.size.width / 2;
       _docked = true;
     });
+    // 通知后端：把模型在视图内部缩小到窄条大小（不重建视图）
+    link.setAvatarCompact(
+      true,
+      side: 'right',
+      width: FloatingAvatarHost.dockedWidth,
+      height: FloatingAvatarHost.dockedHeight,
+    );
   }
 
   Future<void> _persistPosition({required Size free}) async {
@@ -456,38 +460,4 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
 }
 
 
-  /// 贴边时的「展开」按钮（Flutter 绘制，不受平台视图挡触摸的影响）
-  class _ExpandChip extends StatelessWidget {
-    const _ExpandChip({required this.onTap});
-
-    final VoidCallback onTap;
-
-    @override
-    Widget build(BuildContext context) {
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: const Color(0xFF2F6BFF).withValues(alpha: 0.92),
-            shape: BoxShape.circle,
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.22),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.open_in_full_rounded,
-            size: 16,
-            color: Colors.white,
-          ),
-        ),
-      );
-    }
-  }
 

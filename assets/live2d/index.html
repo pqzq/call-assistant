@@ -194,6 +194,16 @@
         model.y = scaledH > h ? 0 : h - scaledH;
       };
       fit();
+      // 兜底：紧凑状态变化时重新排版。
+      // Flutter 侧调 setCompact 的时机可能早于 boot 完成（此时 avatar._fit
+      // 还没赋值，调用会被静默跳过），所以每帧检查一次状态变化。
+      let lastCompact = avatar.compact;
+      app.ticker.add(() => {
+        if (avatar.compact !== lastCompact) {
+          lastCompact = avatar.compact;
+          fit();
+        }
+      });
       // 暴露给 Flutter：滑杆调「模型大小」时直接重排，不用重载页面；
       // _model 给 modelAspect 用（不能直接引用闭包里的 model）
       avatar._fit = fit;

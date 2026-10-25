@@ -58,6 +58,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   AvatarRenderer? _renderer;
   String? _error;
 
+  /// 上一次同步给 renderer 的紧凑状态
+
   /// 当前 renderer 用的后端（用于判断是否需要重建）
   AvatarBackend? _currentBackend;
 
@@ -95,7 +97,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     }
   }
 
-  /// PromptLink 刷新（含后端切换、init 完成）时，按最新后端重建 renderer
+  /// PromptLink 刷新（含后端切换、init 完成、紧凑状态变化）时，
+  /// 按最新后端重建 renderer，并同步紧凑状态
   void _onLinkChanged() {
     if (!mounted) return;
     final target = widget.backend ?? PromptLink.instance.avatarBackend;
@@ -112,6 +115,17 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
         r.setZoom(zoom);
       }
     }
+
+    // 贴边紧凑状态变了：让后端把模型在视图内部缩小
+    final link = PromptLink.instance;
+    // 无条件同步紧凑状态（不依赖状态判断，避免漏同步）
+    _renderer?.setCompact(
+      link.avatarCompact,
+      side: link.avatarCompactSide,
+      width: link.avatarCompactWidth,
+      height: link.avatarCompactHeight,
+      boxHeight: widget.height,
+    );
   }
 
   @override
