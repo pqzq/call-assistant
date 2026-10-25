@@ -168,14 +168,14 @@
         if (avatar.compact) {
           const cw = avatar.compactW || w;
           const ch = avatar.compactH || h;
-          const cScale = Math.min(cw / baseW, (ch / baseH) * fitOverscan) * 0.99;
+          // 紧凑模式**不能放大**（否则模型超出窄条被裁）：固定按窄条尺寸完整放入
+          const cScale = Math.min(cw / baseW, ch / baseH) * 0.99;
           model.scale.set(cScale);
           const modelW = baseW * cScale;
           const modelH = baseH * cScale;
-          // 贴到指定的一角：'right' 表示靠 WebView 右侧
+          // 紧凑模式：模型缩到窄条尺寸并**贴到视图右上角** ——
+          // Flutter 侧裁剪露出的正是视图右上角那一块，两者正好对齐。
           model.x = avatar.compactSide === 'right' ? (w - modelW) : 0;
-          // **靠顶**：Flutter 侧露出的是 WebView 的右上角那一条，
-          // 模型如果还贴在底部就完全看不到（只露出空白）
           model.y = 0;
           return;
         }

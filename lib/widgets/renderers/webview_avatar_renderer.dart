@@ -192,6 +192,9 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     );
   }
 
+  /// 紧凑模式下模型靠右（页面侧把模型缩到窄条尺寸后靠右放置）
+  @override
+  String get compactAlignment => 'right';
   /// 贴边紧凑模式：让模型在页面内缩小并贴到指定一侧（不重建 WebView）
   @override
   void setCompact(

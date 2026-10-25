@@ -16,10 +16,13 @@ import '../../services/live2d_service.dart';
 /// - 嘴型走 `setParameter('ParamMouthOpenY', v)`
 /// - 透明背景是插件默认行为
 class NativeAvatarRenderer implements AvatarRenderer {
-  NativeAvatarRenderer({this.onReady, this.onError});
+  NativeAvatarRenderer({this.onReady, this.onError, this.boxHeight = 0});
 
   final void Function()? onReady;
   final void Function(String message)? onError;
+
+  /// 角色盒高度（说明）
+  final double boxHeight;
 
   final Live2DViewController _controller = Live2DViewController();
 
@@ -129,9 +132,10 @@ class NativeAvatarRenderer implements AvatarRenderer {
 
   /// 贴边紧凑模式
   ///
-  /// 原生后端暂时**不支持在视图内部把模型缩小**（TextureView 不能做
-  /// transform，插件也没有缩放通道），这里退化为「上层裁剪」：
-  /// 贴边时露出模型的一部分，模型本体仍然存在、不会消失。
+  /// 原生后端**不做视图内缩放**：Live2D 的 canvas 四周有留白，角色本体
+  /// 并不在 canvas 中心，缩放后没法精确对齐（试过用矩阵平移，位置总偏）。
+  /// 这里退化为「只裁剪」—— 贴边时露出模型中央（脸 + 上半身），
+  /// 模型本体始终在，不会消失。
   @override
   void setCompact(
     bool enabled, {
@@ -139,8 +143,25 @@ class NativeAvatarRenderer implements AvatarRenderer {
     double width = 0,
     double height = 0,
   }) {
-    // no-op：裁剪由 floating_avatar 统一处理
+    // 通过 `__render_scale__` 特殊参数走 setParameter 通道：
+    // 原生侧把模型缩到窄条大小（插件里用 drawable 顶点算出角色**本体**
+    // 的中心再对齐，所以 canvas 有留白也不会偏）。
+    // 原生侧**不做视图内缩放**：Live2D 的 canvas 四周有留白，角色本体
+    // 不在 canvas 中心（drawable 顶点同样是外框，也含留白），
+    // 缩放后无法精确对齐 —— 试过矩阵平移和顶点对齐，结果都偏。
+    // 这里退化为「不缩放 + 裁剪露出模型顶部」：头和上半身完整可见，
+    // 模型不会消失，点击也能恢复展开。
+    if (_loaded) {
+      _controller.setParameter('__render_scale__', 1.0);
+    }
   }
+
+  /// 原生后端把模型缩到窄条大小并对齐角色本体 → 露出视图**中央**
+  @override
+  String get compactAlignment => 'center';
+
+  /// 角色盒高度（用于算紧凑模式的缩放系数）
+  // ignore: unused_element
 
   @override
   Widget build() {

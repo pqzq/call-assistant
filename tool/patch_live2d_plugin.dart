@@ -234,6 +234,68 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
     marker: '用 SetExternalParameter',
   ),
 
+  // ---- 4.7 原生渲染：贴边紧凑模式（矩阵缩放）+ 触摸穿透 ----
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    bool                  surfaceNeedsInit = false;''',
+    '''    bool                  surfaceNeedsInit = false;
+    // 贴边时把模型在视图内缩小（0~1，1 = 正常）
+    float                 renderScale      = 1.0f;''',
+    marker: 'float                 renderScale',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    const char* id = env->GetStringUTFChars(parameterId, nullptr);
+    view->model->SetParameterValue(id, value);
+    env->ReleaseStringUTFChars(parameterId, id);''',
+    '''    const char* id = env->GetStringUTFChars(parameterId, nullptr);
+    // 特殊参数名：贴边时把模型在视图内缩小（TextureView 不能做 transform，
+    // 只能在渲染矩阵上缩）。复用 setParameter 通道，避免再加一套 JNI。
+    if (std::string(id) == "__render_scale__")
+    {
+        view->renderScale = (value > 0.05f && value <= 1.0f) ? value : 1.0f;
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    view->model->SetParameterValue(id, value);
+    env->ReleaseStringUTFChars(parameterId, id);''',
+    marker: '__render_scale__',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''        view->model->Update();
+        CubismMatrix44 mvp = view->projection;
+        view->model->Draw(mvp);''',
+    '''        view->model->Update();
+        CubismMatrix44 mvp = view->projection;
+        // 贴边紧凑模式：把模型在视图内缩小并靠到右上角
+        if (view->renderScale < 1.0f)
+        {
+            const float s = view->renderScale;
+            // 投影后可见范围是 x,y ∈ [-1,1]：
+            // 缩放后模型占 [-s, s]，把它推到右上角 —— 平移量就是「1 - s」
+            // （x 方向再按「模型宽约为高的 0.5」修正一半，避免右边被裁）
+            mvp.Scale(s, s);
+            mvp.TranslateX(1.0f - 0.5f * s);  // 靠右
+            mvp.TranslateY(1.0f - s);          // 靠上
+        }
+        view->model->Draw(mvp);''',
+    marker: '贴边紧凑模式：把模型在视图内缩小并靠到右上角',
+  ),
+  _Edit(
+    'android/src/main/kotlin/com/linh18nd/flutter_live2d/Live2DPlatformView.kt',
+    '''        return true
+    }
+
+    override fun onSurfaceTextureAvailable''',
+    '''        // 返回 false：让事件继续冒泡给 Flutter（外层 GestureDetector 要靠它拖动数字人）
+        return false
+    }
+
+    override fun onSurfaceTextureAvailable''',
+    marker: '返回 false：让事件继续冒泡给 Flutter',
+  ),
+
   // ---- 5. 模型适配改成「按高度填满」（修裁头/裁脚） ----
   _Edit(
     'android/src/main/cpp/live2d_flutter.cpp',

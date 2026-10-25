@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/avatar_renderer.dart';
 import '../services/prompt_link.dart';
 import 'arc_action_bar.dart';
 import '../utils/avatar_layout.dart';
@@ -109,6 +110,19 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             return Stack(
               children: <Widget>[
                 widget.child,
+                // 贴边时在浮窗**外侧**放一个 Flutter 绘制的「展开」按钮。
+                // 不能只靠点模型恢复：原生后端的 Live2DView 是平台视图，
+                // 它会挡住 Flutter 的命中测试，点击传不到外层 GestureDetector
+                // （WebView 侧能穿透是靠 CSS pointer-events，平台视图没有等价手段）。
+                if (_docked)
+                  Positioned(
+                    // 放在屏幕**内侧**（贴左边时靠右、贴右边时靠左），
+                    // 免得按钮被屏幕边缘切掉一半
+                    left: _dockRight ? 6 : null,
+                    right: _dockRight ? null : 6,
+                    bottom: 6,
+                    child: _ExpandChip(onTap: _restoreFromDock),
+                  ),
                 // 展开/贴边之间用尺寸插值做过渡
                 TweenAnimationBuilder<double>(
                   tween: Tween<double>(end: _docked ? 1 : 0),
@@ -116,7 +130,10 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                   curve: Curves.easeOutCubic,
                   builder: (context, t, _) {
                     final unitWidth = _lerp(expandedWidth, FloatingAvatarHost.dockedWidth, t);
-                    final boxHeight = _lerp(avatarHeight, FloatingAvatarHost.dockedHeight, t);
+                    // 裁剪框高度：展开时是「角色 + 话术框」的总高（否则话术框会被裁掉），
+                    // 贴边时缩到窄条高度
+                    final boxHeight =
+                        _lerp(expandedHeight, FloatingAvatarHost.dockedHeight, t);
                     final unitHeight = _lerp(expandedHeight, FloatingAvatarHost.dockedHeight, t);
                     final free = Size(
                       (screen.width - unitWidth).clamp(0.0, double.infinity).toDouble(),
@@ -132,11 +149,14 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                         link,
                         free,
                         t,
+                        // 裁剪框高度（跟着动画走）
                         boxHeight,
                         unitWidth,
                         groupWidth,
-                        // 展开态的固定高度：动画只裁剪、不 resize
+                        // 角色盒高度：恒定，决定 WebView 尺寸，动画期间不变
                         avatarHeight,
+                        // 内层总高度（角色 + 话术框）：恒定
+                        expandedHeight,
                       ),
                     );
                   },
@@ -169,11 +189,13 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     PromptLink link,
     Size free,
     double t,
-    double avatarHeight,
+    double clipHeight,
     double unitWidth,
     double groupWidth,
-    // 展开态下的固定高度（动画期间保持不变，避免 resize 平台视图）
-    double expandedHeight,
+    // 角色盒高度（恒定，WebView 尺寸由它决定，动画期间不变）
+    double avatarH,
+    // 内层总高度 = 角色 + 话术框（恒定，避免动画期间 resize 平台视图）
+    double contentH,
   ) {
     // 贴边进度：过一半后进入「紧凑模式」——
     // 模型在**渲染视图内部**缩小（WebView 侧 setCompact），这里只负责
@@ -197,34 +219,44 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
       style: textStyle,
       child: SizedBox(
         width: unitWidth,
-        height: avatarHeight,
+        height: clipHeight,
         child: ClipRect(
           child: OverflowBox(
-            // 紧凑时露出角色所在的那一侧（模型已被页面缩到窄条尺寸并靠顶）
-            alignment:
-                compact ? Alignment.topRight : Alignment.topLeft,
-            // 内层保持**固定的展开尺寸**：动画只改裁剪框，
+            // 紧凑时露出哪一块，取决于后端把模型放在视图的哪个位置：
+            // - WebView：模型缩到窄条尺寸后靠右 → 露右侧（缩小版全身）
+            // - 原生：canvas 有留白，缩放后无法精确对齐角色本体
+            //   → 不缩放，露**顶部**（头 + 上半身完整可见，模型不会消失）
+            alignment: !compact
+                ? Alignment.topLeft
+                : (link.avatarBackend == AvatarBackend.webview
+                    ? Alignment.topRight
+                    : Alignment.topCenter),
+            // 内层保持**固定尺寸**：动画只改裁剪框，
             // 平台视图（WebView）不会被 resize
             minWidth: groupWidth,
             maxWidth: groupWidth,
-            minHeight: expandedHeight,
-            maxHeight: expandedHeight,
+            minHeight: contentH,
+            maxHeight: contentH,
             child: SizedBox(
               width: groupWidth,
-              height: expandedHeight,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              height: contentH,
+              // 用 Stack 而不是 Row：原生后端的 Live2DView 是混合合成的
+              // 平台视图，**会忽略父约束而溢出**（Flutter 的裁剪对它无效），
+              // 用 Row 时它会盖住左边的操作栏。改成 Stack 并把操作栏放在
+              // 最后绘制（在上层）即可。
+              child: Stack(
+                clipBehavior: Clip.none,
                 children: <Widget>[
-                  // 月亮型操作栏（凹面朝向角色），高度与角色一致
-                  _buildArcBar(link, free, avatarHeight),
-                  const SizedBox(width: FloatingAvatarHost.barGap),
-                  // 角色 + 话术框：**同宽、左边缘对齐**，
-                  // 不再让话术框横跨整组宽度（那样右边会空出一块）
-                  SizedBox(
-                    width: groupWidth -
-                        FloatingAvatarHost.barWidth -
-                        FloatingAvatarHost.barGap,
-                    child: Column(
+                  // 角色 + 话术框：左边留出操作栏的位置
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: FloatingAvatarHost.barWidth + FloatingAvatarHost.barGap,
+                    ),
+                    child: SizedBox(
+                      width: groupWidth -
+                          FloatingAvatarHost.barWidth -
+                          FloatingAvatarHost.barGap,
+                      child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
@@ -241,11 +273,11 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                             // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
                             width: double.infinity,
                             // 固定用展开态高度，避免动画期间 resize 平台视图
-                            height: expandedHeight,
+                            height: avatarH,
                             child: Live2dAvatar(
                               modelPath: link.avatarModel,
                               mouth: link.mouth,
-                              height: expandedHeight,
+                              height: avatarH,
                               // 贴边时让模型在视图内部缩小并靠到指定一侧
                               compact: compact,
                               compactSide: compactSide,
@@ -264,6 +296,14 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                         ],
                       ],
                     ),
+                    ),
+                  ),
+                  // 操作栏放在**最后**（Stack 里后画的在上层）——
+                  // 原生的平台视图会溢出，必须压在上面才看得见
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: _buildArcBar(link, free, avatarH),
                   ),
                 ],
               ),
@@ -275,7 +315,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   }
 
   // ---------------- 贴边小挂件 ----------------
-
   /// 月亮型弧形操作栏（放在角色左侧）
   ///
   /// - 无背景，只有带投影的白色图标（浅色页面上也看得清）
@@ -415,3 +454,40 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     await PromptLink.instance.setAvatarPosition(normalized.dx, normalized.dy);
   }
 }
+
+
+  /// 贴边时的「展开」按钮（Flutter 绘制，不受平台视图挡触摸的影响）
+  class _ExpandChip extends StatelessWidget {
+    const _ExpandChip({required this.onTap});
+
+    final VoidCallback onTap;
+
+    @override
+    Widget build(BuildContext context) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2F6BFF).withValues(alpha: 0.92),
+            shape: BoxShape.circle,
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.open_in_full_rounded,
+            size: 16,
+            color: Colors.white,
+          ),
+        ),
+      );
+    }
+  }
+

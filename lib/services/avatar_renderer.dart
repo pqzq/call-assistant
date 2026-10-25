@@ -69,6 +69,16 @@ abstract class AvatarRenderer {
     double height = 0,
   }) {}
 
+  /// 紧凑模式下模型在视图里的位置（用于决定裁剪露出哪一块）
+  ///
+  /// - `center`：模型居中（原生后端：只裁剪不缩放，露中央的脸和上半身）
+  /// - `right`：模型靠右（WebView 后端：模型缩到窄条尺寸后靠右）
+  String get compactAlignment => 'center';
+
+  // 说明：紧凑模式下模型在视图里的位置
+  // - `center`：模型居中（原生后端：只裁剪不缩放，露中央的脸和上半身）
+  // - `right`：模型靠右（WebView 后端：模型缩到窄条尺寸后靠右）
+
   /// 构建渲染 Widget（尺寸由外部约束）
   Widget build();
 

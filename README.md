@@ -601,8 +601,9 @@ flutter build apk --release
 | --- | --- |
 | 视图尺寸 | 始终是展开尺寸（`OverflowBox` + `ClipRect` 裁剪），**永不 resize** |
 | 模型缩小 | 页面侧 `avatar.setCompact(on, side, w, h)` → `fit()` 按窄条尺寸算 scale，把模型缩到 112×152 并**靠到视图右上角** |
-| 露出哪边 | 角色在展开布局里位于**右侧**（操作栏在左），所以裁剪统一露右侧（`Alignment.topRight`） |
-| 贴边时 | 话术框与操作栏被裁掉，只留缩小后的模型；**点模型即可恢复展开** |
+| 露出哪边 | WebView 露**右上角**（`Alignment.topRight`），原生露**顶部**（`Alignment.topCenter`） |
+| 贴边时 | 话术框与操作栏被裁掉，只留模型 |
+| 恢复展开 | 浮窗**外侧**有一个 Flutter 绘制的蓝色「展开」按钮（原生后端平台视图会挡住命中测试，点模型收不到事件） |
 
 ⚠️ 两个必须注意的点：
 

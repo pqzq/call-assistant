@@ -49,6 +49,7 @@ class Live2dAvatar extends StatefulWidget {
   final double compactWidth;
   final double compactHeight;
 
+
   @override
   State<Live2dAvatar> createState() => _Live2dAvatarState();
 }
@@ -149,6 +150,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
         ? NativeAvatarRenderer(
             onReady: _onRendererReady,
             onError: _onRendererError,
+            // 角色盒高度：紧凑模式要按它算缩放系数
+            boxHeight: widget.height,
           )
         : WebViewAvatarRenderer(
             onReady: _onRendererReady,
@@ -186,6 +189,17 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
 
   void _onMouthChanged() {
     _renderer?.setMouth(widget.mouth.value);
+  }
+
+  /// 紧凑模式下模型在渲染视图里的位置（`center` / `right`）
+  ///
+  /// 浮窗据此决定裁剪露出哪一块：
+  /// - WebView：模型缩到窄条尺寸后靠右 → 露右侧
+  /// - 原生：只裁剪不缩放 → 露中央（脸 + 上半身）
+  String get compactAlignment {
+    final r = _renderer;
+    if (r != null) return r.compactAlignment;
+    return 'center';
   }
 
   @override
