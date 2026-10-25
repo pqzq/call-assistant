@@ -201,14 +201,15 @@ class NativeAvatarRenderer implements AvatarRenderer {
     double height = 0,
     double boxHeight = 0,
   }) {
-    if (!enabled) {
-      _controller.setParameter('__render_scale__', 1.0);
-      return;
-    }
-    final box = boxHeight > 0 ? boxHeight : _boxHeight;
-    if (box <= 0 || height <= 0) return;
-    final scale = (height / box).clamp(0.1, 1.0).toDouble();
-    _controller.setParameter('__render_scale__', scale);
+    // ⚠️ 原生侧的**视图内缩放**暂时停用：缩放后模型会跑到视图角落、
+    // 只露出一条腿（Cubism 的 canvas 留白 + 本体边界测量精度都影响结果）。
+    // 现在贴边时上层裁剪露出模型**顶部**（头 + 上半身），模型本体始终在、不会消失。
+    //
+    // C++ 侧的通道（__render_scale__）和配套修正都已就位：
+    // 投影的各向异性补偿、模型矩阵每帧重置（SetHeight 是累乘语义）、
+    // 居中补偿的 0.5 偏移、数据合理性保护。等把缩放与居中的关系理清后再打开。
+    if (!_loaded) return;
+    _controller.setParameter('__render_scale__', 1.0);
   }
 
   /// 原生后端不缩放（canvas 留白导致缩放后无法对齐角色本体）→ 露出视图**顶部**
@@ -216,7 +217,8 @@ class NativeAvatarRenderer implements AvatarRenderer {
   String get compactAlignment => 'top';
 
   /// 角色盒高度（用于算紧凑模式的缩放系数）
-  /// 角色盒高度（用于算紧凑模式的缩放系数）
+  /// 角色盒高度（说明）
+  // ignore: unused_element
   double get _boxHeight => boxHeight;
 
 

@@ -515,6 +515,21 @@ P_x * M_x * W == P_y * M_y * H        （W/H = 视口像素宽高比）
 另外投影要**每帧重设**（放在 `ApplyViewportFit` 里），不能只放在 `nativeOnSurfaceChanged` ——
 surface 尺寸没变时那个回调根本不会来，投影会一直是未初始化的值。
 
+还有两个配套的坑：
+
+- `CubismModelMatrix::SetHeight()` 内部是 `Scale()`（**相对累乘**）→ 每帧调用会让缩放
+  **指数级累积**（模型缩成一条腿），所以每帧要先 `LoadIdentity()` 再设缩放
+- `SetCenterPosition()` 移动的是 **canvas 中心**，而本体边界给的是**本体中心**
+  （归一化到 canvas 尺寸），两者相差 canvas 的一半 —— 补偿里必须减掉 `0.5`，
+  否则模型整体偏移半屏
+
+⚠️ **原生后端的「贴边缩成小人」目前是停用状态**（`NativeAvatarRenderer.setCompact`
+只下发 `__render_scale__ = 1.0`）。原因：Cubism 的 canvas 四周留白很大，缩放后要让
+**角色本体**正好落在窄条中央，需要同时精确控制缩放**和**位置，两者目前还没理清
+（试过投影空间缩放 / 模型矩阵缩放 / `__fit_bounds__` 传边界，都会让模型跑到角落）。
+C++ 侧的通道和配套修正都已就位，理清后打开即可。WebView 侧不受影响
+（页面内用 `getLocalBounds()` 直接算位置）。
+
 #### Bug 6：部分模型（mao / wanko）嘴型不动 —— 参数名不同
 
 各模型的嘴型参数名**不统一**（`model3.json` 的 `Groups.LipSync` 声明）：

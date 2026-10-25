@@ -273,7 +273,6 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
         if (view->renderScale < 1.0f)
         {
             const float s = view->renderScale;
-            mvp.ScaleRelative(s, s);
         }
         view->model->Draw(mvp);''',
     marker: '必须用 **ScaleRelative**（相对缩放）而不是 Scale',
@@ -572,7 +571,10 @@ void Live2DModel::GetContentBounds(
     {
         const float bodyW = cw * view->fitBounds[2];   // 本体在模型空间的宽
         const float bodyH = ch * view->fitBounds[3];   // 本体在模型空间的高
-        if (bodyW > 0.0f && bodyH > 0.0f)
+        // 合理性保护：本体不可能小于 canvas 的 10%，否则说明边界数据有误
+        // （WebView 侧量出来的），宁可退回按 canvas 适配也别把模型缩成一条腿
+        if (bodyW > cw * 0.05f && bodyH > ch * 0.1f &&
+            bodyW < cw && bodyH < ch)
         {
             // 投影对 x 方向做了各向异性拉伸（P_x），本体投影后的横向范围
             // 是 bodyW * s * P_x，必须留在裁剪空间 [-1,1] 内，否则会被裁掉两侧。
@@ -581,25 +583,40 @@ void Live2DModel::GetContentBounds(
                 : (view->width > 0
                        ? (float)view->height / (float)view->width
                        : 1.0f);
-            const float s = fminf(2.0f / bodyH, 2.0f / (bodyW * px));
+            // 贴边紧凑模式：在**模型矩阵**里再缩（renderScale），而不是缩放投影
+            // —— 投影缩放会和 SetCenterPosition 的居中补偿互相打架
+            // （模型会跑到角落、只露出一部分）。
+            const float rs = (view->renderScale < 1.0f) ? view->renderScale : 1.0f;
+            const float s = fminf(2.0f / bodyH, 2.0f / (bodyW * px)) * rs;
+            // ⚠️ CubismModelMatrix::SetHeight 内部是 **Scale()（相对累乘）**，
+            // 每帧调用会让缩放**指数级累积**（模型缩成一条腿）。
+            // 所以每帧先把模型矩阵重置为 identity，再设缩放。
+            mm->LoadIdentity();
             mm->SetHeight(ch * s);
-            // 本体中心 = canvas 中心 + 偏移，把它归零
+            // 让**本体中心**落在视口原点：
+            //   SetCenterPosition 移动的是 **canvas 中心**，
+            //   而 fitBounds 给的是本体中心（归一化到 canvas 尺寸），
+            //   两者相差 canvas 的一半 —— 必须减掉 0.5，
+            //   否则模型会整体偏移半屏（贴边时只露出下半部分）。
             mm->SetCenterPosition(
-                -(view->fitBounds[0] * cw) * s,
-                -(view->fitBounds[1] * ch) * s);
+                -(cw * (view->fitBounds[0] - 0.5f)) * s,
+                -(ch * (view->fitBounds[1] - 0.5f)) * s);
             return;
         }
     }
 
+    // 没有本体边界时退化成按 canvas 适配（位置由 Cubism 保证居中）
+    const float rs2 = (view->renderScale < 1.0f) ? view->renderScale : 1.0f;
+    mm->LoadIdentity();
     if (viewAspect > modelAspect)
     {
         // 视口更宽 -> 按 canvas 高度填满（两侧可能留白）
-        mm->SetHeight(2.0f);
+        mm->SetHeight(2.0f * rs2);
     }
     else
     {
         // 视口更高 -> 按 canvas 宽度填满（上下可能留白）
-        mm->SetWidth(2.0f);
+        mm->SetWidth(2.0f * rs2);
     }
 }''',
     marker: 'static void ApplyViewportFit(Live2DView* view)',
