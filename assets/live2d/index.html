@@ -69,6 +69,30 @@
       } catch (e) {
         return '';
       }
+    },
+    // 角色**本体**在 canvas 里的归一化矩形："中心x,中心y,宽,高"
+    // （都除以 canvas 尺寸，取值 0~1）
+    //
+    // 原生后端没有 getLocalBounds() 的等价 API，只能靠 canvas 尺寸适配 ——
+    // 而 canvas 四周留白很大，角色会显得小且偏。这个矩形能让原生侧
+    // 按**角色本体**（而不是 canvas）对齐，和 WebView 保持一致。
+    modelBounds() {
+      const m = avatar._model;
+      if (!m || !m.getLocalBounds) return '';
+      try {
+        const b = m.getLocalBounds();
+        const cw = m.width;
+        const ch = m.height;
+        if (!b || !b.width || !b.height || !cw || !ch) return '';
+        const cx = (b.x + b.width / 2) / cw;
+        const cy = (b.y + b.height / 2) / ch;
+        const w = b.width / cw;
+        const h = b.height / ch;
+        if (!isFinite(cx) || !isFinite(cy) || !isFinite(w) || !isFinite(h)) return '';
+        return [cx, cy, w, h].map((v) => v.toFixed(6)).join(',');
+      } catch (e) {
+        return '';
+      }
     }
   };
 

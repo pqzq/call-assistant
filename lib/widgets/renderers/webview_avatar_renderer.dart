@@ -222,6 +222,31 @@ class WebViewAvatarRenderer implements AvatarRenderer {
   /// Live2D 的 canvas 往往比角色本体大一圈，只用容器去「适配高度」
   /// 会让角色显得又小又偏，两侧空一大片。这里直接问页面要
   /// `model.getLocalBounds()` 的比例，容器就能贴着角色本体做。
+  /// 探测「角色本体在 canvas 里的归一化矩形」
+  ///
+  /// 页面侧用 model.getLocalBounds() 得到角色**本体**的范围（canvas 四周
+  /// 留白很大，本体只占中间一部分），除以 canvas 尺寸归一化后上报。
+  /// 原生后端没有等价 API，只能靠这个矩形按本体对齐（否则模型又小又偏）。
+  Future<void> _probeModelBounds(WebViewController? controller) async {
+    if (controller == null) return;
+    try {
+      final raw = await controller.runJavaScriptReturningResult(
+        'window.avatar; avatar.modelBounds ? avatar.modelBounds() : ""',
+      );
+      final text = raw.toString().replaceAll('"', '').trim();
+      if (text.isEmpty) return;
+      final parts = text.split(',');
+      if (parts.length != 4) return;
+      final values = parts.map(double.tryParse).toList();
+      if (values.any((v) => v == null)) return;
+      final list = values.cast<double>();
+      if (list[2] <= 0.001 || list[3] <= 0.001) return;
+      PromptLink.instance.setAvatarModelBounds(list);
+    } catch (_) {
+      // 页面可能还没就绪，忽略
+    }
+  }
+
   Future<void> _probeModelAspect(WebViewController? controller) async {
     if (controller == null) return;
     for (var attempt = 0; attempt < 5; attempt++) {
@@ -237,6 +262,9 @@ class WebViewAvatarRenderer implements AvatarRenderer {
         final aspect = double.tryParse(text);
         if (aspect != null && aspect > 0.05 && aspect < 8) {
           await PromptLink.instance.setAvatarModelAspect(aspect);
+          // 顺带上报「角色本体在 canvas 里的归一化矩形」——
+          // 原生后端没有 getLocalBounds() 的等价 API，靠它才能和 WebView 对齐
+          await _probeModelBounds(controller);
           return;
         }
       } catch (_) {

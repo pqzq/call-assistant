@@ -575,6 +575,86 @@ static bool ReloadModelInternal(Live2DView* view, const char* dir, const char* f
         CubismMatrix44 mvp = view->projection;''',
     marker: 'Update() 之后内容边界才是最新的',
   ),
+  // ---- 6.5 原生侧也按「角色本体」适配（需要 WebView 量到的边界） ----
+  //
+  // WebView 侧用 model.getLocalBounds() 拿到角色**本体**的范围（canvas 四周
+  // 留白很大，只按 canvas 适配的话模型会又小又偏，和 WebView 对不上）。
+  // Cubism Native 没有等价 API，所以由 Dart 侧把归一化矩形传进来。
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    float                 renderScale      = 1.0f;''',
+    '''    float                 renderScale      = 1.0f;
+    // 角色**本体**在 canvas 里的归一化矩形（中心x, 中心y, 宽, 高）
+    float                 fitBounds[4]    = {0.0f, 0.0f, 0.0f, 0.0f};
+    bool                  fitBoundsValid  = false;''',
+    marker: 'fitBoundsValid',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    Live2DView* view = AsView(handle);
+    if (!view; !view->model; !view->model->IsLoaded()) return;
+    const char* id = env->GetStringUTFChars(parameterId, nullptr);''',
+    '''    Live2DView* view = AsView(handle);
+    if (!view) return;
+    const char* id = env->GetStringUTFChars(parameterId, nullptr);
+    // 特殊参数要在「模型是否加载」之前处理 —— 边界比模型先到
+    if (std::string(id) == "__fit_cx__")
+    {
+        view->fitBounds[0] = value;
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    if (std::string(id) == "__fit_cy__")
+    {
+        view->fitBounds[1] = value;
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    if (std::string(id) == "__fit_w__")
+    {
+        view->fitBounds[2] = value;
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    if (std::string(id) == "__fit_h__")
+    {
+        view->fitBounds[3] = value;
+        view->fitBoundsValid = (value > 0.0f);
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    if (!view->model; !view->model->IsLoaded())
+    {
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }''',
+    marker: '__fit_cx__',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    auto* mm = view->model->GetModelMatrix();
+    if (!mm) return;
+    if (viewAspect > modelAspect)''',
+    '''    auto* mm = view->model->GetModelMatrix();
+    if (!mm) return;
+    // 有「角色本体」边界时按**本体**适配（和 WebView 一致）
+    if (view->fitBoundsValid)
+    {
+        const float bodyW = cw * view->fitBounds[2];
+        const float bodyH = ch * view->fitBounds[3];
+        if (bodyW > 0.0f; bodyH > 0.0f)
+        {
+            const float s = fminf(2.0f / bodyW, 2.0f / bodyH);
+            mm->SetHeight(ch * s);
+            mm->SetCenterPosition(
+                -(view->fitBounds[0] * cw) * s,
+                -(view->fitBounds[1] * ch) * s);
+            return;
+        }
+    }
+    if (viewAspect > modelAspect)''',
+    marker: '有「角色本体」边界',
+  ),
 ];
 
 Future<void> main() async {
@@ -600,7 +680,7 @@ Future<void> main() async {
       continue;
     }
     if (!text.contains(edit.oldText)) {
-      stderr.writeln('✗ 找不到要替换的代码（插件版本可能变了）: ${edit.file}');
+      stderr.writeln('✗ 找不到要替换的代码（插件版本可能变了）: ${edit.file} / marker=${edit.marker}');
       exitCode = 1;
       continue;
     }

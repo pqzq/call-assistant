@@ -678,6 +678,33 @@ class PromptLink extends ChangeNotifier {
     }
   }
   /// 记录 WebView 量到的模型宽高比
+  /// 角色**本体**在 canvas 里的归一化矩形（中心x, 中心y, 宽, 高）
+  ///
+  /// 由 WebView 侧用 `model.getLocalBounds()` 量出。原生后端没有等价 API，
+  /// 只能靠这个矩形才能按**角色本体**（而不是含大量留白的 canvas）对齐。
+  /// 4 个分量都为空表示还没量到，原生侧会退化成按 canvas 适配。
+  List<double> _avatarModelBounds = const <double>[];
+
+  /// 角色本体在 canvas 里的归一化矩形（空列表 = 尚未量到）
+  List<double> get avatarModelBounds => _avatarModelBounds;
+
+  /// 记录角色本体在 canvas 里的归一化矩形
+  void setAvatarModelBounds(List<double> bounds) {
+    if (bounds.length != 4) return;
+    if (_avatarModelBounds.length == 4) {
+      var same = true;
+      for (var i = 0; i < 4; i++) {
+        if ((_avatarModelBounds[i] - bounds[i]).abs() > 0.002) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    _avatarModelBounds = List<double>.from(bounds);
+    notifyListeners();
+  }
+
   Future<void> setAvatarModelAspect(double aspect) async {
     if (aspect <= 0.02 || aspect > 8) return;
     // 同一模型、比例几乎没变就不重复通知

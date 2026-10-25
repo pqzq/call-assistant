@@ -39,7 +39,39 @@ class NativeAvatarRenderer implements AvatarRenderer {
   /// 不能只靠 `Live2dAvatar` 的回调转发 —— 浮窗裁剪会改变 widget 树结构，
   /// 那边的回调时序不可靠，结果就是贴边时缩放指令发不出去。
   /// renderer 自己监听最稳。
+  /// 上一次下发的本体边界（避免重复）
+  List<double>? _lastFitBounds;
+
+  /// 把「角色本体在 canvas 里的归一化矩形」下发给原生侧
+  ///
+  /// 原生侧没有 getLocalBounds() 的等价 API，只能靠 WebView 侧量到的
+  /// 这个矩形按**角色本体**（而不是含大量留白的 canvas）对齐，
+  /// 否则原生和 WebView 的效果对不上（模型又小又偏）。
+  void _pushFitBounds() {
+    final b = PromptLink.instance.avatarModelBounds;
+    if (b.length != 4) return;
+    final last = _lastFitBounds;
+    if (last != null && last.length == 4) {
+      var same = true;
+      for (var i = 0; i < 4; i++) {
+        if ((last[i] - b[i]).abs() > 0.002) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    _lastFitBounds = List<double>.from(b);
+    if (!_loaded) return;
+    _controller.setParameter('__fit_cx__', b[0]);
+    _controller.setParameter('__fit_cy__', b[1]);
+    _controller.setParameter('__fit_w__', b[2]);
+    _controller.setParameter('__fit_h__', b[3]);
+  }
+
   void _onLinkChanged() {
+    // 同步本体边界（让原生按角色本体适配，和 WebView 一致）
+    _pushFitBounds();
     final link = PromptLink.instance;
     if (link.avatarCompact == _lastCompact) return;
     _lastCompact = link.avatarCompact;
@@ -114,6 +146,8 @@ class NativeAvatarRenderer implements AvatarRenderer {
         }
       }
       _loaded = ok;
+      // 模型加载好了，把本体边界补发一次（边界比模型先到）
+      _pushFitBounds();
       if (!ok) {
         final err = _controller.value.lastError;
         onError?.call('原生渲染加载失败：${err?.message ?? '未知原因'}');

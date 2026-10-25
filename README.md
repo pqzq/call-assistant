@@ -665,11 +665,13 @@ Live2D 的 canvas 四周留白**各模型差异极大**（有的角色只占 can
 - 再加一个用户可调的 **`模型大小` 滑杆**（0.8~1.8x，**默认 1.0 = 完整显示不裁切**），拖动时通过 `avatar.setZoom()` **实时重排，不重新加载页面**
 - **放大后的裁切方向**：`fit()` 在模型高于容器时改为**顶部对齐**，多余部分从**脚部**裁掉 —— 保证脸和上半身永远完整（之前是贴底对齐，放大后 `y<0` 会裁头）
 - 原生后端暂不支持该滑杆（放大系数在 C++ 侧固定 1.0），设置页已标注「仅 WebView 后端生效」
-- **原生后端每帧按「角色本体」适配**（ApplyViewportFit）
+- **原生后端按「角色本体」适配**（ApplyViewportFit）
   - 投影保持单位矩阵（之前对竖容器做 Scale(1, w/h) 会把 y 压缩、模型变形）
-  - 缩放系数 s = min(2/内容宽, 2/内容高)，SetHeight 等比缩放（内部 scaleX = scaleY，**不会拉伸**），SetCenterPosition 把**内容中心**移到视口中心
-  - 「内容」= 所有 drawable 顶点的并集（canvas 四周留白很大，只按 canvas 适配角色会显得又细又长）
-  - ⚠️ **内容边界必须等 Update() 之后才算**：顶点是 Update 写进去的，加载完那一帧还是空的。所以 Live2DModel 在每帧 Update() 末尾刷新并缓存边界，适配函数每帧重算（motion 摆动时边界也会变）
+  - 缩放系数 s = min(2/本体宽, 2/本体高)，SetHeight 等比缩放（内部 scaleX = scaleY，**不会拉伸**），SetCenterPosition 把**本体中心**移到视口中心
+  - 「本体边界」由 **WebView 侧**用 model.getLocalBounds() 量出、归一化后经 __fit_cx__/__fit_cy__/__fit_w__/__fit_h__ 四个特殊参数传给原生（Cubism Native 没有等价 API）
+  - 没有边界时退化成按 canvas 适配（Cubism 官方做法，位置正确但角色略小）
+  - 实测：原生与 WebView 的模型高度/顶部位置基本一致（WebView 另有 overscan 允许少量溢出，所以略大一点）
+  - ⚠️ drawable 顶点的外框**不能**当本体边界：它含背景/遮罩，比角色本体大得多，用它缩放会让模型小一半且偏出角色盒（这个坑踩过两轮）
 - 由于原生侧没有 getLocalBounds() 的等价物，适配用的是 **canvas 尺寸**（含四周留白），所以角色会比 WebView 侧略小
 - 原生后端复用同一个 zoom 值（`SetHeight(2.0 * aspect * zoom)`），在补丁脚本里
 
