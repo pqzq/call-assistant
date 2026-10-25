@@ -56,3 +56,7 @@ app.*.map.json
 
 # 调试截图（勿提交，只忽略仓库根目录的）
 /*.png
+
+# 本地调试临时产物（勿提交）
+/.tmp_pubcache/
+/tool/_patch_backup/
