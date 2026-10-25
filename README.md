@@ -643,21 +643,24 @@ flutter build apk --release
 | --- | --- |
 | 视图尺寸 | 始终是展开尺寸（`OverflowBox` + `ClipRect` 裁剪），**永不 resize** |
 | 模型缩小 | 页面侧 `avatar.setCompact(on, side, w, h)` → `fit()` 按窄条尺寸算 scale，把模型缩到 112×152 并**靠到视图右上角** |
-| 露出哪边 | WebView 露**右上角**（`Alignment.topRight`），原生露**顶部**（`Alignment.topCenter`） |
+| 露出哪边 | WebView 露**右上角**（`Alignment.topRight`），原生露**中央**（`Alignment.center`） |
 | 贴边时 | 话术框与操作栏被裁掉，只留模型 |
-| 恢复展开 | **直接点缩小后的模型**即可恢复（不需要额外的展开按钮） |
-两种后端都能缩到窄条尺寸、显示**缩小版的完整模型**：
+| 恢复展开 | **直接点模型**即可恢复（不需要额外的展开按钮） |
+两种后端的表现**不一样**（原生侧的原因见上面「贴边缩成小人」那段）：
 
 - **WebView**：页面内 `avatar.setCompact()` → `fit()` 按窄条尺寸算 scale，
-  模型缩到 112×152 并贴到视图右上角
-- **原生**：走 `__render_scale__` 特殊参数通道（复用 `setParameter`），
-  插件在投影空间做等比缩放，模型保持在视图中央
+  模型缩到 112×152 并贴到视图右上角 → 看到**缩小版的完整模型**
+  （页面里能用 `model.getLocalBounds()` 拿到**角色本体**的精确范围，位置算得准）
+- **原生**：走 Cubism 官方的**「按 canvas 适配 + 允许裁切」** → 模型等比、居中、
+  **不额外缩放**，裁剪露中央那一段（模型不会消失、比例正确）
+  （Cubism Native 没有 `getLocalBounds()` 的等价 API，drawable 顶点外框含背景/遮罩，
+  量不准）
 
-原生侧踩过的坑：缩放系数是「窄条高度 / **角色盒高度**」，而角色盒高度一开始
-是 0（`boxHeight` 从没被赋值）→ 缩放指令被直接跳过，表现为「贴边后模型大小
-完全没变」。现在由 `Live2dAvatar` 把 `widget.height` 传下去。
+⚠️ **画布内的位置是布局的一部分，不能单独校正**：Live2D 的 canvas 里角色常常偏下
+（上方留白多），把「角色本体」强行平移到视口中央，展开态就会和下方的话术框错位 ——
+试过，位置反而更糟。
 
-**点缩小模型能恢复的前提**：原生后端的 `Live2DView` 是**平台视图**，默认
+**点模型能恢复的前提**：原生后端的 `Live2DView` 是**平台视图**，默认
 （`hitTestBehavior: opaque`）会**独吞所有触摸**，外层 Flutter 的
 `GestureDetector` 收不到事件。补丁里把它改成 `transparent`，触摸才能传到
 Flutter；WebView 侧则靠 CSS `pointer-events: none` 穿透。
@@ -666,12 +669,8 @@ Flutter；WebView 侧则靠 CSS `pointer-events: none` 穿透。
 浮窗永远在追手指 → 看着「不灵敏」。现在**拖动中禁用位置动画**（`Duration.zero`），
 松手后才恢复动画。
 
-⚠️ 两个必须注意的点：
-
-- 模型在 compact 模式下要**靠顶**（`model.y = 0`）而不是贴底 —— 露出的是视图的右上角，
-  贴底就只露出空白
-- 原生后端暂不支持视图内缩放（TextureView 不能 transform，插件也没有缩放通道），
-  退化为纯裁剪（露出模型的一部分，模型本体不会消失）
+⚠️ 一个必须注意的点：模型在 WebView 的 compact 模式下要**靠顶**（`model.y = 0`）而不是
+贴底 —— 露出的是视图的右上角，贴底就只露出空白。
 
 **WebView 的触摸穿透**
 
