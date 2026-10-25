@@ -187,12 +187,13 @@ class NativeAvatarRenderer implements AvatarRenderer {
     }
   }
 
-  /// 贴边紧凑模式
+  /// 贴边紧凑模式：把模型在视图内缩小并贴到右上角（和 WebView 侧同思路）
   ///
-  /// 原生后端**不做视图内缩放**：Live2D 的 canvas 四周有留白，角色本体
-  /// 并不在 canvas 中心，缩放后没法精确对齐（试过用矩阵平移，位置总偏）。
-  /// 这里退化为「只裁剪」—— 贴边时露出模型中央（脸 + 上半身），
-  /// 模型本体始终在，不会消失。
+  /// TextureView / 投影空间都不能任意变换，只能在渲染矩阵里缩：
+  /// 下发窄条相对展开视图的 NDC 占比，C++ 侧 ApplyCompactFit 按
+  /// 「角色本体边界」（WebView 量到的 __fit_*__）把模型缩到窄条范围
+  /// 并贴到视图右上角；Flutter 侧裁剪露出的正是右上角 → 能看到完整的
+  /// 缩小版模型。参数非法 / 未启用时 C++ 退回普通适配，模型不会消失。
   @override
   void setCompact(
     bool enabled, {
@@ -201,20 +202,47 @@ class NativeAvatarRenderer implements AvatarRenderer {
     double height = 0,
     double boxHeight = 0,
   }) {
-    // ⚠️ 原生侧的**视图内缩放**暂时停用：缩放后模型会跑到视图角落、
-    // 只露出一条腿（Cubism 的 canvas 留白 + 本体边界测量精度都影响结果）。
-    // 现在贴边时上层裁剪露出模型**顶部**（头 + 上半身），模型本体始终在、不会消失。
-    //
-    // C++ 侧的通道（__render_scale__）和配套修正都已就位：
-    // 投影的各向异性补偿、模型矩阵每帧重置（SetHeight 是累乘语义）、
-    // 居中补偿的 0.5 偏移、数据合理性保护。等把缩放与居中的关系理清后再打开。
     if (!_loaded) return;
-    _controller.setParameter('__render_scale__', 1.0);
+    // 相对占比无效（上层没传尺寸）时不下发，保持普通适配
+    //
+    // 窄条贴视图右上角裁剪：一个占视图**宽度分数 f** 且贴右边缘的区,
+    // 在 NDC（[-1,1]）里是 [1-2f, 1]，其**半宽**恰好 = f。所以
+    // halfW / hRatio 都直接传「占视图的分数」，C++ 侧当作 NDC 半宽高用。
+    final hRatio = (enabled && boxHeight > 0 && height > 0)
+        ? (height / boxHeight).clamp(0.0, 1.0).toDouble()
+        : 0.0;
+    final viewWidth = boxHeight > 0 ? _viewWidthFor(boxHeight) : 0.0;
+    final halfW = (enabled && viewWidth > 0 && width > 0)
+        ? (width / viewWidth).clamp(0.0, 1.0).toDouble()
+        : 0.0;
+    // 窄条占比接近 1 = 其实没缩小，不必进紧凑排版（C++ 侧也有同样兑底）
+    final on = enabled && hRatio > 0.01 && hRatio < 0.99 && halfW > 0.01 && halfW < 0.99;
+    _controller.setParameter('__compact_enable__', on ? 1.0 : 0.0);
+    if (on) {
+      _controller.setParameter('__compact_half_w__', halfW);
+      _controller.setParameter('__compact_h_ratio__', hRatio);
+    }
   }
 
-  /// 原生后端不缩放（canvas 留白导致缩放后无法对齐角色本体）→ 露出视图**顶部**
+  /// 平台视图（展开态）的逻辑宽度：角色盒宽度
+  ///
+  /// 与 [FloatingAvatarHost] 的公式一致（那里不能直接引用，否则构成
+  /// 循环依赖），常量同步维护：高 × clamp(0.28~0.90)、兑底宽 232。
+  double _viewWidthFor(double boxH) {
+    const double minAspect = 0.28;
+    const double maxAspect = 0.90;
+    const double defaultAspect = 0.58;
+    const double minBoxWidth = 232.0;
+    final raw = PromptLink.instance.avatarModelAspect;
+    final effAspect = raw > 0 ? raw.clamp(minAspect, maxAspect) : defaultAspect;
+    final byAspect = boxH * effAspect;
+    return byAspect < minBoxWidth ? minBoxWidth : byAspect;
+  }
+
+  /// 紧凑后模型贴视图右上角（ApplyCompactFit 就是这么排的），
+  /// 和 WebView 侧一致 → 上层裁剪露出右上角即可
   @override
-  String get compactAlignment => 'top';
+  String get compactAlignment => 'topRight';
 
   /// 角色盒高度（用于算紧凑模式的缩放系数）
   /// 角色盒高度（说明）

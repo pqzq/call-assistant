@@ -84,6 +84,10 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
       return;
     }
     // 贴边紧凑模式变化：通知后端把模型在视图内缩小（不重建视图）
+    //
+    // 必须带上 boxHeight（角色盒高度）——原生后端按它算紧凑缩放占比，
+    // 漏传会退化成 boxHeight=0 → 占比非法 → 判定「不缩小」而把刚开启的
+    // 紧凑模式又关掉（表现为贴边时模型按展开尺寸渲染、被窄条裁切不完整）。
     if (oldWidget.compact != widget.compact ||
         oldWidget.compactSide != widget.compactSide ||
         oldWidget.compactWidth != widget.compactWidth ||
@@ -93,6 +97,7 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
         side: widget.compactSide,
         width: widget.compactWidth,
         height: widget.compactHeight,
+        boxHeight: widget.height,
       );
     }
   }

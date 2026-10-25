@@ -261,22 +261,9 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
     env->ReleaseStringUTFChars(parameterId, id);''',
     marker: '__render_scale__',
   ),
-  _Edit(
-    'android/src/main/cpp/live2d_flutter.cpp',
-    '''        view->model->Update();
-        CubismMatrix44 mvp = view->projection;
-        view->model->Draw(mvp);''',
-    '''        view->model->Update();
-        CubismMatrix44 mvp = view->projection;
-        // 贴边紧凑模式：把模型等比缩小（投影空间），模型保持在视图中央，
-        // Flutter 侧裁剪露出的正是中央，于是能完整看到缩小版模型。
-        if (view->renderScale < 1.0f)
-        {
-            const float s = view->renderScale;
-        }
-        view->model->Draw(mvp);''',
-    marker: '必须用 **ScaleRelative**（相对缩放）而不是 Scale',
-  ),
+  // 贴边紧凑缩放统一交给 6.4/6.6 的 ApplyViewportFit（叠 ScaleRelative +
+  // TranslateRelative 到模型矩阵）。早先「在 draw 处缩投影矩阵」的做法
+  // 会跟居中补偿互相打架，已废弃，故此处不再改 draw 代码块。
   _Edit(
     'lib/src/view.dart',
     '''        hitTestBehavior: PlatformViewHitTestBehavior.opaque,''',
@@ -299,25 +286,8 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
     override fun onSurfaceTextureAvailable''',
     marker: '返回 false：让事件继续冒泡给 Flutter',
   ),
-  _Edit(
-    'android/src/main/cpp/live2d_flutter.cpp',
-    '''    view->projection.LoadIdentity();
-    if (view->width > view->height)
-    {
-        float ratio = static_cast<float>(view->height) / static_cast<float>(view->width);
-        view->projection.Scale(ratio, 1.0f);
-    }
-    else
-    {
-        float ratio = static_cast<float>(view->width) / static_cast<float>(view->height);
-        view->projection.Scale(1.0f, ratio);
-    }''',
-    '''    // 投影保持**单位矩阵**：比例由模型矩阵（SetHeight）保证。
-    // 之前这里对竖容器做 Scale(1, w/h)，把 y 方向压缩了 ——
-    // 模型虽然能填满视口，但**长宽比被破坏**（看起来被压扁）。
-    view->projection.LoadIdentity();''',
-    marker: '投影保持**单位矩阵**',
-  ),
+  // surfaceChanged 的投影不再改动（保留上游各向异性补偿）：ApplyViewportFit
+  // 每帧都会重设投影 + 模型矩阵，这里无需单独干预。
 
   // ---- 6.2 Live2DModel 暴露 canvas 尺寸 ----
   _Edit(
@@ -651,30 +621,188 @@ void Live2DModel::GetContentBounds(
     }''',
     marker: '__fit_cx__',
   ),
+  // ---- 6.5 展开适配保持 canvas 不变（本体边界仅存字段，供需要时使用）----
+  //
+  // WebView 侧量到的 fitBounds 已由上面两处 edit（结构体字段 + __fit_*__
+  // 分支）存到 view 里。展开态适配仍按 canvas（与现网行为一致）；
+  // 贴边紧凑模式在 6.6 里按 canvas 缩到窄条（与 WebView 同语义）。
+
+  // ---- 6.6 原生渲染：贴边紧凑模式的「视图内缩小 + 贴右上角」 ----
+  //
+  // 浮窗贴边时裁剪框只有窄条（约 112x152），但平台视图**不能 resize**
+  // （重建 surface 会闪断）。所以和 WebView 侧 setCompact 同一思路：
+  // 视图保持展开尺寸，C++ 把角色本体缩到窄条对应的 NDC 范围并贴到视图
+  // 右上角，Flutter 侧裁剪露出的正是右上角 —— 看到的就是完整缩小版模型。
+  //
+  // 窄条尺寸由 Dart 换算成 NDC 半宽 / 高度占比传进来（C++ 不用关心 dpr）。
   _Edit(
     'android/src/main/cpp/live2d_flutter.cpp',
-    '''    auto* mm = view->model->GetModelMatrix();
-    if (!mm) return;
-    if (viewAspect > modelAspect)''',
-    '''    auto* mm = view->model->GetModelMatrix();
-    if (!mm) return;
-    // 有「角色本体」边界时按**本体**适配（和 WebView 一致）
-    if (view->fitBoundsValid)
+    '''    CubismMatrix44        projection;''',
+    '''    // 贴边紧凑模式：启用标志 + 窄条在 NDC 里的半宽 / 全高占比
+    // （Dart 按挂件尺寸 / 展开视图尺寸算好传进来）
+    bool                  compactEnable   = false;
+    float                 compactHalfW    = 0.0f;
+    float                 compactHRatio   = 0.0f;
+    CubismMatrix44        projection;''',
+    // marker 要够特异：，ApplyViewportFit / setParameter 里也引用了 compactEnable，
+    // 所以上面那个单词不能当标记（会被误判成已打过）。
+    marker: 'compactEnable   = false;',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    if (std::string(id) == "__render_scale__")''',
+    '''    // 贴边紧凑模式的三个特殊参数：开关和尺寸可能在模型就绪前就下发
+    if (std::string(id) == "__compact_enable__")
     {
-        const float bodyW = cw * view->fitBounds[2];
-        const float bodyH = ch * view->fitBounds[3];
-        if (bodyW > 0.0f; bodyH > 0.0f)
+        const bool on = (value > 0.5f);
+        if (on != view->compactEnable)
         {
-            const float s = fminf(2.0f / bodyW, 2.0f / bodyH);
-            mm->SetHeight(ch * s);
-            mm->SetCenterPosition(
-                -(view->fitBounds[0] * cw) * s,
-                -(view->fitBounds[1] * ch) * s);
-            return;
+            view->compactEnable = on;
+            __android_log_print(ANDROID_LOG_INFO, "Live2DPlugin",
+                                "compact mode -> %d", on ? 1 : 0);
+        }
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    if (std::string(id) == "__compact_half_w__")
+    {
+        view->compactHalfW  = (value > 0.0f && value <= 1.0f) ? value : 0.0f;
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    if (std::string(id) == "__compact_h_ratio__")
+    {
+        view->compactHRatio = (value > 0.0f && value < 1.0f) ? value : 0.0f;
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    if (std::string(id) == "__render_scale__")''',
+    marker: '__compact_half_w__',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''static void ApplyViewportFit(Live2DView* view)
+{
+    if (!view || !view->model || !view->model->IsLoaded()) return;
+
+    // ---- 投影矩阵：每帧重设，做各向异性补偿 ----
+    //
+    // 裁剪空间是正方形 [-1,1]²，视口是长方形，NDC -> 屏幕的映射本身各向异性。
+    // 要让模型在屏幕上**不变形**，必须满足 P_x * M_x * W == P_y * M_y * H。
+    // 竖容器取 P_x = H/W、P_y = 1，配合**等比**的模型矩阵即恒成立。
+    // （用单位矩阵的话条件退化成 W == H，竖屏下模型被纵向拉长。）
+    view->projection.LoadIdentity();
+    if (view->width > 0 && view->height > 0)
+    {
+        if (view->width > view->height)
+        {
+            // 横容器：y 方向拉伸
+            view->projection.Scale(
+                1.0f, (float)view->width / (float)view->height);
+        }
+        else
+        {
+            // 竖容器：x 方向拉伸
+            view->projection.Scale(
+                (float)view->height / (float)view->width, 1.0f);
         }
     }
-    if (viewAspect > modelAspect)''',
-    marker: '有「角色本体」边界',
+
+    // ---- 模型矩阵：按 **canvas** 适配（Cubism 官方标准做法）----
+    //
+    // SetHeight / SetWidth 内部 scaleX == scaleY（等比，不会变形），
+    // 且以 canvas 中心为原点（位置自然在视口中间）。
+    // 视口与 canvas 的宽高比不一致时**允许裁切**（官方行为）——
+    // 不再依赖 drawable 顶点算「角色本体」边界（那个外框含背景/遮罩，
+    // 量不准，会让模型跑偏或缩成一条腿）。
+    float cw = 0.0f, ch = 0.0f;
+    view->model->GetCanvasSize(cw, ch);
+    if (cw <= 0.0f || ch <= 0.0f) return;
+    const float modelAspect = cw / ch;
+    const float viewAspect = (view->width > 0 && view->height > 0)
+        ? (float)view->width / (float)view->height
+        : 1.0f;
+    auto* mm = view->model->GetModelMatrix();
+    if (!mm) return;
+    // SetHeight 内部是 Scale()（相对累乘）-> 每帧先重置，否则缩放指数级累积
+    mm->LoadIdentity();
+    if (viewAspect > modelAspect)
+    {
+        // 视口更宽 -> 按 canvas 高度填满（两侧可能留白或裁切）
+        mm->SetHeight(2.0f);
+    }
+    else
+    {
+        // 视口更高 -> 按 canvas 宽度填满（上下可能留白或裁切）
+        mm->SetWidth(2.0f);
+    }
+}''',
+    '''static void ApplyViewportFit(Live2DView* view)
+{
+    if (!view || !view->model || !view->model->IsLoaded()) return;
+
+    // ---- 投影矩阵：每帧重设，做各向异性补偿 ----
+    //
+    // 裁剪空间是正方形 [-1,1]²，视口是长方形，NDC -> 屏幕的映射本身各向异性。
+    // 要让模型在屏幕上**不变形**，必须满足 P_x * M_x * W == P_y * M_y * H。
+    // 竖容器取 P_x = H/W、P_y = 1，配合**等比**的模型矩阵即恒成立。
+    float px = 1.0f, py = 1.0f;
+    view->projection.LoadIdentity();
+    if (view->width > 0 && view->height > 0)
+    {
+        if (view->width > view->height)
+        {
+            // 横容器：y 方向拉伸
+            py = (float)view->width / (float)view->height;
+            view->projection.Scale(1.0f, py);
+        }
+        else
+        {
+            // 竖容器：x 方向拉伸
+            px = (float)view->height / (float)view->width;
+            view->projection.Scale(px, 1.0f);
+        }
+    }
+
+    // ---- 模型矩阵：按角色**本体**（drawable 顶点并集）做 contain 适配 ----
+    //
+    // 之前按 canvas 且用 cover（填满视口）语义：canvas 四周留白大、各模型
+    // 不一，填满竖容器时上下会被裁（展开态切头/脚，贴边腿部露不全）。
+    // 改成 contain：把**本体**完整放入目标区，绝不裁切（与 WebView 侧同语义）。
+    auto* mm = view->model->GetModelMatrix();
+    if (!mm) return;
+
+    float cw = 0.0f, ch = 0.0f;
+    view->model->GetCanvasSize(cw, ch);
+    float bminX = 0.0f, bminY = 0.0f, bmaxX = 0.0f, bmaxY = 0.0f;
+    view->model->GetContentBounds(bminX, bminY, bmaxX, bmaxY);
+    float fw = bmaxX - bminX;      // 本体宽（模型空间）
+    float fh = bmaxY - bminY;      // 本体高
+    float fcx = (bminX + bmaxX) * 0.5f;   // 本体中心
+    float fcy = (bminY + bmaxY) * 0.5f;
+    if (fw <= 0.0f || fh <= 0.0f)
+    {
+        // 本体边界还没算出来 -> 退回 canvas（居中）
+        if (cw <= 0.0f || ch <= 0.0f) return;
+        fw = cw; fh = ch; fcx = 0.0f; fcy = 0.0f;
+    }
+
+    // 目标 = 整个视口居中、等比 contain 完整放入本体。
+    //
+    // 贴边收起不再靠「把模型缩到窄条 + 贴角 + Flutter 裁角」——那套依赖平台视图
+    // 出屏溢出的裁剪映射，在 Android 混合合成下左右不对称、且角色贴到出屏交界线
+    // 会被裁脚。改由 Flutter 直接把平台视图 resize 到窄条尺寸，这里对任意视口
+    // 只做「居中 contain」，左右贴边天然对称、身体完整。margin 留余量吸收超出
+    // 顶点的靴子/描边像素（顶点并集不含贴图外溢）。
+    const float margin = 0.92f;
+    const float s = fminf(2.0f / (px * fw), 2.0f / (py * fh)) * margin;
+
+    mm->LoadIdentity();
+    mm->ScaleRelative(s, s);
+    // 本体中心 -> 视口中心 (0,0)：clip = proj*(s*fc + t) = 0 => t = -s*fc
+    mm->TranslateRelative(-s * fcx, -s * fcy);
+}''',
+    marker: '整个视口居中、等比 contain',
   ),
 ];
 

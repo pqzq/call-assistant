@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../services/avatar_renderer.dart';
 import '../services/prompt_link.dart';
+import 'app_toast.dart';
 import 'arc_action_bar.dart';
 import '../utils/avatar_layout.dart';
 import 'avatar_stage.dart';
 import 'live2d_avatar.dart';
+import 'model_picker_sheet.dart';
 
 /// 全局浮动的 Live2D 数字人：
 /// - 展开态：上半部分是「角色 + 右侧操作栏」，下半部分是话术框（宽度与上方对齐，可单独收起）
@@ -189,13 +191,33 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     // 内层总高度 = 角色 + 话术框（恒定，避免动画期间 resize 平台视图）
     double contentH,
   ) {
-    // 贴边进度：过一半后进入「紧凑模式」——
-    // 模型在**渲染视图内部**缩小（WebView 侧 setCompact），这里只负责
-    // 把缩小后的那一侧裁出来。全程不重建 / 不 resize 平台视图。
+    // 贴边进度：过一半后进入「紧凑模式」。
     final compact = t > 0.5;
-    // 角色在展开布局里位于**右侧**（操作栏在左），所以窄条要露出右侧，
-    // 模型也必须靠到渲染视图的右侧并靠顶，否则露出的是一片空白。
-    const compactSide = 'right';
+    // 动态宽高：贴边时把平台视图**直接 resize 到窄条尺寸**，后端对「整个视口」
+    // 做居中 contain（见 C++ ApplyViewportFit / index.html fit），不再裁角、不
+    // 依赖出屏溢出 —— 左右贴边天然对称、身体完整。展开时内层是整组尺寸。
+    final double dockW = FloatingAvatarHost.dockedWidth;
+    final double dockH = FloatingAvatarHost.dockedHeight;
+    final double outerW = compact ? dockW : unitWidth;
+    final double outerH = compact ? dockH : clipHeight;
+    final double innerW = compact ? dockW : groupWidth;
+    final double innerH = compact ? dockH : contentH;
+    final double padL = compact
+        ? 0.0
+        : FloatingAvatarHost.barWidth + FloatingAvatarHost.barGap;
+    final double boxW = compact
+        ? dockW
+        : groupWidth - FloatingAvatarHost.barWidth - FloatingAvatarHost.barGap;
+    final double boxH = compact ? dockH : avatarH;
+    // 拖动手势热区宽度：展开时≈角色本体宽（两侧留白仍可穿透），贴边时=整条窄条
+    final double effAspect = PromptLink.instance.avatarModelAspect > 0
+        ? PromptLink.instance.avatarModelAspect.clamp(
+            FloatingAvatarHost.minAvatarAspect,
+            FloatingAvatarHost.maxAvatarAspect)
+        : FloatingAvatarHost.defaultAvatarAspect;
+    final double dragW = compact
+        ? boxW
+        : (boxH * effAspect * 1.2).clamp(90.0, boxW);
     // 浮层没有 Material 祖先，必须给 DefaultTextStyle，
     // 否则文字会落到 Flutter 的 fallback 样式（红字 + 黄色双下划线）
     final textStyle = Theme.of(context).textTheme.bodyMedium ??
@@ -204,79 +226,70 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     // Android 的平台视图（WebView / TextureView）不支持任意变换，
     // 一旦被 transform 包裹就整块不渲染（表现成模型消失）。
     //
-    // 外层尺寸跟着动画走（裁剪框），但**内层布局固定为展开尺寸** ——
-    // 否则动画每帧都会 resize WebView，Android 平台视图每次 resize
-    // 都要重建 surface，肉眼可见地卡。
+    // widget 树的类型/层级在展开与紧凑之间保持一致（只改尺寸/参数），保证
+    // Live2dAvatar 只被 resize、不被 remount（否则平台视图重建、模型重载闪断）。
     return DefaultTextStyle(
       style: textStyle,
       child: SizedBox(
-        width: unitWidth,
-        height: clipHeight,
+        width: outerW,
+        height: outerH,
         child: ClipRect(
           child: OverflowBox(
-            // 紧凑时露出哪一块，取决于后端把模型放在视图的哪个位置：
-            // 紧凑时露出哪一块：
-            // - WebView：模型缩到窄条尺寸后靠右 → 露右侧（缩小版全身）
-            // - 原生：按 canvas 适配（等比、居中），**不额外缩放** →
-            //   露**中央**（角色所在的一段，保证可见、比例正确）
-            alignment: !compact
-                ? Alignment.topLeft
-                : (link.avatarBackend == AvatarBackend.native
-                    ? Alignment.center
-                    : Alignment.topRight),
-            // 内层保持**固定尺寸**：动画只改裁剪框，
-            // 平台视图（WebView）不会被 resize
-            minWidth: groupWidth,
-            maxWidth: groupWidth,
-            minHeight: contentH,
-            maxHeight: contentH,
+            alignment: Alignment.topLeft,
+            minWidth: innerW,
+            maxWidth: innerW,
+            minHeight: innerH,
+            maxHeight: innerH,
             child: SizedBox(
-              width: groupWidth,
-              height: contentH,
-              // 用 Stack 而不是 Row：原生后端的 Live2DView 是混合合成的
-              // 平台视图，**会忽略父约束而溢出**（Flutter 的裁剪对它无效），
-              // 用 Row 时它会盖住左边的操作栏。改成 Stack 并把操作栏放在
-              // 最后绘制（在上层）即可。
+              width: innerW,
+              height: innerH,
+              // 用 Stack：原生后端的 Live2DView 是混合合成平台视图，会忽略
+              // Flutter 的裁剪，操作栏放在最后绘制（上层）才不会被盖住。
               child: Stack(
                 clipBehavior: Clip.none,
                 children: <Widget>[
-                  // 角色 + 话术框：左边留出操作栏的位置
+                  // 角色 + 话术框：展开时左边留操作栏位置；贴边时贴左缘
                   Padding(
-                    padding: const EdgeInsets.only(
-                      left: FloatingAvatarHost.barWidth + FloatingAvatarHost.barGap,
-                    ),
+                    padding: EdgeInsets.only(left: padL),
                     child: SizedBox(
-                      width: groupWidth -
-                          FloatingAvatarHost.barWidth -
-                          FloatingAvatarHost.barGap,
+                      width: boxW,
                       child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        // 数字人本体：可拖动（translucent 保证点击仍能穿透到下层）
-                        GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: compact ? _restoreFromDock : null,
-                          onPanStart: (_) => setState(() => _dragging = true),
-                          onPanUpdate: (d) => _onDragUpdate(link, free, d.delta),
-                          onPanEnd: (_) => _onDragEnd(link, free),
-                          onPanCancel: () => setState(() => _dragging = false),
-                          child: SizedBox(
-                            // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
-                            // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
-                            width: double.infinity,
-                            // 固定用展开态高度，避免动画期间 resize 平台视图
-                            height: avatarH,
-                            child: Live2dAvatar(
-                              modelPath: link.avatarModel,
-                              mouth: link.mouth,
-                              height: avatarH,
-                              // 贴边时让模型在视图内部缩小并靠到指定一侧
-                              compact: compact,
-                              compactSide: compactSide,
-                              compactWidth: FloatingAvatarHost.dockedWidth,
-                              compactHeight: FloatingAvatarHost.dockedHeight,
-                            ),
+                        // 数字人本体：
+                        // - 渲染层占满角色盒（平台视图本身透明命中，不拦点击）
+                        // - 叠一个**只覆盖角色本体宽度**的 opaque 拖动热区：
+                        //   opaque 才能在手势竞技场里赢过下层页面的滚动（translucent
+                        //   会和页面抢 → 拖动“不灵敏/穿透”）；热区收窄到角色宽度，
+                        //   两侧留白仍可穿透到下层页面。
+                        SizedBox(
+                          width: double.infinity,
+                          height: boxH,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: <Widget>[
+                              Live2dAvatar(
+                                modelPath: link.avatarModel,
+                                mouth: link.mouth,
+                                height: boxH,
+                                // 靠 resize 视图适配贴边，后端不再做「缩小贴角」
+                                compact: false,
+                                compactSide: 'right',
+                                compactWidth: dockW,
+                                compactHeight: dockH,
+                              ),
+                              // 透明但 opaque 的热区：只负责拖动/点击，不画任何东西
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: compact ? _restoreFromDock : null,
+                                onPanStart: (_) => setState(() => _dragging = true),
+                                onPanUpdate: (d) => _onDragUpdate(link, free, d.delta),
+                                onPanEnd: (_) => _onDragEnd(link, free),
+                                onPanCancel: () => setState(() => _dragging = false),
+                                child: SizedBox(width: dragW, height: boxH),
+                              ),
+                            ],
                           ),
                         ),
                         // 紧凑（贴边）时窄条里放不下话术框
@@ -291,13 +304,13 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                     ),
                     ),
                   ),
-                  // 操作栏放在**最后**（Stack 里后画的在上层）——
-                  // 原生的平台视图会溢出，必须压在上面才看得见
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    child: _buildArcBar(link, free, avatarH),
-                  ),
+                  // 操作栏：贴边时不显示（窄条放不下，动态 resize 也不再需要裁角避让）
+                  if (!compact)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      child: _buildArcBar(link, free, avatarH),
+                    ),
                 ],
               ),
             ),
@@ -342,6 +355,20 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         onTap: () => link.setBubbleCollapsed(!link.bubbleCollapsed),
       ),
       ArcAction(
+        icon: Icons.face_retouching_natural,
+        tooltip: '切换模型',
+        onTap: () => _pickModelFloating(),
+      ),
+      ArcAction(
+        icon: link.avatarBackend == AvatarBackend.native
+            ? Icons.memory
+            : Icons.public,
+        tooltip: link.avatarBackend == AvatarBackend.native
+            ? '渲染引擎：原生（点按切到 WebView）'
+            : '渲染引擎：WebView（点按切到原生）',
+        onTap: () => _toggleBackend(),
+      ),
+      ArcAction(
         icon: Icons.compress_rounded,
         tooltip: '贴边收起',
         onTap: _dockToEdge,
@@ -376,6 +403,30 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     });
     // 退出紧凑模式，恢复完整尺寸
     link.setAvatarCompact(false);
+  }
+
+  /// 悬浮操作栏：弹出模型选择器切换当前数字人模型
+  Future<void> _pickModelFloating() async {
+    final link = PromptLink.instance;
+    final models = await link.availableAvatarModels();
+    if (!mounted) return;
+    final chosen = await ModelPickerSheet.show(context, link: link, models: models);
+    if (chosen == null || !mounted) return;
+    await link.setAvatarModel(chosen);
+  }
+
+  /// 悬浮操作栏：在 WebView / 原生之间切换渲染后端（平台不支持则提示）
+  Future<void> _toggleBackend() async {
+    final link = PromptLink.instance;
+    final target = link.avatarBackend == AvatarBackend.native
+        ? AvatarBackend.webview
+        : AvatarBackend.native;
+    final reason = backendUnsupportedReason(target);
+    if (reason != null) {
+      if (mounted) AppToast.error(context, reason);
+      return;
+    }
+    await link.setAvatarBackend(target);
   }
 
   // ---------------- 拖动 / 贴边 ----------------

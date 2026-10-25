@@ -523,18 +523,30 @@ surface 尺寸没变时那个回调根本不会来，投影会一直是未初始
   （归一化到 canvas 尺寸），两者相差 canvas 的一半 —— 补偿里必须减掉 `0.5`，
   否则模型整体偏移半屏
 
-⚠️ **原生后端的「贴边缩成小人」目前是停用状态**（`NativeAvatarRenderer.setCompact`
-只下发 `__render_scale__ = 1.0`），原生贴边走 Cubism 官方的**「按 canvas 适配 + 允许裁切」**：
-模型等比、居中、**不额外缩放**，Flutter 侧裁剪露出**中央**那一段（角色所在的位置，
-模型不会消失、比例也正确）。
+✅ **原生后端的「贴边缩成小人」已启用**（`NativeAvatarRenderer.setCompact` 下发
+`__compact_enable__ / __compact_half_w__ / __compact_h_ratio__`）。C++ 侧
+`ApplyViewportFit` 在**已算好的 canvas 适配**之上再叠一层
+`ScaleRelative(k,k) + TranslateRelative(...)`：把整个 canvas 缩到「窄条」对应的
+NDC 范围并贴到视图**右上角**，Flutter 侧裁剪露出的正是右上角 → 看到完整的缩小版模型。
 
-之所以不缩放：Cubism 的 canvas 四周留白很大，缩放后要让**角色本体**正好落在窄条
-中央，需要同时精确控制缩放**和**位置 —— 试过投影空间缩放 / 模型矩阵缩放 / `__fit_bounds__`
-传本体边界，都会让模型跑到角落或缩成一条腿（drawable 顶点外框含背景与遮罩，量不准）。
-C++ 侧的通道（`__render_scale__`、`__fit_*`）和配套修正都已就位，理清后打开即可。
+关键做法（为什么这样稳）：
+- **不重算绝对变换**，只在可用的展开变换上叠缩放+平移 —— 各向异性补偿（投影 px/py）
+  与「累乘语义」极易算错，直接在 `Scale()`（赋值语义）上重推会跑偏。
+- 平移作用于模型空间，需**除回投影的 px/py**（投影在模型矩阵之后乘）。
+- 缩放用 `ScaleRelative`（累乘）而非 `Scale`（赋值），且**每帧 `LoadIdentity` 重算**，
+  不会逐帧累积。
+- 参数非法（未收到 / 窄条几乎占满 = 其实没缩小）时自动**退回普通适配**，模型不会消失。
 
-WebView 侧不受影响：页面内用 `model.getLocalBounds()` 能拿到**角色本体**的精确范围，
-贴边缩成小人一直是好的。
+> 贴边按 **canvas**（而非角色本体）缩放，和 WebView 侧 compact fit 同语义
+> （`baseW/baseH` 就是 canvas 尺寸）：角色周围会留白，但保证完整可见、不变形。
+> WebView 侧仍可用 `model.getLocalBounds()` 拿本体精确范围。
+
+> ⚠️ 上游补丁脚本有两个 **marker 冲突坑**（曾导致补丁被静默跳过）：
+> 1. `6.5` 的 marker「有「角色本体」边界」与结构体字段注释里的同名子串冲突，
+>    会让本体分支被误判成「已打过」而跳过；
+> 2. 新加的 `compactEnable` 结构体字段，其 marker 也不能用裸词 `compactEnable`
+>    （`ApplyViewportFit` / `setParameter` 也引用了它）→ 改用 `compactEnable   = false;`。
+> 现在展开态仍走 canvas 适配（本体展开分支未在真机验证，暂不启用）。
 
 #### Bug 6：部分模型（mao / wanko）嘴型不动 —— 参数名不同
 
@@ -643,18 +655,18 @@ flutter build apk --release
 | --- | --- |
 | 视图尺寸 | 始终是展开尺寸（`OverflowBox` + `ClipRect` 裁剪），**永不 resize** |
 | 模型缩小 | 页面侧 `avatar.setCompact(on, side, w, h)` → `fit()` 按窄条尺寸算 scale，把模型缩到 112×152 并**靠到视图右上角** |
-| 露出哪边 | WebView 露**右上角**（`Alignment.topRight`），原生露**中央**（`Alignment.center`） |
+| 露出哪边 | 两种后端都露**右上角**（`Alignment.topRight`）—— 模型都被缩到窄条并贴右上角 |
 | 贴边时 | 话术框与操作栏被裁掉，只留模型 |
 | 恢复展开 | **直接点模型**即可恢复（不需要额外的展开按钮） |
-两种后端的表现**不一样**（原生侧的原因见上面「贴边缩成小人」那段）：
+两种后端贴边时**都是把 canvas 缩到窄条并贴右上角**（原生侧的实现见上面「贴边缩成小人」那段）：
 
 - **WebView**：页面内 `avatar.setCompact()` → `fit()` 按窄条尺寸算 scale，
   模型缩到 112×152 并贴到视图右上角 → 看到**缩小版的完整模型**
   （页面里能用 `model.getLocalBounds()` 拿到**角色本体**的精确范围，位置算得准）
-- **原生**：走 Cubism 官方的**「按 canvas 适配 + 允许裁切」** → 模型等比、居中、
-  **不额外缩放**，裁剪露中央那一段（模型不会消失、比例正确）
-  （Cubism Native 没有 `getLocalBounds()` 的等价 API，drawable 顶点外框含背景/遮罩，
-  量不准）
+- **原生**：`__compact_*__` → C++ `ApplyViewportFit` 在 canvas 适配上叠
+  `ScaleRelative + TranslateRelative`，把整个 canvas 缩到窄条并贴右上角 →
+  同样看到**缩小版的完整模型**（按 canvas 缩放，周围留白，与 WebView 侧同语义；
+  Cubism Native 没有 `getLocalBounds()` 的等价 API）
 
 ⚠️ **画布内的位置是布局的一部分，不能单独校正**：Live2D 的 canvas 里角色常常偏下
 （上方留白多），把「角色本体」强行平移到视口中央，展开态就会和下方的话术框错位 ——
@@ -706,15 +718,22 @@ Live2D 的 canvas 四周留白**各模型差异极大**（有的角色只占 can
 - 再加一个用户可调的 **`模型大小` 滑杆**（0.8~1.8x，**默认 1.0 = 完整显示不裁切**），拖动时通过 `avatar.setZoom()` **实时重排，不重新加载页面**
 - **放大后的裁切方向**：`fit()` 在模型高于容器时改为**顶部对齐**，多余部分从**脚部**裁掉 —— 保证脸和上半身永远完整（之前是贴底对齐，放大后 `y<0` 会裁头）
 - 原生后端暂不支持该滑杆（放大系数在 C++ 侧固定 1.0），设置页已标注「仅 WebView 后端生效」
-- **原生后端按「角色本体」适配**（ApplyViewportFit）
-  - 投影保持单位矩阵（之前对竖容器做 Scale(1, w/h) 会把 y 压缩、模型变形）
-  - 缩放系数 s = min(2/本体宽, 2/本体高)，SetHeight 等比缩放（内部 scaleX = scaleY，**不会拉伸**），SetCenterPosition 把**本体中心**移到视口中心
-  - 「本体边界」由 **WebView 侧**用 model.getLocalBounds() 量出、归一化后经 __fit_cx__/__fit_cy__/__fit_w__/__fit_h__ 四个特殊参数传给原生（Cubism Native 没有等价 API）
-  - 没有边界时退化成按 canvas 适配（Cubism 官方做法，位置正确但角色略小）
-  - 实测：原生与 WebView 的模型高度/顶部位置基本一致（WebView 另有 overscan 允许少量溢出，所以略大一点）
-  - ⚠️ drawable 顶点的外框**不能**当本体边界：它含背景/遮罩，比角色本体大得多，用它缩放会让模型小一半且偏出角色盒（这个坑踩过两轮）
-- 由于原生侧没有 getLocalBounds() 的等价物，适配用的是 **canvas 尺寸**（含四周留白），所以角色会比 WebView 侧略小
-- 原生后端复用同一个 zoom 值（`SetHeight(2.0 * aspect * zoom)`），在补丁脚本里
+- **原生后端按角色**本体**做 contain 适配**（`ApplyViewportFit`，见 `tool/patch_live2d_plugin.dart`）
+  - 投影每帧做**各向异性补偿**（竖容器 `Scale(H/W, 1)`、横容器 `Scale(1, W/H)`），
+    满足 `P_x·M_x·W == P_y·M_y·H`，模型在屏幕上**不变形**
+  - 本体边界用插件每帧 `Update()` 后算好的 **drawable 顶点并集**（`GetContentBounds`，
+    模型空间）—— 实测 Hiyori 本体 `bh≈1.27 < canvas ch=1.4`，是能装下整个角色的
+  - 缩放取**两轴较小者**（`s = min(2/(px·fw), 2/(py·fh)) · margin`，`margin 0.92`）
+    = **contain（完整放入、绝不裁切）**，对**任意视口**都只做居中 contain；
+    之前按 canvas 做 cover（`SetHeight/SetWidth` 填满）会在竖容器里裁掉头/脚
+  - 平移让**本体中心**映射到视口中心：`t = −s·本体中心`（`TranslateRelative`）
+  - **贴边收起用「动态宽高」而非「缩到窄条 + 贴角 + 裁角」**：旧裁角方案依赖平台视图
+    出屏溢出的映射，在 Android 混合合成下**左右贴边不对称、且角色贴到出屏交界线会被裁脚**。
+    现由 `FloatingAvatarHost._buildUnit` 在贴边时把平台视图**直接 resize 到窄条尺寸**
+    （widget 树类型/层级在展开与紧凑间保持一致 → Live2dAvatar 只被 resize、不被 remount），
+    原生/WebView 均对整视口居中 contain → 左右天然对称、身体完整，彻底不碰裁角/交界线
+  - `__fit_cx__/__fit_cy__/__fit_w__/__fit_h__` 仍由 Dart 下发并存进 `view->fitBounds`，
+    但当前不再读取 —— 原生改用自带的 `GetContentBounds`，纯原生后端（无 WebView 量边界）也能正确适配
 
 排查时踩的坑：
 
@@ -722,7 +741,7 @@ Live2D 的 canvas 四周留白**各模型差异极大**（有的角色只占 can
 - WebView 会缓存 `index.html`，URL 里必须带 `v=<资源版本>` 参数破缓存
 - `modelAspect()` 里不能直接写 `model` —— 它在 `boot()` 的闭包里，对象方法访问会 `ReferenceError`，必须走 `avatar._model`
 - PowerShell 写 Dart/JS 文件时会吃掉 `&&`、把 `$var` 展开成空，涉及这两样时用编辑工具而不是 shell 重定向
-**模型适配的「放大系数」**：Live2D 的 canvas 通常比角色本体大一圈，纯 `Math.min` 适配会让角色显得很小、两侧空一大片。WebView（`index.html`）与原生（`live2d_flutter.cpp`）都加了 `FIT_OVERSCAN = 1.12`，允许高度方向多溢出 12%，角色明显更饱满（溢出部分多在角色上方的空白）。
+**模型适配的「放大系数」**：Live2D 的 canvas 通常比角色本体大一圈，纯 `Math.min` 适配会让角色显得很小、两侧空一大片。WebView（`index.html`）允许高度方向多溢出（`fitOverscan`，由「模型大小」滑杆 0.8~1.8x 实时调）。原生（`live2d_flutter.cpp`）则**不带溢出**、直接按本体 contain（展开 `margin` 0.99 / 贴边 0.86）—— 优先保证角色**完整不裁切**（展开态与贴边都不切头脚），代价是角色比 WebView 侧略小、四周留白略多。
 
 **为什么改成「以高度定宽度」**：Live2D 人物模型本身是**竖长**的（宽高比约 0.5~0.7）。早期把角色盒做成横向（420×330），模型按高度适配后**宽度只用了一半**，两侧全是空白 —— 就是「数字人比框小很多、看着松散」的原因。改成竖比例后模型宽度利用率从 ~52% 提到 ~71%，整组宽度也从 460 收窄到 327。
 
