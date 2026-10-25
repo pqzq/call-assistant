@@ -494,6 +494,32 @@ model->GetModelMatrix()->SetHeight(targetH);
 ```
 
 实测：`fit view=795x1104 aspect=1.389 targetH=2.777` → 模型完整显示且高度最大化。
+#### Bug 5：原生渲染时嘴型完全不动
+
+`Live2DModel::Update()` 的开头会 `_model->LoadParameters()` —— 把**所有参数重置回默认值**：
+
+```cpp
+void Live2DModel::Update() {
+    _model->LoadParameters();          // ← 嘴型被清成 0
+    _motionManager->UpdateMotion(...); // ← motion 还会再覆盖一遍
+    ...
+    _model->Update();                  // ← 这里才把参数写进顶点
+}
+```
+
+而 `nativeSetParameter` 原来调的是 `SetParameterValue`，它只在 render loop 的 **drain events 阶段**（`Update()` 之前）设值 → **下一帧开头就被重置**，嘴型永远是 0。
+
+WebView 侧没这个问题，因为它在 `afterMotionUpdate` 事件 + ticker 里应用嘴型（动作更新之后）。
+
+**修复**：新增 `Live2DModel::SetExternalParameter()`，把值缓存到 `_externalParams`，在 `Update()` 里 `_model->Update()` **之前**重新应用：
+
+```cpp
+for (auto it = _externalParams.Begin(); it != _externalParams.End(); ++it)
+    SetParameterValue(it->First.GetRawString(), it->Second);
+_model->Update();
+```
+
+修完实测日志：`mouth externalParams=1 applied=0.176 → 0.624 → 0.322 → 0.585`（值在真实变化）。
 #### 排查过程中确认过的「正常」项（避免误判）
 
 | 检查项 | 结果 |

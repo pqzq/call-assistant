@@ -136,6 +136,91 @@ const List<_Edit> _edits = <_Edit>[
     marker: '重新打开时如果 nativeOnSurfaceCreated 还没被调用',
   ),
 
+  // ---- 4.6 嘴型参数：改成「每帧重新应用的外部参数」 ----
+  // Update() 开头 _model->LoadParameters() 会重置所有参数，
+  // 直接 SetParameterValue 的值活不过一帧 → 嘴型永远不动
+  _Edit(
+    'android/src/main/cpp/Live2DModel.hpp',
+    '''#include <Type/csmVector.hpp>
+#include <Math/CubismMatrix44.hpp>''',
+    '''#include <Type/csmVector.hpp>
+#include <Type/csmMap.hpp>
+#include <Math/CubismMatrix44.hpp>''',
+    marker: 'Type/csmMap.hpp',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.hpp',
+    '''    void SetParameterValue(const Csm::csmChar* parameterId, Csm::csmFloat32 value);''',
+    '''    void SetParameterValue(const Csm::csmChar* parameterId, Csm::csmFloat32 value);
+
+    /// 外部**持续驱动**的参数（嘴型等）。
+    /// Update() 开头会 LoadParameters() 重置参数，直接 Set 的值活不过一帧，
+    /// 这里缓存下来，在每帧 _model->Update() 之前重新应用。
+    void SetExternalParameter(const Csm::csmChar* parameterId, Csm::csmFloat32 value);''',
+    marker: '外部**持续驱动**的参数',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.hpp',
+    '''private:
+    void SetupModel();''',
+    '''private:
+    /// 外部持续驱动参数（嘴型等），每帧 Update() 末尾重新应用
+    Csm::csmMap<Csm::csmString, Csm::csmFloat32> _externalParams;
+
+    void SetupModel();''',
+    marker: '_externalParams',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.cpp',
+    '''    // Pose
+    if (_pose)
+        _pose->UpdateParameters(_model, deltaTime);
+
+    _model->Update();
+}''',
+    '''    // Pose
+    if (_pose)
+        _pose->UpdateParameters(_model, deltaTime);
+
+    // 外部持续驱动参数（嘴型等）必须在 _model->Update() **之前**应用：
+    // 上面的 LoadParameters() 会重置参数、motion/expression 也会覆盖，
+    // 而在 _model->Update() 之后设置就不再影响本帧顶点了
+    for (Csm::csmMap<Csm::csmString, Csm::csmFloat32>::const_iterator it = _externalParams.Begin();
+         it != _externalParams.End(); ++it)
+    {
+        // 用本类的封装（内部会 GetId 再调 CubismModel::SetParameterValue）
+        SetParameterValue(it->First.GetRawString(), it->Second);
+    }
+
+    _model->Update();
+}''',
+    marker: '外部持续驱动参数（嘴型等）必须在',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.cpp',
+    '''void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
+    '''void Live2DModel::SetExternalParameter(const Csm::csmChar* parameterId, Csm::csmFloat32 value)
+{
+    if (!parameterId) return;
+    _externalParams[Csm::csmString(parameterId)] = value;
+}
+
+void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
+    marker: 'SetExternalParameter(const Csm::csmChar* parameterId',
+  ),
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    const char* id = env->GetStringUTFChars(parameterId, nullptr);
+    view->model->SetParameterValue(id, value);
+    env->ReleaseStringUTFChars(parameterId, id);''',
+    '''    const char* id = env->GetStringUTFChars(parameterId, nullptr);
+    // 用 SetExternalParameter：每帧 Update() 开头会 LoadParameters() 重置参数，
+    // 直接 SetParameterValue 的值活不过一帧（嘴型永远是 0）
+    view->model->SetExternalParameter(id, value);
+    env->ReleaseStringUTFChars(parameterId, id);''',
+    marker: '用 SetExternalParameter',
+  ),
+
   // ---- 5. 模型适配改成「按高度填满」（修裁头/裁脚） ----
   _Edit(
     'android/src/main/cpp/live2d_flutter.cpp',
