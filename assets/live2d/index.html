@@ -165,15 +165,37 @@
       avatar._model = model;
       window.addEventListener('resize', () => { app.renderer.resize(window.innerWidth, window.innerHeight); fit(); });
 
+      // 嘴型参数名**各模型不同**（hiyori/haru/natori 是 ParamMouthOpenY，
+      // mao 是 ParamA、wanko 是 PARAM_MOUTH_OPEN_Y），
+      // 所以优先用 model3.json 里 Groups.LipSync 声明的参数。
+      const lipSyncIds = (() => {
+        try {
+          const s = model.internalModel && model.internalModel.settings;
+          const groups = (s && s.groups) || [];
+          for (const g of groups) {
+            const name = g.Name || g.name;
+            if (name === 'LipSync') {
+              const ids = g.Ids || g.ids || [];
+              if (ids.length) return ids;
+            }
+          }
+        } catch (e) { /* 读不到就回退 */ }
+        return ['ParamMouthOpenY'];
+      })();
+
+      console.log('lipSync ids = ' + JSON.stringify(lipSyncIds));
+
       // 嘴型：在动作更新之后覆盖，避免被 idle 动作覆盖
       const applyMouth = () => {
         const core = model.internalModel && model.internalModel.coreModel;
         if (!core) return;
         // 平滑逼近目标值，看起来更自然
         avatar.mouthSmooth += (avatar.mouth - avatar.mouthSmooth) * 0.35;
-        try {
-          core.setParameterValueById('ParamMouthOpenY', avatar.mouthSmooth);
-        } catch (e) { /* 模型没有该参数时忽略 */ }
+        for (const id of lipSyncIds) {
+          try {
+            core.setParameterValueById(id, avatar.mouthSmooth);
+          } catch (e) { /* 模型没有该参数时忽略 */ }
+        }
       };
 
       avatar._tick = applyMouth;   // 便于诊断手动调用

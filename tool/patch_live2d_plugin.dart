@@ -188,13 +188,26 @@ const List<_Edit> _edits = <_Edit>[
     for (Csm::csmMap<Csm::csmString, Csm::csmFloat32>::const_iterator it = _externalParams.Begin();
          it != _externalParams.End(); ++it)
     {
-        // 用本类的封装（内部会 GetId 再调 CubismModel::SetParameterValue）
-        SetParameterValue(it->First.GetRawString(), it->Second);
+        const CubismId* id =
+            CubismFramework::GetIdManager()->GetId(it->First.GetRawString());
+        if (_model->GetParameterIndex(id) >= 0)
+        {
+            _model->SetParameterValue(id, it->Second);
+        }
+        else if (_lipSyncIds.GetSize() > 0)
+        {
+            // 参数名对不上（mao 是 ParamA、wanko 是 PARAM_MOUTH_OPEN_Y），
+            // 回退到模型自己声明的 LipSync 组（model3.json 的 Groups.LipSync）
+            for (Csm::csmUint32 i = 0; i < _lipSyncIds.GetSize(); i++)
+            {
+                _model->SetParameterValue(_lipSyncIds[i], it->Second);
+            }
+        }
     }
 
     _model->Update();
 }''',
-    marker: '外部持续驱动参数（嘴型等）必须在',
+    marker: 'mao 是 ParamA',
   ),
   _Edit(
     'android/src/main/cpp/Live2DModel.cpp',

@@ -136,6 +136,8 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                         boxHeight,
                         unitWidth,
                         groupWidth,
+                        // 展开态的固定高度：动画只裁剪、不 resize
+                        avatarHeight,
                       ),
                     );
                   },
@@ -171,23 +173,49 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     double avatarHeight,
     double unitWidth,
     double groupWidth,
+    // 展开态下的固定高度（动画期间保持不变，避免 resize 平台视图）
+    double expandedHeight,
   ) {
-    final docked = t > 0.5;
+    // 切换点推后到 0.82：动画绝大部分时间都是「完整布局在裁剪缩小」，
+    // 最后才换成挂件，跳变更小
+    final docked = t > 0.82;
     // 浮层没有 Material 祖先，必须给 DefaultTextStyle，
     // 否则文字会落到 Flutter 的 fallback 样式（红字 + 黄色双下划线）
     final textStyle = Theme.of(context).textTheme.bodyMedium ??
         const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4);
+    // 注意：这里**不能**用 Transform/AnimatedScale 做拖动/过渡反馈 ——
+    // Android 的平台视图（WebView / TextureView）不支持任意变换，
+    // 一旦被 transform 包裹就整块不渲染（表现成模型消失）。
+    if (docked) {
+      return DefaultTextStyle(
+        style: textStyle,
+        child: SizedBox(
+          width: unitWidth,
+          child: _buildDockedChip(link, avatarHeight),
+        ),
+      );
+    }
+    // 展开态：外层尺寸跟着动画走，但**内层布局固定为展开尺寸**，
+    // 靠 ClipRect 裁剪 —— 否则动画每帧都会 resize WebView，
+    // Android 平台视图每次 resize 都要重建 surface，肉眼可见地卡。
     return DefaultTextStyle(
       style: textStyle,
       child: SizedBox(
         width: unitWidth,
-        // 注意：这里**不能**用 Transform/AnimatedScale 做拖动反馈 ——
-        // Android 的平台视图（WebView / TextureView）不支持任意变换，
-        // 一旦被 transform 包裹就整块不渲染（表现成模型消失）。
-        // 拖动反馈改在图标上体现（见 _buildArcBar 的 dragging 参数）。
-        child: docked
-            ? _buildDockedChip(link, avatarHeight)
-            : Row(
+        height: avatarHeight,
+        child: ClipRect(
+          child: OverflowBox(
+            alignment: _dockRight ? Alignment.topRight : Alignment.topLeft,
+            // 内层保持**固定的展开尺寸**：动画只改裁剪框，
+            // 平台视图（WebView）不会被 resize
+            minWidth: groupWidth,
+            maxWidth: groupWidth,
+            minHeight: expandedHeight,
+            maxHeight: expandedHeight,
+            child: SizedBox(
+              width: groupWidth,
+              height: expandedHeight,
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   // 月亮型操作栏（凹面朝向角色），高度与角色一致
@@ -232,9 +260,12 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                       ],
                     ),
                   ),
-                ],
+                  ],
+                ),
               ),
-      ),
+            ),
+          ),
+        ),
     );
   }
 
@@ -322,11 +353,13 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         child: Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
-            // 贴边时也显示模型（小挂件），点一下展开
-            Live2dAvatar(
-              modelPath: link.avatarModel,
-              mouth: link.mouth,
-              height: avatarHeight,
+            // 贴边态**不渲染 Live2D**：平台视图（WebView/TextureView）创建和
+            // 销毁都很贵，动画中途切换会明显掉帧；而且 112px 宽的窄条里
+            // 模型也被压得看不清。这里只留状态点 + 展开按钮。
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(color: Colors.transparent),
+              ),
             ),
             // 恢复按钮（画在 WebView 之上，命中测试优先）
             // 贴右边时按钮放左下角，避免被屏幕边缘切掉

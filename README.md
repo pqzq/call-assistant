@@ -494,6 +494,25 @@ model->GetModelMatrix()->SetHeight(targetH);
 ```
 
 实测：`fit view=795x1104 aspect=1.389 targetH=2.777` → 模型完整显示且高度最大化。
+#### Bug 6：部分模型（mao / wanko）嘴型不动 —— 参数名不同
+
+各模型的嘴型参数名**不统一**（`model3.json` 的 `Groups.LipSync` 声明）：
+
+| 模型 | LipSync 参数 |
+| --- | --- |
+| hiyori / haru / natori | `ParamMouthOpenY` |
+| **mao** | **`ParamA`** |
+| **wanko** | **`PARAM_MOUTH_OPEN_Y`**（全大写） |
+| mark / rice | 无 LipSync 组（模型本身没有嘴部参数） |
+
+原来两端都硬编码 `ParamMouthOpenY`，所以只有前 3 个模型能动。
+
+**修复**：
+
+- WebView：从 `model.internalModel.settings.groups` 里找 `LipSync` 组，用它的 ids
+- 原生：`GetParameterIndex(id) < 0` 时回退到 `Live2DModel::_lipSyncIds`（Cubism 的 `GetLipSyncParameterId`）
+
+实测日志：`lipSync ids = ["ParamA"]`（mao）。
 #### Bug 5：原生渲染时嘴型完全不动
 
 `Live2DModel::Update()` 的开头会 `_model->LoadParameters()` —— 把**所有参数重置回默认值**：
@@ -570,6 +589,15 @@ flutter build apk --release
 | 图标 / 点击区 | `27` / `46` | 图标加大，方便点 |
 | `barGap` | `8` | 角色盒与操作栏间距 |
 | 话术框间距 | `6` | 与角色盒之间 |
+
+**贴边动画的流畅度**
+
+之前贴边/展开会明显掉帧，两个原因：
+
+1. **动画每帧都在 resize WebView**：`unitWidth` 参与 `SizedBox(width:)`，平台视图每次 resize 都要重建 surface
+   → 改成「外层裁剪框跟着动画走 + 内层布局固定为展开尺寸」，用 `ClipRect` + `OverflowBox` 裁，WebView 尺寸恒定
+2. **`t > 0.5` 时切到贴边挂件，而挂件里又有一个 `Live2dAvatar`** → 动画中途要销毁一个 WebView + 创建另一个
+   → 挂件里**不再渲染 Live2D**（只留状态点 + 展开按钮），切换点也推到 `t > 0.82`
 
 **操作栏与拖动**
 
