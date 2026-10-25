@@ -20,6 +20,10 @@ class AvatarStage extends StatelessWidget {
     this.solidBubble = false,
     this.avatarBoxWidth,
     this.backend,
+    this.compact = false,
+    this.compactSide = 'left',
+    this.compactWidth = 0,
+    this.compactHeight = 0,
   });
 
   final PromptLink link;
@@ -42,6 +46,16 @@ class AvatarStage extends StatelessWidget {
   /// 渲染后端（不传则用 link 的当前值；显式传入是为了切换时能重建 renderer）
   final AvatarBackend? backend;
 
+  /// 贴边紧凑模式（模型在渲染视图内部缩小，不重建视图）
+  final bool compact;
+
+  /// 紧凑模式下模型贴向哪一侧（`right` = 靠右，否则靠左）
+  final String compactSide;
+
+  /// 紧凑模式下的目标尺寸（逻辑像素）
+  final double compactWidth;
+  final double compactHeight;
+
   @override
   Widget build(BuildContext context) {
     // 不显示气泡时只放角色本身：
@@ -54,7 +68,11 @@ class AvatarStage extends StatelessWidget {
           modelPath: link.avatarModel,
           mouth: link.mouth,
           height: avatarHeight,
-            backend: backend ?? link.avatarBackend,
+          backend: backend ?? link.avatarBackend,
+          compact: compact,
+          compactSide: compactSide,
+          compactWidth: compactWidth,
+          compactHeight: compactHeight,
         ),
       );
     }
@@ -70,6 +88,10 @@ class AvatarStage extends StatelessWidget {
             mouth: link.mouth,
             height: avatarHeight,
             backend: backend ?? link.avatarBackend,
+            compact: compact,
+            compactSide: compactSide,
+            compactWidth: compactWidth,
+            compactHeight: compactHeight,
           ),
         ),
         if (!link.bubbleCollapsed) ...<Widget>[

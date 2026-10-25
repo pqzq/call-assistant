@@ -1089,7 +1089,8 @@ class _PromptPageState extends State<PromptPage> {
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      '数字人已浮动在屏幕上方，按住底部灰条即可拖动位置，✕ 可关闭。',
+                      '数字人已浮在屏幕上方：按住数字人本体或左侧操作栏最上面的 ⠿ 手柄即可拖动；'
+                      '左侧操作栏最下面的红色 ✕ 关闭。',
                       style: TextStyle(fontSize: 12, height: 1.5, color: Color(0xFF2F6BFF)),
                     ),
                   ),
@@ -1107,7 +1108,9 @@ class _PromptPageState extends State<PromptPage> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '内置样例为 Live2D 官方 Hiyori（仅测试用）。自备模型请打包成 zip（内含 *.model3.json 及其贴图/动作文件），从右上角数字人菜单导入。',
+              '内置样例为 Live2D 官方 Hiyori（仅测试用）。自备模型请打包成 zip'
+              '（内含 *.model3.json 及其贴图/动作文件），在上面「模型与展示」里点'
+              '「导入 zip」或「导入文件夹」。',
               style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
             ),
           ],

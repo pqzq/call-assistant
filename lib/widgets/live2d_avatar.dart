@@ -22,6 +22,10 @@ class Live2dAvatar extends StatefulWidget {
     required this.mouth,
     this.height = 220,
     this.backend,
+    this.compact = false,
+    this.compactSide = 'left',
+    this.compactWidth = 0,
+    this.compactHeight = 0,
   });
 
   /// 相对模型路径，如 hiyori/Hiyori.model3.json
@@ -34,6 +38,16 @@ class Live2dAvatar extends StatefulWidget {
 
   /// 渲染后端（不传则用全局设置）
   final AvatarBackend? backend;
+
+  /// 贴边紧凑模式：模型在渲染视图内部缩小并贴到 [compactSide] 一侧
+  final bool compact;
+
+  /// 紧凑模式下模型贴向哪一侧（`right` = 靠右，否则靠左）
+  final String compactSide;
+
+  /// 紧凑模式下的目标尺寸（逻辑像素）
+  final double compactWidth;
+  final double compactHeight;
 
   @override
   State<Live2dAvatar> createState() => _Live2dAvatarState();
@@ -64,6 +78,19 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.modelPath != widget.modelPath) {
       _loadModel();
+      return;
+    }
+    // 贴边紧凑模式变化：通知后端把模型在视图内缩小（不重建视图）
+    if (oldWidget.compact != widget.compact ||
+        oldWidget.compactSide != widget.compactSide ||
+        oldWidget.compactWidth != widget.compactWidth ||
+        oldWidget.compactHeight != widget.compactHeight) {
+      _renderer?.setCompact(
+        widget.compact,
+        side: widget.compactSide,
+        width: widget.compactWidth,
+        height: widget.compactHeight,
+      );
     }
   }
 

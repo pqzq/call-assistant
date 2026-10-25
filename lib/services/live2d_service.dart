@@ -18,7 +18,25 @@ class Live2dService {
   static const String _assetRoot = 'assets/live2d/';
 
   /// 资源版本：改了 assets 里的文件就 +1，启动时会重新释放
-  static const String assetVersion = '12';
+  static const String assetVersion = '13';
+
+  /// 计算资源版本号：基础版本 + index.html 内容哈希
+  ///
+  /// 放进 WebView 的 URL（`v=` 参数）可以顺带**破掉 WebView 缓存** ——
+  /// WebView 会缓存 index.html，资源更新后 URL 不变就会一直加载旧页面。
+  static Future<String> computeAssetVersion() async {
+    final base = assetVersion;
+    try {
+      final data = await rootBundle.load('assets/live2d/index.html');
+      var hash = 0;
+      for (final b in data.buffer.asUint8List()) {
+        hash = (hash * 31 + b) & 0x7fffffff;
+      }
+      return '$base.${hash.toRadixString(16)}';
+    } catch (_) {
+      return base;
+    }
+  }
 
   static const String defaultModel = 'hiyori/Hiyori.model3.json';
 
@@ -484,7 +502,13 @@ class Live2dService {
     if (!root.existsSync()) root.createSync(recursive: true);
 
     final marker = File('${root.path}/.asset_version');
-    final upToDate = marker.existsSync() && marker.readAsStringSync().trim() == assetVersion;
+    // 版本号 = 基础版本 + index.html 的内容哈希。
+    // 这样**改了 index.html 一定会重新释放**，不会再出现
+    // 「代码改了但设备上还是旧页面 → 页面脚本整段不执行 → 模型加载不出来」
+    // （曾因为漏升手动版本号排查了很久）。
+    final expectedVersion = await computeAssetVersion();
+    final upToDate =
+        marker.existsSync() && marker.readAsStringSync().trim() == expectedVersion;
 
     if (!upToDate) {
       // 版本变化：先清空旧资源再重新释放，避免删除/替换模型后残留旧文件
@@ -497,7 +521,7 @@ class Live2dService {
       }
       root.createSync(recursive: true);
       await _extractAssets(root);
-      marker.writeAsStringSync(assetVersion);
+      marker.writeAsStringSync(expectedVersion);
     }
     _webRoot = root;
   }

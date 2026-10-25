@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>Live2D Avatar</title>
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  /* 触摸穿透：Android 的 WebView 是混合合成的原生控件，会**吃掉所有触摸事件**，
+     导致外层 Flutter 的 GestureDetector（拖动数字人）完全收不到手势。
+     这里关掉页面自身的指针事件，让触摸穿透回 Flutter。
+     （模型交互本来就已经是 autoInteract: false，不受影响） */
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
   canvas { display: block; }
   #tip {
     position: absolute; left: 6%; right: 6%; top: 50%; transform: translateY(-50%);
@@ -39,6 +43,15 @@
       fitOverscan = Math.min(1.8, Math.max(0.8, z));
       if (typeof avatar._fit === 'function') avatar._fit();
     },
+    // Flutter 侧调「贴边紧凑模式」：模型在页面内缩小并贴到某一角。
+    // 不重建 WebView、不 resize —— 平台视图 resize 会重建 surface，很卡。
+    setCompact(on, side, cw, ch) {
+      avatar.compact = !!on;
+      avatar.compactSide = side || 'left';
+      avatar.compactW = cw || 0;
+      avatar.compactH = ch || 0;
+      if (typeof avatar._fit === 'function') avatar._fit();
+    },
     // 返回角色**实际渲染边界**的宽高比（宽/高），供 Flutter 把浮动框
     // 调成贴合模型的比例 —— canvas 通常比角色本体大一圈，直接用
     // canvas 尺寸会让两侧空出一大片。
@@ -60,6 +73,7 @@
   };
 
   const tip = document.getElementById('tip');
+
   function fail(msg) {
     avatar.status = 'error: ' + msg;
     tip.textContent = '数字人加载失败\n' + msg;
@@ -145,6 +159,27 @@
         const baseW = model.width;
         const baseH = model.height;
         if (!baseW || !baseH) return;
+
+        // ---- 贴边紧凑模式 ----
+        // 贴边时浮窗只有一条窄边（112px 左右），但**不重建 WebView**、
+        // 也不 resize 它（Android 平台视图 resize 会重建 surface，很卡）。
+        // 做法：把模型在页面内**缩到窄条尺寸**，再贴到 WebView 的某一角，
+        // Flutter 侧用 OverflowBox 把这一角露出来。
+        if (avatar.compact) {
+          const cw = avatar.compactW || w;
+          const ch = avatar.compactH || h;
+          const cScale = Math.min(cw / baseW, (ch / baseH) * fitOverscan) * 0.99;
+          model.scale.set(cScale);
+          const modelW = baseW * cScale;
+          const modelH = baseH * cScale;
+          // 贴到指定的一角：'right' 表示靠 WebView 右侧
+          model.x = avatar.compactSide === 'right' ? (w - modelW) : 0;
+          // **靠顶**：Flutter 侧露出的是 WebView 的右上角那一条，
+          // 模型如果还贴在底部就完全看不到（只露出空白）
+          model.y = 0;
+          return;
+        }
+
         // Live2D 的 canvas 通常比角色本体大一圈（四周留白），
         // 纯 Math.min 适配会让角色显得很小、两侧空一大片。
         // 这里允许高度方向多溢出 25%，让角色更饱满。

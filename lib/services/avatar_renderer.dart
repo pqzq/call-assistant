@@ -53,6 +53,22 @@ abstract class AvatarRenderer {
   /// 说话开关（关闭时复位嘴型）
   void setSpeaking(bool speaking);
 
+  /// 贴边紧凑模式
+  ///
+  /// 贴边时浮窗只剩一条窄边，但**不能重建渲染视图**（Android 平台视图
+  /// 重建 / resize 都会重建 surface，肉眼可见地卡）。
+  /// 这里让后端把模型在**视图内部**缩小，并贴到视图的某一侧，
+  /// 上层再用裁剪把那一侧露出来。
+  ///
+  /// [side] 为 `right` 表示贴到视图右侧，否则贴左侧。
+  /// 不支持的后端忽略即可（此时上层退化为纯裁剪）。
+  void setCompact(
+    bool enabled, {
+    String side = 'left',
+    double width = 0,
+    double height = 0,
+  }) {}
+
   /// 构建渲染 Widget（尺寸由外部约束）
   Widget build();
 

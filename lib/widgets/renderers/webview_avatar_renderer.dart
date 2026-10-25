@@ -56,8 +56,11 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     }
     // zoom = 模型放大系数（用户可调），页面按它决定适配时的 overscan
     final zoom = PromptLink.instance.avatarModelZoom.toStringAsFixed(2);
+    // v = 资源版本（含 index.html 内容哈希）：WebView 会缓存 index.html，
+    // 资源更新后 URL 不变就会一直加载旧页面（曾因此整段脚本不执行、模型加载不出来）
+    final v = await Live2dService.computeAssetVersion();
     final url =
-        '$base/index.html?model=${Uri.encodeComponent(relativePath)}&zoom=$zoom';
+        '$base/index.html?model=${Uri.encodeComponent(relativePath)}&zoom=$zoom&v=$v';
     if (_isWindows) {
       await _loadWindows(url);
     } else {
@@ -185,6 +188,28 @@ class WebViewAvatarRenderer implements AvatarRenderer {
       controller
           .runJavaScript(
               'window.avatar && avatar.setZoom ? avatar.setZoom($v) : 0')
+          .catchError((Object _) {}),
+    );
+  }
+
+  /// 贴边紧凑模式：让模型在页面内缩小并贴到指定一侧（不重建 WebView）
+  @override
+  void setCompact(
+    bool enabled, {
+    String side = 'left',
+    double width = 0,
+    double height = 0,
+  }) {
+    final controller = _controller;
+    if (controller == null || !_pageReady) return;
+    final s = side == 'right' ? 'right' : 'left';
+    final w = width.toStringAsFixed(0);
+    final h = height.toStringAsFixed(0);
+    unawaited(
+      controller
+          .runJavaScript(
+              'window.avatar && avatar.setCompact ? avatar.setCompact('
+              '${enabled ? 'true' : 'false'}, "$s", $w, $h) : 0')
           .catchError((Object _) {}),
     );
   }

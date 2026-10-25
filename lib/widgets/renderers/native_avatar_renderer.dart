@@ -127,6 +127,21 @@ class NativeAvatarRenderer implements AvatarRenderer {
     }
   }
 
+  /// 贴边紧凑模式
+  ///
+  /// 原生后端暂时**不支持在视图内部把模型缩小**（TextureView 不能做
+  /// transform，插件也没有缩放通道），这里退化为「上层裁剪」：
+  /// 贴边时露出模型的一部分，模型本体仍然存在、不会消失。
+  @override
+  void setCompact(
+    bool enabled, {
+    String side = 'left',
+    double width = 0,
+    double height = 0,
+  }) {
+    // no-op：裁剪由 floating_avatar 统一处理
+  }
+
   @override
   Widget build() {
     // Live2DView 必须**始终在树里**：

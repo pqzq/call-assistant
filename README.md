@@ -590,14 +590,40 @@ flutter build apk --release
 | `barGap` | `8` | 角色盒与操作栏间距 |
 | 话术框间距 | `6` | 与角色盒之间 |
 
-**贴边动画的流畅度**
+**贴边（紧凑）模式的实现**
 
-之前贴边/展开会明显掉帧，两个原因：
+贴边时浮窗只剩一条窄边（112px），但**不能重建 / resize 渲染视图** —— Android 平台视图
+每次 resize 都要重建 surface，动画中做必然掉帧；重建则更慢（要重新加载模型）。
 
-1. **动画每帧都在 resize WebView**：`unitWidth` 参与 `SizedBox(width:)`，平台视图每次 resize 都要重建 surface
-   → 改成「外层裁剪框跟着动画走 + 内层布局固定为展开尺寸」，用 `ClipRect` + `OverflowBox` 裁，WebView 尺寸恒定
-2. **`t > 0.5` 时切到贴边挂件，而挂件里又有一个 `Live2dAvatar`** → 动画中途要销毁一个 WebView + 创建另一个
-   → 挂件里**不再渲染 Live2D**（只留状态点 + 展开按钮），切换点也推到 `t > 0.82`
+所以采用「**同一个视图 + 视图内缩放 + 裁剪**」：
+
+| 环节 | 做法 |
+| --- | --- |
+| 视图尺寸 | 始终是展开尺寸（`OverflowBox` + `ClipRect` 裁剪），**永不 resize** |
+| 模型缩小 | 页面侧 `avatar.setCompact(on, side, w, h)` → `fit()` 按窄条尺寸算 scale，把模型缩到 112×152 并**靠到视图右上角** |
+| 露出哪边 | 角色在展开布局里位于**右侧**（操作栏在左），所以裁剪统一露右侧（`Alignment.topRight`） |
+| 贴边时 | 话术框与操作栏被裁掉，只留缩小后的模型；**点模型即可恢复展开** |
+
+⚠️ 两个必须注意的点：
+
+- 模型在 compact 模式下要**靠顶**（`model.y = 0`）而不是贴底 —— 露出的是视图的右上角，
+  贴底就只露出空白
+- 原生后端暂不支持视图内缩放（TextureView 不能 transform，插件也没有缩放通道），
+  退化为纯裁剪（露出模型的一部分，模型本体不会消失）
+
+**WebView 的触摸穿透**
+
+Android 的 WebView 是**混合合成的原生控件**，会吃掉所有触摸事件，导致外层 Flutter 的
+`GestureDetector`（拖动数字人）完全收不到手势。解决：在 `index.html` 的 `<style>` 里加
+
+```css
+html, body { ... pointer-events: none; }
+```
+
+让触摸穿透回 Flutter（模型交互本来就是 `autoInteract: false`，不受影响）。
+
+> 注意 CSS 必须写在 `<style>` 里 —— 写进 `<script>` 会让整段脚本抛
+> `SyntaxError: Unexpected token '{'` 而不执行，页面直接废掉。
 
 **操作栏与拖动**
 
@@ -623,7 +649,8 @@ Live2D 的 canvas 四周留白**各模型差异极大**（有的角色只占 can
 
 排查时踩的坑：
 
-- `index.html` 改动后必须**升 `Live2dService.assetVersion`**，否则设备上的旧资源不会被重新释放（改了代码却看不到效果）
+- `index.html` 改动后**不需要手动升版本**了：`Live2dService.computeAssetVersion()` 会把 `index.html` 的内容哈希算进版本号，改了文件一定会重新释放。这个 bug 曾导致「改了代码但设备上还是旧页面 → 脚本整段不执行 → 模型加载不出来」排查很久
+- WebView 会缓存 `index.html`，URL 里必须带 `v=<资源版本>` 参数破缓存
 - `modelAspect()` 里不能直接写 `model` —— 它在 `boot()` 的闭包里，对象方法访问会 `ReferenceError`，必须走 `avatar._model`
 - PowerShell 写 Dart/JS 文件时会吃掉 `&&`、把 `$var` 展开成空，涉及这两样时用编辑工具而不是 shell 重定向
 **模型适配的「放大系数」**：Live2D 的 canvas 通常比角色本体大一圈，纯 `Math.min` 适配会让角色显得很小、两侧空一大片。WebView（`index.html`）与原生（`live2d_flutter.cpp`）都加了 `FIT_OVERSCAN = 1.12`，允许高度方向多溢出 12%，角色明显更饱满（溢出部分多在角色上方的空白）。
@@ -903,7 +930,9 @@ lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现
 
 ## CI 自动发布 APK（GitHub Actions）
 
-工作流：[`.github/workflows/release.yml`](https://github.com/pqzq/call-assistant/blob/main/.github/workflows/release.yml)，四个 job（ci / elease-android / elease-windows / publish）：
+工作流：[`.github/workflows/release.yml`](https://github.com/pqzq/call-assistant/blob/main/.github/workflows/release.yml)，四个 job（ci / 
+elease-android / 
+elease-windows / publish）：
 
 > 发布产物在这里下载：<https://github.com/pqzq/call-assistant/releases>
 

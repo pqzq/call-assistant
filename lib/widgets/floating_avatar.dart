@@ -86,7 +86,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
   bool _dockRight = true;
 
   /// 贴边时拖动前的锚点
-  Offset _dockAnchor = Offset.zero;
 
   @override
   Widget build(BuildContext context) {
@@ -176,9 +175,13 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     // 展开态下的固定高度（动画期间保持不变，避免 resize 平台视图）
     double expandedHeight,
   ) {
-    // 切换点推后到 0.82：动画绝大部分时间都是「完整布局在裁剪缩小」，
-    // 最后才换成挂件，跳变更小
-    final docked = t > 0.82;
+    // 贴边进度：过一半后进入「紧凑模式」——
+    // 模型在**渲染视图内部**缩小（WebView 侧 setCompact），这里只负责
+    // 把缩小后的那一侧裁出来。全程不重建 / 不 resize 平台视图。
+    final compact = t > 0.5;
+    // 角色在展开布局里位于**右侧**（操作栏在左），所以窄条要露出右侧，
+    // 模型也必须靠到渲染视图的右侧并靠顶，否则露出的是一片空白。
+    const compactSide = 'right';
     // 浮层没有 Material 祖先，必须给 DefaultTextStyle，
     // 否则文字会落到 Flutter 的 fallback 样式（红字 + 黄色双下划线）
     final textStyle = Theme.of(context).textTheme.bodyMedium ??
@@ -186,18 +189,10 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     // 注意：这里**不能**用 Transform/AnimatedScale 做拖动/过渡反馈 ——
     // Android 的平台视图（WebView / TextureView）不支持任意变换，
     // 一旦被 transform 包裹就整块不渲染（表现成模型消失）。
-    if (docked) {
-      return DefaultTextStyle(
-        style: textStyle,
-        child: SizedBox(
-          width: unitWidth,
-          child: _buildDockedChip(link, avatarHeight),
-        ),
-      );
-    }
-    // 展开态：外层尺寸跟着动画走，但**内层布局固定为展开尺寸**，
-    // 靠 ClipRect 裁剪 —— 否则动画每帧都会 resize WebView，
-    // Android 平台视图每次 resize 都要重建 surface，肉眼可见地卡。
+    //
+    // 外层尺寸跟着动画走（裁剪框），但**内层布局固定为展开尺寸** ——
+    // 否则动画每帧都会 resize WebView，Android 平台视图每次 resize
+    // 都要重建 surface，肉眼可见地卡。
     return DefaultTextStyle(
       style: textStyle,
       child: SizedBox(
@@ -205,7 +200,9 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         height: avatarHeight,
         child: ClipRect(
           child: OverflowBox(
-            alignment: _dockRight ? Alignment.topRight : Alignment.topLeft,
+            // 紧凑时露出角色所在的那一侧（模型已被页面缩到窄条尺寸并靠顶）
+            alignment:
+                compact ? Alignment.topRight : Alignment.topLeft,
             // 内层保持**固定的展开尺寸**：动画只改裁剪框，
             // 平台视图（WebView）不会被 resize
             minWidth: groupWidth,
@@ -234,6 +231,7 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                         // 数字人本体：可拖动（translucent 保证点击仍能穿透到下层）
                         GestureDetector(
                           behavior: HitTestBehavior.translucent,
+                          onTap: compact ? _restoreFromDock : null,
                           onPanStart: (_) => setState(() => _dragging = true),
                           onPanUpdate: (d) => _onDragUpdate(link, free, d.delta),
                           onPanEnd: (_) => _onDragEnd(link, free),
@@ -242,15 +240,22 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                             // 必须给固定宽度：放进 Row 后 Column 拿到的是无界宽度，
                             // Live2dAvatar 内部的 width: double.infinity 会变成无限宽导致渲染失败
                             width: double.infinity,
-                            height: avatarHeight,
+                            // 固定用展开态高度，避免动画期间 resize 平台视图
+                            height: expandedHeight,
                             child: Live2dAvatar(
                               modelPath: link.avatarModel,
                               mouth: link.mouth,
-                              height: avatarHeight,
+                              height: expandedHeight,
+                              // 贴边时让模型在视图内部缩小并靠到指定一侧
+                              compact: compact,
+                              compactSide: compactSide,
+                              compactWidth: FloatingAvatarHost.dockedWidth,
+                              compactHeight: FloatingAvatarHost.dockedHeight,
                             ),
                           ),
                         ),
-                        if (!link.bubbleCollapsed) ...<Widget>[
+                        // 紧凑（贴边）时窄条里放不下话术框
+                        if (!link.bubbleCollapsed && !compact) ...<Widget>[
                           const SizedBox(height: 6),
                           AvatarBubble(
                             link: link,
@@ -260,12 +265,12 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
                       ],
                     ),
                   ),
-                  ],
-                ),
+                ],
               ),
             ),
           ),
         ),
+      ),
     );
   }
 
@@ -328,73 +333,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     );
   }
 
-  Widget _buildDockedChip(PromptLink link, double avatarHeight) {
-    final status = link.avatarStatus;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _restoreFromDock,
-      onPanStart: (_) => setState(() => _dragging = true),
-      onPanUpdate: (details) {
-        // 从贴边状态拖动 -> 立即恢复展开并继续跟随
-        setState(() {
-          if (_docked) {
-            _docked = false;
-            _dragPos = _dockAnchor;
-          }
-          _dragPos = (_dragPos ?? Offset.zero) + details.delta;
-        });
-      },
-      onPanEnd: (_) async {
-        setState(() => _dragging = false);
-        await _persistPosition(free: _freeSizeForExpanded());
-      },
-      child: SizedBox(
-        width: FloatingAvatarHost.dockedWidth,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: <Widget>[
-            // 贴边态**不渲染 Live2D**：平台视图（WebView/TextureView）创建和
-            // 销毁都很贵，动画中途切换会明显掉帧；而且 112px 宽的窄条里
-            // 模型也被压得看不清。这里只留状态点 + 展开按钮。
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(color: Colors.transparent),
-              ),
-            ),
-            // 恢复按钮（画在 WebView 之上，命中测试优先）
-            // 贴右边时按钮放左下角，避免被屏幕边缘切掉
-            Positioned(
-              right: _dockRight ? null : -2,
-              left: _dockRight ? -2 : null,
-              bottom: -2,
-              child: _RoundButton(
-                icon: Icons.open_in_full_rounded,
-                tooltip: '展开数字人',
-                onTap: _restoreFromDock,
-              ),
-            ),
-            // 状态小圆点
-            Positioned(
-              left: 2,
-              top: 2,
-              child: IgnorePointer(
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: _statusColor(status),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _restoreFromDock() {
     final link = PromptLink.instance;
     final free = _freeSizeForExpanded();
@@ -447,7 +385,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
       setState(() {
         _docked = true;
         _dockRight = nearRight && !nearLeft;
-        _dockAnchor = pos;
       });
       return;
     }
@@ -467,7 +404,6 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             2;
     setState(() {
       _dockRight = center > media.size.width / 2;
-      _dockAnchor = _dragPos ?? Offset.zero;
       _docked = true;
     });
   }
@@ -477,50 +413,5 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
     if (pos == null) return;
     final normalized = AvatarLayout.normalize(pos, free);
     await PromptLink.instance.setAvatarPosition(normalized.dx, normalized.dy);
-  }
-
-  static Color _statusColor(AvatarStatus status) {
-    switch (status) {
-      case AvatarStatus.disabled:
-        return const Color(0xFF9AA4B2);
-      case AvatarStatus.ready:
-        return const Color(0xFF17A05A);
-      case AvatarStatus.armed:
-        return const Color(0xFF2F6BFF);
-      case AvatarStatus.speaking:
-        return const Color(0xFFE07A00);
-      case AvatarStatus.error:
-        return const Color(0xFFD03B3B);
-    }
-  }
-}
-
-/// 圆形小按钮（贴边挂件上的恢复按钮）
-class _RoundButton extends StatelessWidget {
-  const _RoundButton({required this.icon, required this.tooltip, this.onTap});
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.white,
-        shape: const CircleBorder(),
-        elevation: 3,
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: SizedBox(
-            width: 28,
-            height: 28,
-            child: Icon(icon, size: 15, color: const Color(0xFF2F6BFF)),
-          ),
-        ),
-      ),
-    );
   }
 }
