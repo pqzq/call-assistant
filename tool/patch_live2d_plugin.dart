@@ -522,14 +522,12 @@ void Live2DModel::GetContentBounds(
 {
     if (!view || !view->model || !view->model->IsLoaded()) return;
 
-    // 投影矩阵**每帧重设**（不依赖 nativeOnSurfaceChanged 的回调时机 ——
-    // surface 尺寸没变时那个回调不会来，投影就会一直是初始值）：
+    // ---- 投影矩阵：每帧重设，做各向异性补偿 ----
     //
     // 裁剪空间是正方形 [-1,1]²，视口是长方形，NDC -> 屏幕的映射本身各向异性。
     // 要让模型在屏幕上**不变形**，必须满足 P_x * M_x * W == P_y * M_y * H。
-    // 竖容器取 P_x = H/W、P_y = 1，配合**等比**的模型矩阵（M_x == M_y）即恒成立。
-    // （之前用单位矩阵，条件退化成 W == H —— 竖屏下不成立，模型被纵向拉长，
-    //  实测宽高比只有 WebView 侧的一半。）
+    // 竖容器取 P_x = H/W、P_y = 1，配合**等比**的模型矩阵即恒成立。
+    // （用单位矩阵的话条件退化成 W == H，竖屏下模型被纵向拉长。）
     view->projection.LoadIdentity();
     if (view->width > 0 && view->height > 0)
     {
@@ -547,15 +545,13 @@ void Live2DModel::GetContentBounds(
         }
     }
 
-    // Cubism 官方标准适配：按 canvas 宽高比与视口宽高比比较，
-    // 选 SetHeight(2.0) 或 SetWidth(2.0)。
-    //   - 内部 scaleX = scaleY（等比，不会拉伸）
-    //   - 以 canvas 中心为原点（位置自然在视口中间）
+    // ---- 模型矩阵：按 **canvas** 适配（Cubism 官方标准做法）----
     //
-    // ⚠️ 不用 drawable 顶点算「角色本体」边界：那个外框含背景/遮罩，
-    // 比角色本体大得多 —— 实测模型会缩成一半大、还偏出角色盒。
-    // WebView 侧用的是 model.getLocalBounds()（真正的角色本体边界），
-    // Cubism Native 没有等价 API，所以原生侧比 WebView 略小一点。
+    // SetHeight / SetWidth 内部 scaleX == scaleY（等比，不会变形），
+    // 且以 canvas 中心为原点（位置自然在视口中间）。
+    // 视口与 canvas 的宽高比不一致时**允许裁切**（官方行为）——
+    // 不再依赖 drawable 顶点算「角色本体」边界（那个外框含背景/遮罩，
+    // 量不准，会让模型跑偏或缩成一条腿）。
     float cw = 0.0f, ch = 0.0f;
     view->model->GetCanvasSize(cw, ch);
     if (cw <= 0.0f || ch <= 0.0f) return;
@@ -565,58 +561,17 @@ void Live2DModel::GetContentBounds(
         : 1.0f;
     auto* mm = view->model->GetModelMatrix();
     if (!mm) return;
-    // 有「角色本体」边界（WebView 侧量到的）时，按**本体**适配 ——
-    // 这样原生和 WebView 的效果一致（角色填满盒子、位置居中）。
-    if (view->fitBoundsValid)
-    {
-        const float bodyW = cw * view->fitBounds[2];   // 本体在模型空间的宽
-        const float bodyH = ch * view->fitBounds[3];   // 本体在模型空间的高
-        // 合理性保护：本体不可能小于 canvas 的 10%，否则说明边界数据有误
-        // （WebView 侧量出来的），宁可退回按 canvas 适配也别把模型缩成一条腿
-        if (bodyW > cw * 0.05f && bodyH > ch * 0.1f &&
-            bodyW < cw && bodyH < ch)
-        {
-            // 投影对 x 方向做了各向异性拉伸（P_x），本体投影后的横向范围
-            // 是 bodyW * s * P_x，必须留在裁剪空间 [-1,1] 内，否则会被裁掉两侧。
-            const float px = (view->width > view->height && view->height > 0)
-                ? 1.0f
-                : (view->width > 0
-                       ? (float)view->height / (float)view->width
-                       : 1.0f);
-            // 贴边紧凑模式：在**模型矩阵**里再缩（renderScale），而不是缩放投影
-            // —— 投影缩放会和 SetCenterPosition 的居中补偿互相打架
-            // （模型会跑到角落、只露出一部分）。
-            const float rs = (view->renderScale < 1.0f) ? view->renderScale : 1.0f;
-            const float s = fminf(2.0f / bodyH, 2.0f / (bodyW * px)) * rs;
-            // ⚠️ CubismModelMatrix::SetHeight 内部是 **Scale()（相对累乘）**，
-            // 每帧调用会让缩放**指数级累积**（模型缩成一条腿）。
-            // 所以每帧先把模型矩阵重置为 identity，再设缩放。
-            mm->LoadIdentity();
-            mm->SetHeight(ch * s);
-            // 让**本体中心**落在视口原点：
-            //   SetCenterPosition 移动的是 **canvas 中心**，
-            //   而 fitBounds 给的是本体中心（归一化到 canvas 尺寸），
-            //   两者相差 canvas 的一半 —— 必须减掉 0.5，
-            //   否则模型会整体偏移半屏（贴边时只露出下半部分）。
-            mm->SetCenterPosition(
-                -(cw * (view->fitBounds[0] - 0.5f)) * s,
-                -(ch * (view->fitBounds[1] - 0.5f)) * s);
-            return;
-        }
-    }
-
-    // 没有本体边界时退化成按 canvas 适配（位置由 Cubism 保证居中）
-    const float rs2 = (view->renderScale < 1.0f) ? view->renderScale : 1.0f;
+    // SetHeight 内部是 Scale()（相对累乘）-> 每帧先重置，否则缩放指数级累积
     mm->LoadIdentity();
     if (viewAspect > modelAspect)
     {
-        // 视口更宽 -> 按 canvas 高度填满（两侧可能留白）
-        mm->SetHeight(2.0f * rs2);
+        // 视口更宽 -> 按 canvas 高度填满（两侧可能留白或裁切）
+        mm->SetHeight(2.0f);
     }
     else
     {
-        // 视口更高 -> 按 canvas 宽度填满（上下可能留白）
-        mm->SetWidth(2.0f * rs2);
+        // 视口更高 -> 按 canvas 宽度填满（上下可能留白或裁切）
+        mm->SetWidth(2.0f);
     }
 }''',
     marker: 'static void ApplyViewportFit(Live2DView* view)',

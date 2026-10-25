@@ -215,12 +215,10 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         child: ClipRect(
           child: OverflowBox(
             // 紧凑时露出哪一块，取决于后端把模型放在视图的哪个位置：
+            // 紧凑时露出哪一块：
             // - WebView：模型缩到窄条尺寸后靠右 → 露右侧（缩小版全身）
-            // - 原生：canvas 有留白，缩放后无法精确对齐角色本体
-            //   → 不缩放，露**顶部**（头 + 上半身完整可见，模型不会消失）
-            // 紧凑时露出**中央**：两种后端都会把模型等比缩小并保持在
-            // 视图中央（WebView 侧 setCompact 居中、原生侧矩阵缩放），
-            // 裁剪露中央就能完整看到缩小版的模型。
+            // - 原生：按 canvas 适配（等比、居中），**不额外缩放** →
+            //   露**中央**（角色所在的一段，保证可见、比例正确）
             alignment: !compact
                 ? Alignment.topLeft
                 : (link.avatarBackend == AvatarBackend.native
