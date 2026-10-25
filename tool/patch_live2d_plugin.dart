@@ -301,7 +301,7 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
     marker: '返回 false：让事件继续冒泡给 Flutter',
   ),
 
-  // ---- 5. 模型适配改成「按高度填满」（修裁头/裁脚） ----
+  // ---- 5. 模型适配改成「按 canvas 长宽比」（修比例被压扁） ----
   _Edit(
     'android/src/main/cpp/live2d_flutter.cpp',
     '''    if (view->width > view->height)
@@ -310,17 +310,21 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
         view->model->GetModelMatrix()->SetWidth(2.0f);
 
     return true;''',
-    '''    // 按「高度填满」适配：竖容器若用 SetWidth，瘦高模型（如 Natori）
-    // 的高度会远超视口，头和脚都被裁掉（只剩半身）。
-    // SetHeight 保证完整显示，且高度方向最大化利用。
+    '''    // 按**模型 canvas 的长宽比**适配视口：
+    // 投影已改成单位矩阵（视口 x,y ∈ [-1,1]），所以要让 canvas 完整放入，
+    // 缩放系数取 min(2/canvasW, 2/canvasH)（含 canvas 四周的留白）。
     {
-        const float aspect = (float)view->height / (float)view->width;
-        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f) * 1.0f;
-        view->model->GetModelMatrix()->SetHeight(targetH);
+        float cw = 0.0f, ch = 0.0f;
+        view->model->GetCanvasSize(cw, ch);
+        if (cw > 0.0f && ch > 0.0f)
+        {
+            const float s = fminf(2.0f / cw, 2.0f / ch);
+            view->model->GetModelMatrix()->SetHeight(ch * s);
+        }
     }
 
     return true;''',
-    marker: '按「高度填满」适配',
+    marker: '按**模型 canvas 的长宽比**适配',
   ),
 
   // ---- 6. nativeOnSurfaceChanged 里同步同样的适配策略 ----
@@ -330,11 +334,64 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
             view->model->GetModelMatrix()->SetHeight(2.0f);
         else
             view->model->GetModelMatrix()->SetWidth(2.0f);''',
-    '''        // 与 ReloadModelInternal 保持一致的「按高度填满」策略
-        const float aspect = (float)view->height / (float)view->width;
-        const float targetH = 2.0f * (aspect > 1.0f ? aspect : 1.0f) * 1.0f;
-        view->model->GetModelMatrix()->SetHeight(targetH);''',
-    marker: '与 ReloadModelInternal 保持一致的',
+    '''        // 与 ReloadModelInternal 保持一致：按 canvas 长宽比适配（不压扁）
+        float cw = 0.0f, ch = 0.0f;
+        view->model->GetCanvasSize(cw, ch);
+        if (cw > 0.0f && ch > 0.0f)
+        {
+            const float s = fminf(2.0f / cw, 2.0f / ch);
+            view->model->GetModelMatrix()->SetHeight(ch * s);
+        }''',
+    marker: '与 ReloadModelInternal 保持一致：按 canvas 长宽比',
+  ),
+
+  // ---- 6.1 投影矩阵改成单位矩阵（比例由模型矩阵保证） ----
+  _Edit(
+    'android/src/main/cpp/live2d_flutter.cpp',
+    '''    view->projection.LoadIdentity();
+    if (view->width > view->height)
+    {
+        float ratio = static_cast<float>(view->height) / static_cast<float>(view->width);
+        view->projection.Scale(ratio, 1.0f);
+    }
+    else
+    {
+        float ratio = static_cast<float>(view->width) / static_cast<float>(view->height);
+        view->projection.Scale(1.0f, ratio);
+    }''',
+    '''    // 投影保持**单位矩阵**：比例由模型矩阵（SetHeight）保证。
+    // 之前这里对竖容器做 Scale(1, w/h)，把 y 方向压缩了 ——
+    // 模型虽然能填满视口，但**长宽比被破坏**（看起来被压扁）。
+    view->projection.LoadIdentity();''',
+    marker: '投影保持**单位矩阵**',
+  ),
+
+  // ---- 6.2 Live2DModel 暴露 canvas 尺寸 ----
+  _Edit(
+    'android/src/main/cpp/Live2DModel.hpp',
+    '''    bool IsLoaded() const { return _modelSetting != nullptr; }''',
+    '''    bool IsLoaded() const { return _modelSetting != nullptr; }
+
+    /// 取模型的 canvas 尺寸（模型空间）
+    ///
+    /// 用于按**长宽比**适配视口：canvas 尺寸决定模型的实际外框，
+    /// 直接按容器宽高拉伸会把模型压扁。
+    void GetCanvasSize(float& width, float& height) const;''',
+    marker: 'GetCanvasSize',
+  ),
+  _Edit(
+    'android/src/main/cpp/Live2DModel.cpp',
+    '''void Live2DModel::SetExternalParameter(const Csm::csmChar* parameterId, Csm::csmFloat32 value)''',
+    '''void Live2DModel::GetCanvasSize(float& width, float& height) const
+{
+    width = height = 0.0f;
+    if (!_model) return;
+    width = _model->GetCanvasWidth();
+    height = _model->GetCanvasHeight();
+}
+
+void Live2DModel::SetExternalParameter(const Csm::csmChar* parameterId, Csm::csmFloat32 value)''',
+    marker: 'void Live2DModel::GetCanvasSize',
   ),
 ];
 
