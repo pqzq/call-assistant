@@ -273,10 +273,10 @@ void Live2DModel::Draw(const Csm::CubismMatrix44& matrix)''',
         if (view->renderScale < 1.0f)
         {
             const float s = view->renderScale;
-            mvp.Scale(s, s);
+            mvp.ScaleRelative(s, s);
         }
         view->model->Draw(mvp);''',
-    marker: '贴边紧凑模式：把模型在视图内缩小并靠到右上角',
+    marker: '必须用 **ScaleRelative**（相对缩放）而不是 Scale',
   ),
   _Edit(
     'lib/src/view.dart',
@@ -519,40 +519,89 @@ void Live2DModel::GetContentBounds(
   _Edit(
     'android/src/main/cpp/live2d_flutter.cpp',
     '''static bool ReloadModelInternal(Live2DView* view, const char* dir, const char* file)''',
-    '''/// 按**角色本体**（drawable 顶点并集）把模型适配到视口
-///
-/// Live2D 的 canvas 四周留白很大，若只按 canvas 适配，角色在竖长的
-/// 盒子里会被拉得很长（宽度填满、高度溢出视口）。
-/// 投影是单位矩阵（视口 x,y ∈ [-1,1]），所以让内容边界完整放入即可：
-///   缩放系数 s = min(2/内容宽, 2/内容高)
-///   SetHeight 等比缩放（内部 scaleX = scaleY，不会变形）
-///   SetCenterPosition 把**内容中心**移到视口中心
-///
-/// 内容边界由 Live2DModel 在每帧 Update() 之后缓存（那时顶点才有效），
-/// 所以这个函数要**每帧**调用一次。
-static void ApplyViewportFit(Live2DView* view)
+    '''static void ApplyViewportFit(Live2DView* view)
 {
     if (!view || !view->model || !view->model->IsLoaded()) return;
 
-    float minX = 0.0f, minY = 0.0f, maxX = 0.0f, maxY = 0.0f;
-    view->model->GetContentBounds(minX, minY, maxX, maxY);
-    const float bw = maxX - minX;
-    const float bh = maxY - minY;
+    // 投影矩阵**每帧重设**（不依赖 nativeOnSurfaceChanged 的回调时机 ——
+    // surface 尺寸没变时那个回调不会来，投影就会一直是初始值）：
+    //
+    // 裁剪空间是正方形 [-1,1]²，视口是长方形，NDC -> 屏幕的映射本身各向异性。
+    // 要让模型在屏幕上**不变形**，必须满足 P_x * M_x * W == P_y * M_y * H。
+    // 竖容器取 P_x = H/W、P_y = 1，配合**等比**的模型矩阵（M_x == M_y）即恒成立。
+    // （之前用单位矩阵，条件退化成 W == H —— 竖屏下不成立，模型被纵向拉长，
+    //  实测宽高比只有 WebView 侧的一半。）
+    view->projection.LoadIdentity();
+    if (view->width > 0 && view->height > 0)
+    {
+        if (view->width > view->height)
+        {
+            // 横容器：y 方向拉伸
+            view->projection.Scale(
+                1.0f, (float)view->width / (float)view->height);
+        }
+        else
+        {
+            // 竖容器：x 方向拉伸
+            view->projection.Scale(
+                (float)view->height / (float)view->width, 1.0f);
+        }
+    }
+
+    // Cubism 官方标准适配：按 canvas 宽高比与视口宽高比比较，
+    // 选 SetHeight(2.0) 或 SetWidth(2.0)。
+    //   - 内部 scaleX = scaleY（等比，不会拉伸）
+    //   - 以 canvas 中心为原点（位置自然在视口中间）
+    //
+    // ⚠️ 不用 drawable 顶点算「角色本体」边界：那个外框含背景/遮罩，
+    // 比角色本体大得多 —— 实测模型会缩成一半大、还偏出角色盒。
+    // WebView 侧用的是 model.getLocalBounds()（真正的角色本体边界），
+    // Cubism Native 没有等价 API，所以原生侧比 WebView 略小一点。
     float cw = 0.0f, ch = 0.0f;
     view->model->GetCanvasSize(cw, ch);
-    if (bw <= 0.0f || bh <= 0.0f || cw <= 0.0f || ch <= 0.0f) return;
-
-    const float s = fminf(2.0f / bw, 2.0f / bh);
+    if (cw <= 0.0f || ch <= 0.0f) return;
+    const float modelAspect = cw / ch;
+    const float viewAspect = (view->width > 0 && view->height > 0)
+        ? (float)view->width / (float)view->height
+        : 1.0f;
     auto* mm = view->model->GetModelMatrix();
     if (!mm) return;
-    // SetHeight 的参数是「目标高度」，这里换算成 canvas 高度
-    mm->SetHeight(ch * s);
-    // 内容中心 = canvas 中心 + 偏移，把它归零
-    mm->SetCenterPosition(
-        -(minX + maxX) * 0.5f * s, -(minY + maxY) * 0.5f * s);
-}
+    // 有「角色本体」边界（WebView 侧量到的）时，按**本体**适配 ——
+    // 这样原生和 WebView 的效果一致（角色填满盒子、位置居中）。
+    if (view->fitBoundsValid)
+    {
+        const float bodyW = cw * view->fitBounds[2];   // 本体在模型空间的宽
+        const float bodyH = ch * view->fitBounds[3];   // 本体在模型空间的高
+        if (bodyW > 0.0f && bodyH > 0.0f)
+        {
+            // 投影对 x 方向做了各向异性拉伸（P_x），本体投影后的横向范围
+            // 是 bodyW * s * P_x，必须留在裁剪空间 [-1,1] 内，否则会被裁掉两侧。
+            const float px = (view->width > view->height && view->height > 0)
+                ? 1.0f
+                : (view->width > 0
+                       ? (float)view->height / (float)view->width
+                       : 1.0f);
+            const float s = fminf(2.0f / bodyH, 2.0f / (bodyW * px));
+            mm->SetHeight(ch * s);
+            // 本体中心 = canvas 中心 + 偏移，把它归零
+            mm->SetCenterPosition(
+                -(view->fitBounds[0] * cw) * s,
+                -(view->fitBounds[1] * ch) * s);
+            return;
+        }
+    }
 
-static bool ReloadModelInternal(Live2DView* view, const char* dir, const char* file)''',
+    if (viewAspect > modelAspect)
+    {
+        // 视口更宽 -> 按 canvas 高度填满（两侧可能留白）
+        mm->SetHeight(2.0f);
+    }
+    else
+    {
+        // 视口更高 -> 按 canvas 宽度填满（上下可能留白）
+        mm->SetWidth(2.0f);
+    }
+}''',
     marker: 'static void ApplyViewportFit(Live2DView* view)',
   ),
   _Edit(
