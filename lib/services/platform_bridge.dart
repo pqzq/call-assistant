@@ -35,6 +35,9 @@ class PlatformBridge {
   /// 是否是 Android
   static bool get isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
+  /// 是否是 Windows（原生 Live2D 走 flutter_live2d_windows 纹理插件）
+  static bool get isWindows => defaultTargetPlatform == TargetPlatform.windows;
+
   /// 是否支持「拨号跳转」（打开系统拨号页）
   ///
   /// 桌面没有系统拨号能力，PC 端只能复制号码。

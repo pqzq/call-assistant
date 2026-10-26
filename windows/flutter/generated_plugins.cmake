@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
+  flutter_live2d_windows
   flutter_tts
   url_launcher_windows
   webview_flutter_windows

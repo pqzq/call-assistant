@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/avatar_renderer.dart';
+import '../services/platform_bridge.dart';
 import '../services/prompt_link.dart';
 import 'renderers/native_avatar_renderer.dart';
 import 'renderers/webview_avatar_renderer.dart';
+import 'renderers/windows_native_avatar_renderer.dart';
 
 /// Live2D 数字人：按用户选择的渲染后端展示，嘴型由外部 [mouth]（0~1）实时驱动。
 ///
@@ -166,12 +168,19 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     }
 
     final renderer = effective == AvatarBackend.native
-        ? NativeAvatarRenderer(
-            onReady: _onRendererReady,
-            onError: _onRendererError,
-            // 角色盒高度：紧凑模式要按它算缩放系数
-            boxHeight: widget.height,
-          )
+        ? (PlatformBridge.isWindows
+            // Windows：自研纹理插件（不是平台视图，无 resize/裁剪问题）
+            ? WindowsNativeAvatarRenderer(
+                onReady: _onRendererReady,
+                onError: _onRendererError,
+              )
+            // Android / iOS：flutter_live2d（需 pub cache 补丁）
+            : NativeAvatarRenderer(
+                onReady: _onRendererReady,
+                onError: _onRendererError,
+                // 角色盒高度：紧凑模式要按它算缩放系数
+                boxHeight: widget.height,
+              ))
         : WebViewAvatarRenderer(
             onReady: _onRendererReady,
             onError: _onRendererError,

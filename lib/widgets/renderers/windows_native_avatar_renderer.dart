@@ -1,0 +1,160 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_live2d_windows/flutter_live2d_windows.dart';
+
+import '../../services/avatar_renderer.dart';
+import '../../services/live2d_service.dart';
+
+/// Windows 原生渲染后端：自研插件 flutter_live2d_windows（外部纹理路线）。
+///
+/// 与 Android 的 NativeAvatarRenderer 差异：
+/// - 不是平台视图：C++ 在独立 GL 线程离屏渲染，Dart 用 Texture 显示，
+///   天然被 Flutter 合成/裁剪，无 resize 闪断问题
+/// - 桌面为分栏布局、无贴边收起，setCompact 为空实现
+/// - 渲染尺寸跟随布局：LayoutBuilder 拿逻辑尺寸 × dpr → create / setSize
+class WindowsNativeAvatarRenderer
+    with WidgetsBindingObserver
+    implements AvatarRenderer {
+  WindowsNativeAvatarRenderer({this.onReady, this.onError}) {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  final void Function()? onReady;
+  final void Function(String message)? onError;
+
+  final WindowsLive2DController _controller = WindowsLive2DController();
+
+  bool _created = false;
+  bool _loaded = false;
+  double _lastMouth = 0;
+  Size _lastPx = Size.zero;
+  String? _pendingModel;
+
+  static bool _sizeDiffers(Size a, Size b) =>
+      (a.width - b.width).abs() >= 1 || (a.height - b.height).abs() >= 1;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  String? get unsupportedReason => null;
+
+  @override
+  Future<void> load(String relativePath) async {
+    _pendingModel = relativePath;
+    // 未 create（还没有尺寸）时先记下，等 build 首帧拿到尺寸再加载
+    if (_created) await _loadPending();
+  }
+
+  Future<void> _loadPending() async {
+    final rel = _pendingModel;
+    if (rel == null || !_created) return;
+
+    final root = await Live2dService.instance.ensureWebRoot();
+    if (root == null) {
+      onError?.call('本地资源目录未初始化，请先开启一次数字人');
+      return;
+    }
+    final normalized = rel.replaceAll('\\', '/');
+    final slash = normalized.lastIndexOf('/');
+    if (slash < 0) {
+      onError?.call('模型路径不正确：$rel');
+      return;
+    }
+    final dir = '${root.path}/${normalized.substring(0, slash)}';
+    final file = normalized.substring(slash + 1);
+
+    final ok = await _controller.loadModel(dir: dir, file: file);
+    if (!ok) {
+      onError?.call('模型加载失败：$file');
+      return;
+    }
+    _loaded = true;
+    _pendingModel = null;
+    setMouth(_lastMouth);
+    onReady?.call();
+  }
+
+  Future<void> _syncSize(Size px) async {
+    if (px.width < 1 || px.height < 1) return;
+    if (!_sizeDiffers(px, _lastPx)) return;
+    _lastPx = px;
+    if (!_created) {
+      try {
+        await _controller.create(width: px.width, height: px.height);
+        _created = true;
+        await _loadPending();
+      } catch (e) {
+        onError?.call('Windows 原生渲染初始化失败：$e');
+      }
+    } else {
+      await _controller.setSize(width: px.width, height: px.height);
+    }
+  }
+
+  @override
+  void setMouth(double value) {
+    _lastMouth = value.clamp(0.0, 1.0);
+    if (_loaded) {
+      unawaited(_controller.setParameter('ParamMouthOpenY', _lastMouth));
+    }
+  }
+
+  @override
+  void setSpeaking(bool speaking) {
+    if (!speaking) {
+      _lastMouth = 0;
+      if (_loaded) {
+        unawaited(_controller.setParameter('ParamMouthOpenY', 0));
+      }
+    }
+  }
+
+  @override
+  void setCompact(
+    bool enabled, {
+    String side = 'left',
+    double width = 0,
+    double height = 0,
+    double boxHeight = 0,
+  }) {}
+
+  @override
+  String get compactAlignment => 'center';
+
+  @override
+  Widget build() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final px = Size(
+          constraints.maxWidth.isFinite ? constraints.maxWidth * dpr : 0,
+          constraints.maxHeight.isFinite ? constraints.maxHeight * dpr : 0,
+        );
+        if (px.width >= 1 && px.height >= 1 && _sizeDiffers(px, _lastPx)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _syncSize(px));
+        }
+        return WindowsLive2DView(
+          controller: _controller,
+          placeholder: const SizedBox.shrink(),
+        );
+      },
+    );
+  }
+
+  @override
+  Future<void> dispose() async {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.dispose();
+  }
+
+  /// 窗口最小化/失焦隐藏时暂停出帧（省 CPU，恢复时自动继续）
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_created) return;
+    final paused = state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.inactive;
+    unawaited(_controller.setPaused(paused));
+  }
+}

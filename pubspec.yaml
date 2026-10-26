@@ -30,6 +30,9 @@ dependencies:
   # 与 webview_flutter 4.x 不兼容，必须锁在 1.2.x
   webview_flutter_windows: '>=1.0.0 <1.3.0'
   flutter_live2d: ^1.0.2
+  # Windows 原生 Live2D（自研插件，外部纹理路线，仓内路径依赖）
+  flutter_live2d_windows:
+    path: plugins/flutter_live2d_windows
 
 dev_dependencies:
   flutter_test:

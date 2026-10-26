@@ -1,0 +1,230 @@
+#include "flutter_live2d_windows_plugin.h"
+
+// This must be included before many other Windows headers.
+#include <windows.h>
+
+#include <functional>
+#include <variant>
+
+namespace flutter_live2d_windows {
+
+namespace {
+constexpr char kChannelName[] = "flutter_live2d_windows";
+
+bool GetStringArg(const flutter::EncodableMap* args, const char* key,
+                  std::string* out) {
+  if (!args) return false;
+  auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) return false;
+  if (const auto* v = std::get_if<std::string>(&it->second)) {
+    *out = *v;
+    return true;
+  }
+  return false;
+}
+
+int64_t GetIntArg(const flutter::EncodableMap* args, const char* key,
+                  int64_t fallback) {
+  if (!args) return fallback;
+  auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) return fallback;
+  if (const auto* v = std::get_if<int32_t>(&it->second)) return *v;
+  if (const auto* v = std::get_if<int64_t>(&it->second)) return *v;
+  if (const auto* v = std::get_if<double>(&it->second)) return static_cast<int64_t>(*v);
+  return fallback;
+}
+
+
+// 从 EncodableMap 取 double（Dart 侧统一传 double，避免 int32/int64 分叉）
+bool GetDoubleArg(const flutter::EncodableMap* args, const char* key, double* out) {
+  if (!args) return false;
+  auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) return false;
+  if (const auto* v = std::get_if<double>(&it->second)) {
+    *out = *v;
+    return true;
+  }
+  if (const auto* i = std::get_if<int32_t>(&it->second)) {
+    *out = static_cast<double>(*i);
+    return true;
+  }
+  if (const auto* l = std::get_if<int64_t>(&it->second)) {
+    *out = static_cast<double>(*l);
+    return true;
+  }
+  return false;
+}
+}  // namespace
+
+void FlutterLive2dWindowsPlugin::RegisterWithRegistrar(
+    flutter::PluginRegistrarWindows* registrar) {
+  auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      registrar->messenger(), kChannelName,
+      &flutter::StandardMethodCodec::GetInstance());
+
+  auto plugin = std::make_unique<FlutterLive2dWindowsPlugin>(registrar);
+
+  channel->SetMethodCallHandler(
+      [plugin_raw = plugin.get()](
+          const flutter::MethodCall<flutter::EncodableValue>& method_call,
+          std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        plugin_raw->HandleMethodCall(method_call, std::move(result));
+      });
+
+  registrar->AddPlugin(std::move(plugin));
+}
+
+FlutterLive2dWindowsPlugin::FlutterLive2dWindowsPlugin(
+    flutter::PluginRegistrarWindows* registrar)
+    : registrar_(registrar) {}
+
+FlutterLive2dWindowsPlugin::~FlutterLive2dWindowsPlugin() {
+  DestroyTexture();
+  if (renderer_) {
+    renderer_->Stop();
+    renderer_.reset();
+  }
+}
+
+int64_t FlutterLive2dWindowsPlugin::CreateTexture() {
+  if (texture_id_ >= 0) return texture_id_;
+  pixel_texture_ = std::make_unique<flutter::PixelBufferTexture>(
+      [this](size_t width, size_t height) -> const FlutterDesktopPixelBuffer* {
+        return CopyFrame(width, height);
+      });
+  texture_variant_ =
+      std::make_unique<flutter::TextureVariant>(*pixel_texture_);
+  texture_id_ = registrar_->texture_registrar()->RegisterTexture(
+      texture_variant_.get());
+  return texture_id_;
+}
+
+void FlutterLive2dWindowsPlugin::DestroyTexture() {
+  if (texture_id_ >= 0) {
+    registrar_->texture_registrar()->UnregisterTexture(texture_id_, nullptr);
+    texture_id_ = -1;
+  }
+  texture_variant_.reset();
+  pixel_texture_.reset();
+}
+
+const FlutterDesktopPixelBuffer*
+FlutterLive2dWindowsPlugin::CopyFrame(size_t width, size_t height) {
+  int w = 0, h = 0;
+  const uint8_t* pixels = renderer_ ? renderer_->AcquirePublished(&w, &h) : nullptr;
+  if (!pixels) return nullptr;
+  pixel_buffer_.buffer = pixels;
+  pixel_buffer_.width = static_cast<size_t>(w);
+  pixel_buffer_.height = static_cast<size_t>(h);
+  pixel_buffer_.release_callback = nullptr;  // 帧数据由 renderer 双缓冲持有
+  return &pixel_buffer_;
+}
+
+void FlutterLive2dWindowsPlugin::HandleMethodCall(
+    const flutter::MethodCall<flutter::EncodableValue>& method_call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  const auto& method = method_call.method_name();
+  const auto* args =
+      std::get_if<flutter::EncodableMap>(method_call.arguments());
+
+  if (method == "create") {
+    double w = 0, h = 0;
+    if (!GetDoubleArg(args, "width", &w) || !GetDoubleArg(args, "height", &h) ||
+        w < 1 || h < 1) {
+      result->Error("bad_args", "create 需要正数 width/height");
+      return;
+    }
+    if (!renderer_) renderer_ = std::make_unique<Live2DRenderThread>();
+    const int64_t id = CreateTexture();
+    if (id < 0) {
+      result->Error("texture", "纹理注册失败");
+      return;
+    }
+    // 每帧产出后通知引擎取新帧（渲染线程调用）
+    renderer_->SetOnFrameAvailable([this] {
+      registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
+    });
+    if (!renderer_->Start(static_cast<int>(w), static_cast<int>(h))) {
+      result->Error("renderer", "渲染线程启动失败");
+      return;
+    }
+    result->Success(flutter::EncodableValue(id));
+    return;
+  }
+
+  if (method == "setSize") {
+    double w = 0, h = 0;
+    if (GetDoubleArg(args, "width", &w) && GetDoubleArg(args, "height", &h) &&
+        renderer_) {
+      renderer_->Resize(static_cast<int>(w), static_cast<int>(h));
+    }
+    result->Success();
+    return;
+  }
+
+  if (method == "setPaused") {
+    if (renderer_ && args) {
+      auto it = args->find(flutter::EncodableValue("paused"));
+      if (it != args->end()) {
+        if (const auto* v = std::get_if<bool>(&it->second)) {
+          renderer_->SetPaused(*v);
+        }
+      }
+    }
+    result->Success();
+    return;
+  }
+
+  if (method == "dispose") {
+    if (renderer_) {
+      renderer_->SetOnFrameAvailable(nullptr);
+      renderer_->Stop();
+      renderer_.reset();
+    }
+    DestroyTexture();
+    result->Success();
+    return;
+  }
+
+  if (method == "loadModel") {
+    std::string dir, file;
+    if (!renderer_) {
+      result->Error("renderer", "需先 create");
+      return;
+    }
+    if (!GetStringArg(args, "dir", &dir) || !GetStringArg(args, "file", &file)) {
+      result->Error("bad_args", "loadModel 需要字符串 dir/file");
+      return;
+    }
+    result->Success(flutter::EncodableValue(renderer_->LoadModel(dir, file)));
+    return;
+  }
+
+  if (method == "setParameter") {
+    std::string id;
+    if (renderer_ && GetStringArg(args, "id", &id)) {
+      double v = 0;
+      if (GetDoubleArg(args, "value", &v)) {
+        renderer_->SetParameter(id, static_cast<float>(v));
+      }
+    }
+    result->Success();
+    return;
+  }
+
+  if (method == "startMotion") {
+    std::string group;
+    if (renderer_ && GetStringArg(args, "group", &group)) {
+      const int index = static_cast<int>(GetIntArg(args, "index", 0));
+      const int priority = static_cast<int>(GetIntArg(args, "priority", 1));
+      renderer_->StartMotion(group, index, priority);
+    }
+    result->Success();
+    return;
+  }
+
+  // 尚未实现的能力
+  result->NotImplemented();
+}
+
+}  // namespace flutter_live2d_windows
