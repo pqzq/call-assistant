@@ -158,6 +158,39 @@ class Live2dService {
         incompatibleModels.add(relative);
       }
     }
+    // 桌面端：内置模型没有复制到 userdata（直接从 app 资源目录读），
+    // 这里把 app 自带的那份也扫进模型列表。
+    final builtIn = builtInLive2dDir;
+    if (builtIn != null) {
+      final builtInFiles = <File>[];
+      void walk(Directory dir, int depth) {
+        if (depth > 8) return;
+        List<FileSystemEntity> children;
+        try {
+          children = dir.listSync(followLinks: true);
+        } catch (_) {
+          return;
+        }
+        for (final e in children) {
+          if (e is File) {
+            if (e.path.toLowerCase().endsWith('.model3.json')) builtInFiles.add(e);
+          } else if (e is Directory) {
+            walk(e, depth + 1);
+          }
+        }
+      }
+      walk(builtIn, 0);
+      for (final entity in builtInFiles) {
+        final relative = entity.path
+            .substring(builtIn.path.length + 1)
+            .replaceAll(r'\\', '/');
+        if (await isSupportedModel(entity)) {
+          result.add(relative);
+        } else {
+          incompatibleModels.add(relative);
+        }
+      }
+    }
     result.sort();
     return result;
   }
@@ -486,6 +519,32 @@ class Live2dService {
 
   // ---------------- 内部实现 ----------------
 
+  /// 桌面端 app 自带的 live2d 资源目录（磁盘上的**真实路径**）
+  ///
+  /// Windows / Linux / macOS 的 Flutter asset 是**实体文件**，就放在
+  /// 可执行文件旁边的 flutter_assets 里，可以直接按路径读取 ——
+  /// 不需要再复制一份到 userdata（那样会白白多占一份，内置模型约 20MB）。
+  ///
+  /// Android 返回 null：apk 里的 asset 没有文件路径，必须复制出来。
+  static Directory? get builtInLive2dDir {
+    if (Platform.isAndroid) return null;
+    final sep = Platform.pathSeparator;
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent;
+      // Windows / Linux 的 release 布局
+      final win = Directory(
+          '${exeDir.path}${sep}data${sep}flutter_assets${sep}assets${sep}live2d');
+      if (win.existsSync()) return win;
+      // macOS：Contents/MacOS/app -> .../Resources/flutter_assets
+      final mac = Directory(
+          '${exeDir.path}$sep..${sep}Frameworks${sep}App.framework${sep}Versions${sep}A${sep}Resources${sep}flutter_assets${sep}assets${sep}live2d');
+      if (mac.existsSync()) return mac;
+    } catch (_) {
+      // 拿不到就返回 null，走「复制」的兜底路径
+    }
+    return null;
+  }
+
   Future<void> _prepareWebRoot() async {
     if (_webRoot != null) return;
 
@@ -494,6 +553,21 @@ class Live2dService {
     // ignore: avoid_print
     print('[Live2D] 资源目录: ${root.path}');
     if (!root.existsSync()) root.createSync(recursive: true);
+
+    final builtIn = builtInLive2dDir;
+    if (builtIn != null) {
+      // 桌面端（Windows / Linux / macOS）：asset 本身就是实体文件，
+      // **直接引用，不复制** —— userdata/live2d 只用来放用户导入的模型。
+      // 省掉一整份内置资源（约 20MB）的重复占用。
+      if (!root.existsSync()) {
+        root.createSync(recursive: true);
+      } else {
+        // 旧版本已经复制过一份，这里回收掉（只保留用户导入的 models/）
+        _removeCopiedBuiltInAssets(root);
+      }
+      _webRoot = root;
+      return;
+    }
 
     final marker = File('${root.path}/.asset_version');
     // 版本号 = 基础版本 + index.html 的内容哈希。
@@ -518,6 +592,22 @@ class Live2dService {
       marker.writeAsStringSync(expectedVersion);
     }
     _webRoot = root;
+  }
+
+  /// 删掉 userdata 里「从 app 资源复制出来的」内置文件（仅桌面端）
+  ///
+  /// 内置部分现在直接从 app 目录读取，留着就是白白多占一份（约 20MB）。
+  /// **只保留用户导入的 `models/`** —— 那是用户自己的数据，不能删。
+  void _removeCopiedBuiltInAssets(Directory root) {
+    try {
+      for (final entity in root.listSync(followLinks: false)) {
+        final name = entity.path.split(Platform.pathSeparator).last;
+        if (name == 'models') continue;
+        entity.deleteSync(recursive: true);
+      }
+    } catch (_) {
+      // 删不掉就算了，不影响使用（只是没省下空间）
+    }
   }
 
   Future<void> _extractAssets(Directory root) async {
@@ -552,7 +642,15 @@ class Live2dService {
         return;
       }
 
-      final file = File('${root.path}$path');
+      var file = File('${root.path}$path');
+      if (!file.existsSync()) {
+        // 回退到 **app 自带资源**（桌面端不复制内置文件，直接读 app 目录）
+        final builtIn = builtInLive2dDir;
+        if (builtIn != null) {
+          final fallback = File('${builtIn.path}$path');
+          if (fallback.existsSync()) file = fallback;
+        }
+      }
       if (!file.existsSync()) {
         request.response.statusCode = HttpStatus.notFound;
         await request.response.close();

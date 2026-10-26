@@ -1,4 +1,4 @@
-# 对比两张截图里「浮窗内数字人模型」的位置与宽高比
+﻿# 对比两张截图里「浮窗内数字人模型」的位置与宽高比
 #
 # 用法：powershell -File tool/compare_avatar.ps1 <imgA> <imgB> [标签A] [标签B]
 #

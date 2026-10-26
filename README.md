@@ -339,6 +339,52 @@ flutter pub get
 flutter build windows --release        # 产物在 build/windows/x64/runner/Release/
 ```
 
+**打包成发行 zip**（`tool/make_windows_release.ps1`）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool\make_windows_release.ps1
+powershell -ExecutionPolicy Bypass -File tool\make_windows_release.ps1 -Version 1.2.1
+```
+
+产物 `build/windows/call-assistant-windows-x64[-<版本>].zip`，解压后**只有一层**：
+
+```
+call-assistant-windows-x64\call_assistant.exe
+```
+
+两点说明：
+
+- Flutter 的产物在 `build\windows\x64\runner\Release\` 下，直接压缩那一层会把 exe 和十几个 dll
+  平铺在 zip 根目录（解压后文件散一地）。脚本先把内容搬到 `staging\<发行目录名>\` 再压缩，
+  保证 zip 内第一层就是发行目录。
+- 打包时**排除 `userdata/`**：那是运行时生成的（用户数据、导入的模型、日志），
+  打进发行包既占体积又可能带上私人数据。
+
+> ⚠️ 改这个脚本时注意：**PowerShell 5.1 读取「无 BOM 的 UTF-8」会按系统 ANSI 解析**，
+> 中文注释被误解码成乱码后会把引号/括号吞掉，报出莫名其妙的
+> `Missing closing '}'` / `The string is missing the terminator`。
+> 所以这些 `.ps1` 都存为 **UTF-8 with BOM**。
+
+**桌面端的内置资源不再复制一份**
+
+`assets/live2d/` 约 **20MB**（7 个内置模型）。Android 上 asset 在 apk 里、没有文件路径，
+必须释放成文件；但**桌面端的 asset 本来就是实体文件**，放在可执行文件旁边：
+
+| 平台 | app 内 asset 路径 |
+| --- | --- |
+| Windows / Linux | `<exe 目录>/data/flutter_assets/assets/live2d` |
+| macOS | `Contents/Frameworks/App.framework/.../Resources/flutter_assets/assets/live2d` |
+
+所以桌面端**直接按路径读取，不再复制到 userdata**（`Live2dService.builtInLive2dDir`），
+省掉一整份重复占用。userdata 下的 `live2d/` 只用来放**用户导入的模型**（`models/`）。
+
+配套的改动：
+
+- 本地 HTTP 服务读文件时会**回退**到 app 自带目录（`_handle`）
+- 模型列表会**同时扫** userdata 与 app 自带目录（`listModels`），并对同名去重
+- 旧版本已经复制过的那份，首次启动会**自动回收**（只保留 `models/`，见
+  `_removeCopiedBuiltInAssets`）
+
 > 没有管理员权限时无法创建符号链接，构建会提示
 > `Building with plugins requires symlink support`。
 
