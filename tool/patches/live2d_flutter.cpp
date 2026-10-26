@@ -145,28 +145,41 @@ static void ApplyViewportFit(Live2DView* view)
         }
     }
 
-    // ---- 模型矩阵：按角色**本体**（drawable 顶点并集）做 contain 适配 ----
+    // ---- 模型矩阵：按**角色本体**做居中 contain 适配 ----
     //
-    // 之前按 canvas 且用 cover（填满视口）语义：canvas 四周留白大、各模型
-    // 不一，填满竖容器时上下会被裁（展开态切头/脚，贴边腿部露不全）。
-    // 改成 contain：把**本体**完整放入目标区，绝不裁切（与 WebView 侧同语义）。
+    // 本体的来源有优先级：
+    //   1. `__fit_*__`：WebView 侧用 `model.getLocalBounds()` 量出的
+    //      **真正的角色本体**（四个分量归一化到 canvas）
+    //   2. canvas 兜底：位置正确、角色略小
+    //
+    // ⚠️ **不要用 drawable 顶点（GetContentBounds）当本体边界**：
+    // 那个外框含背景与遮罩，对 mao 这类模型会大出好几倍，
+    // 于是缩放系数被算得极小 —— 实测「mao 在原生下比 WebView 小几倍」。
     auto* mm = view->model->GetModelMatrix();
     if (!mm) return;
 
     float cw = 0.0f, ch = 0.0f;
     view->model->GetCanvasSize(cw, ch);
-    float bminX = 0.0f, bminY = 0.0f, bmaxX = 0.0f, bmaxY = 0.0f;
-    view->model->GetContentBounds(bminX, bminY, bmaxX, bmaxY);
-    float fw = bmaxX - bminX;      // 本体宽（模型空间）
-    float fh = bmaxY - bminY;      // 本体高
-    float fcx = (bminX + bmaxX) * 0.5f;   // 本体中心
-    float fcy = (bminY + bmaxY) * 0.5f;
-    if (fw <= 0.0f || fh <= 0.0f)
+    if (cw <= 0.0f || ch <= 0.0f) return;
+
+    float fw, fh, fcx, fcy;
+    if (view->fitBoundsValid)
     {
-        // 本体边界还没算出来 -> 退回 canvas（居中）
-        if (cw <= 0.0f || ch <= 0.0f) return;
-        fw = cw; fh = ch; fcx = 0.0f; fcy = 0.0f;
+        // fitBounds = { 中心x, 中心y, 宽, 高 }，都归一化到 canvas 的 0~1
+        fw = cw * view->fitBounds[2];
+        fh = ch * view->fitBounds[3];
+        // 模型空间以 canvas 中心为原点 -> 减 0.5 再乘尺寸
+        fcx = (view->fitBounds[0] - 0.5f) * cw;
+        fcy = (view->fitBounds[1] - 0.5f) * ch;
     }
+    else
+    {
+        fw = cw;
+        fh = ch;
+        fcx = 0.0f;
+        fcy = 0.0f;
+    }
+    if (fw <= 0.0f || fh <= 0.0f) return;
 
     // 目标 = 整个视口居中、等比 contain 完整放入本体。
     //
