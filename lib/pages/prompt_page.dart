@@ -149,15 +149,21 @@ class _PromptPageState extends State<PromptPage> {
                 await _importModelFromFolder();
               } else if (value == 'models') {
                 await _switchModel();
-              } else if (value == 'demo') {
+              } else if (value == 'demo' && _demoSupported) {
                 _openDemo();
               }
             },
-            itemBuilder: (context) => const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(value: 'import', child: Text('导入模型包（zip）')),
-              PopupMenuItem<String>(value: 'importDir', child: Text('从文件夹导入模型')),
-              PopupMenuItem<String>(value: 'models', child: Text('切换已有模型')),
-              PopupMenuItem<String>(value: 'demo', child: Text('演示模式（全屏）')),
+            itemBuilder: (context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                  value: 'import', child: Text('导入模型包（zip）')),
+              const PopupMenuItem<String>(
+                  value: 'importDir', child: Text('从文件夹导入模型')),
+              const PopupMenuItem<String>(
+                  value: 'models', child: Text('切换已有模型')),
+              // Windows 不提供演示模式（见 _demoSupported）
+              if (_demoSupported)
+                const PopupMenuItem<String>(
+                    value: 'demo', child: Text('演示模式（全屏）')),
             ],
           ),
           IconButton(
@@ -350,6 +356,7 @@ class _PromptPageState extends State<PromptPage> {
               _modelButton('切换模型', Icons.swap_horiz, _switchModel),
               _modelButton('导入 zip', Icons.folder_open, _importModel),
               _modelButton('导入文件夹', Icons.folder_copy_outlined, _importModelFromFolder),
+              if (_demoSupported)
               _modelButton('演示模式', Icons.fullscreen, _openDemo),
               _modelButton('复位位置', Icons.my_location, _link.resetAvatarPosition),
             ],
@@ -415,6 +422,14 @@ class _PromptPageState extends State<PromptPage> {
     if (!mounted) return;
     _showModelPicker(models);
   }
+
+  /// 演示模式是否可用
+  ///
+  /// **Windows 上不提供**：演示页会再创建**第二个**数字人实例，和左栏分栏
+  /// 同时存在时两者互相影响 —— 实测演示页一直是空白（纯白、无提示），
+  /// 而左栏单独用又是正常的。与其留一个「点了就空白」的入口，
+  /// 不如在 Windows 上直接隐藏它（其他平台保留，那边没有分栏布局）。
+  bool get _demoSupported => !PlatformBridge.isWindows;
 
   /// 打开全屏演示模式
   void _openDemo() {
