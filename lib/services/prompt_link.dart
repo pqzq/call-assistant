@@ -604,6 +604,10 @@ class PromptLink extends ChangeNotifier {
     // 换了模型，之前量出来的宽高比不再有效
     _avatarModelAspect = 0;
     _avatarAspectModel = '';
+    // 本体边界同样失效：它是相对上一个模型的 canvas 算的，留着会让
+    // 原生侧按错误的比例缩放（实测 mao 会小好几倍）
+    _avatarModelBounds = const <double>[];
+    _avatarBoundsModel = '';
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAvatarModel, model);
@@ -692,13 +696,22 @@ class PromptLink extends ChangeNotifier {
   /// 4 个分量都为空表示还没量到，原生侧会退化成按 canvas 适配。
   List<double> _avatarModelBounds = const <double>[];
 
-  /// 角色本体在 canvas 里的归一化矩形（空列表 = 尚未量到）
-  List<double> get avatarModelBounds => _avatarModelBounds;
+  /// 上面这份矩形是**哪个模型**量出来的
+  ///
+  /// ⚠️ 必须绑定模型：归一化矩形是相对**该模型的 canvas** 算的，不同模型
+  /// canvas 尺寸差很多（mao 就比 haru 大得多）。拿上一个模型的比例去给
+  /// 新模型算缩放，会差好几倍 —— 表现就是「mao 在原生下小了几倍」。
+  String _avatarBoundsModel = '';
 
-  /// 记录角色本体在 canvas 里的归一化矩形
+  /// 角色本体在 canvas 里的归一化矩形（空列表 = 尚未量到 / 不属于当前模型）
+  List<double> get avatarModelBounds =>
+      _avatarBoundsModel == _avatarModel ? _avatarModelBounds : const <double>[];
+
+  /// 记录角色本体在 canvas 里的归一化矩形（记在**当前模型**名下）
   void setAvatarModelBounds(List<double> bounds) {
     if (bounds.length != 4) return;
-    if (_avatarModelBounds.length == 4) {
+    final sameModel = _avatarBoundsModel == _avatarModel;
+    if (sameModel && _avatarModelBounds.length == 4) {
       var same = true;
       for (var i = 0; i < 4; i++) {
         if ((_avatarModelBounds[i] - bounds[i]).abs() > 0.002) {
@@ -709,6 +722,7 @@ class PromptLink extends ChangeNotifier {
       if (same) return;
     }
     _avatarModelBounds = List<double>.from(bounds);
+    _avatarBoundsModel = _avatarModel;
     notifyListeners();
   }
 

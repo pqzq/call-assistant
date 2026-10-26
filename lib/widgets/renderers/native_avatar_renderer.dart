@@ -49,7 +49,19 @@ class NativeAvatarRenderer implements AvatarRenderer {
   /// 否则原生和 WebView 的效果对不上（模型又小又偏）。
   void _pushFitBounds() {
     final b = PromptLink.instance.avatarModelBounds;
-    if (b.length != 4) return;
+    if (b.length != 4) {
+      // 当前模型还没量到本体边界（或刚换了模型）：
+      // **必须主动清掉 C++ 侧缓存的旧值**，否则它会继续拿上一个模型的
+      // 归一化矩形算缩放 —— 不同模型 canvas 尺寸差很多，实测 mao 会小几倍。
+      // `__fit_h__ = 0` 会让 C++ 把 fitBoundsValid 置 false，退回按 canvas 适配。
+      if (_lastFitBounds != null) {
+        _lastFitBounds = null;
+        if (_loaded) {
+          _controller.setParameter('__fit_h__', 0);
+        }
+      }
+      return;
+    }
     final last = _lastFitBounds;
     if (last != null && last.length == 4) {
       var same = true;
