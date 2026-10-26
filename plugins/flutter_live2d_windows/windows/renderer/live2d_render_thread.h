@@ -33,6 +33,14 @@ class Live2DRenderThread {
   void SetOnFrameAvailable(std::function<void()> cb) { on_frame_ = std::move(cb); }
 
   bool Start(int width, int height);
+
+  /// 等待渲染线程真正就绪（GL 上下文创建完成）。
+  ///
+  /// `Start()` 只是起线程，窗口/GL 上下文是在线程里创建的，失败时线程会
+  /// 静默退出（只把 running_ 置 false）。上层必须等这个确认，否则
+  /// 「create 成功返回、画面却永远空白」，排查时毫无线索。
+  bool WaitReady(int timeout_ms);
+
   void Stop();
   void Resize(int width, int height);
   int width() const { return width_.load(); }
@@ -74,6 +82,8 @@ class Live2DRenderThread {
   std::function<void()> on_frame_;
   std::thread thread_;
   std::atomic<bool> running_{false};
+  /// 渲染线程已建好 GL 上下文（RenderLoop 成功后才置 true）
+  std::atomic<bool> ready_{false};
 
   HWND window_ = nullptr;
   HDC dc_ = nullptr;

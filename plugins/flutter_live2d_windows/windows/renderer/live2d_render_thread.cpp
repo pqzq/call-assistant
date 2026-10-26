@@ -103,6 +103,8 @@ Live2DRenderThread::~Live2DRenderThread() { Stop(); }
 
 bool Live2DRenderThread::Start(int width, int height) {
   if (running_.load()) return false;
+  // 上一轮的线程如果还没 join（异常路径），直接赋值 thread_ 会 terminate 整个进程
+  if (thread_.joinable()) thread_.join();
   if (width < 1) width = 1;
   if (height < 1) height = 1;
   width_ = width;
@@ -111,14 +113,28 @@ bool Live2DRenderThread::Start(int width, int height) {
   const size_t bytes = static_cast<size_t>(width) * height * 4;
   buffers_[0].resize(bytes);
   buffers_[1].resize(bytes);
+  ready_ = false;
   running_ = true;
   thread_ = std::thread([this] { RenderLoop(); });
   return true;
 }
 
+bool Live2DRenderThread::WaitReady(int timeout_ms) {
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (ready_.load()) return true;
+    // 线程已退出 = 上下文创建失败（RenderLoop 里会把 running_ 置 false）
+    if (!running_.load()) return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  return ready_.load();
+}
+
 void Live2DRenderThread::Stop() {
   running_ = false;
   if (thread_.joinable()) thread_.join();
+  ready_ = false;
 }
 
 void Live2DRenderThread::Resize(int width, int height) {
@@ -304,9 +320,11 @@ bool Live2DRenderThread::UpgradeContext() {
 void Live2DRenderThread::RenderLoop() {
   if (!CreateWindowAndContext()) {
     running_ = false;
+    ready_ = false;
     DestroyWindowAndContext();
     return;
   }
+  ready_ = true;
 
   setvbuf(stdout, nullptr, _IONBF, 0);  // 重定向时日志不被缓冲吃掉
 

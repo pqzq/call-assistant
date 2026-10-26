@@ -824,12 +824,28 @@ WebView 侧的适配系数同步从 `0.96` 提到 `0.99`（几乎贴边），见
 
 | 后端 | 实现 | 平台 | 状态 |
 | --- | --- | --- | --- |
-| **WebView**（默认） | WebView + PIXI + Cubism Web SDK | 全平台 | ✅ 稳定，长期验证 |
+| **WebView** | WebView + PIXI + Cubism Web SDK | 全平台 | ✅ 稳定，长期验证 |
 | **原生** | Cubism Native SDK + OpenGL ES 2（`flutter_live2d`） | Android / iOS | ✅ 可用（构建前需跑补丁脚本，见下节） |
+| **原生** | Cubism Native SDK + OpenGL 3.3 离屏 + 外部纹理（仓内 `plugins/flutter_live2d_windows`） | Windows | ✅ 可用 |
+
+**默认后端按平台选**（`kDefaultAvatarBackend`）：
+
+- **Windows 默认「原生」**：WebView2 会常驻 `msedgewebview2.exe`（浏览器进程 + GPU 进程 +
+  渲染进程），内存占用明显高于原生；原生是外部纹理，在同一个进程内合成
+- **其他平台默认「WebView」**：Android 原生后端依赖 pub cache 补丁，默认走稳的那条
 
 - 选择会记住（`prompt_avatar_backend`），重启后保持
 - 切换后数字人立即按新后端重新加载，模型/嘴型/导入逻辑完全复用
-- **当前平台不支持的后端会置灰**（如 Windows 上的原生渲染 —— `flutter_live2d` 只声明了 Android / iOS）
+- **当前平台不支持的后端会置灰**（macOS / Linux 没有原生实现）
+
+**占用相关的两个事实**：
+
+- WebView 页面渲染限制在 **30fps**（`app.ticker.maxFPS = 30`，PIXI 默认 60）——
+  数字人动作 30fps 够用，CPU/GPU 占用直接减半，也与原生后端一致
+- **WebView2 进程在切到原生后不会立刻退出**：插件的 Environment 是引用计数
+  （最后一个 controller dispose 时才销毁），但 WebView2 自身的进程回收有延迟，
+  且可能与系统里其他 Edge WebView2 应用共享进程。要彻底释放，重启应用即可 ——
+  所以 Windows 上**默认不启动 WebView2** 才是最有效的降占用方式
 
 **原生后端踩过的坑（5 个，全部已修）**
 

@@ -142,6 +142,11 @@
     });
     document.body.appendChild(app.view);
 
+    // 限制到 30fps（PIXI 默认 60）：数字人动作 30fps 够用，
+    // CPU / GPU 占用直接减半 —— WebView2 是多进程的，帧率翻倍代价很高。
+    // 同时和原生后端（渲染线程 30fps）保持一致。
+    app.ticker.maxFPS = 30;
+
     const url = modelUrlFromQuery();
     avatar.status = 'loading: ' + url;
 

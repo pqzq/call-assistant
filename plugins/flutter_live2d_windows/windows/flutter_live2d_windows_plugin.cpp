@@ -100,12 +100,27 @@ int64_t FlutterLive2dWindowsPlugin::CreateTexture() {
 }
 
 void FlutterLive2dWindowsPlugin::DestroyTexture() {
-  if (texture_id_ >= 0) {
-    registrar_->texture_registrar()->UnregisterTexture(texture_id_, nullptr);
-    texture_id_ = -1;
+  if (texture_id_ < 0) {
+    texture_variant_.reset();
+    pixel_texture_.reset();
+    return;
   }
-  texture_variant_.reset();
-  pixel_texture_.reset();
+
+  const int64_t id = texture_id_;
+  texture_id_ = -1;
+
+  // ⚠️ 关键：不能 UnregisterTexture(id, nullptr) 之后立刻释放 variant。
+  // 引擎在那之后可能还在用这块纹理（下一帧合成），立刻 reset 就是
+  // use-after-free —— 表现就是「来回切换几次后 create 报 PlatformException」。
+  // 把所有权交给 unregister 的回调，等引擎确认不再使用再释放。
+  //
+  // 用 shared_ptr 而不是 unique_ptr：回调是 std::function，要求可拷贝。
+  auto variant = std::shared_ptr<flutter::TextureVariant>(std::move(texture_variant_));
+  auto pixel = std::shared_ptr<flutter::PixelBufferTexture>(std::move(pixel_texture_));
+  registrar_->texture_registrar()->UnregisterTexture(
+      id, [variant, pixel]() {
+        // 捕获即持有；回调返回后引用计数归零，纹理对象在这里才真正释放
+      });
 }
 
 const FlutterDesktopPixelBuffer*
@@ -134,18 +149,48 @@ void FlutterLive2dWindowsPlugin::HandleMethodCall(
       result->Error("bad_args", "create 需要正数 width/height");
       return;
     }
-    if (!renderer_) renderer_ = std::make_unique<Live2DRenderThread>();
+    // 不复用旧实例：Start 失败后残留的渲染线程会「看起来存在但没跑」，
+    // 下次 create 走复用分支就永远起不来（表现为来回切换几次后一直失败）。
+    if (renderer_) {
+      renderer_->SetOnFrameAvailable(nullptr);
+      renderer_->Stop();
+      renderer_.reset();
+    }
+    renderer_ = std::make_unique<Live2DRenderThread>();
+
     const int64_t id = CreateTexture();
     if (id < 0) {
+      renderer_.reset();
       result->Error("texture", "纹理注册失败");
       return;
     }
-    // 每帧产出后通知引擎取新帧（渲染线程调用）
+    // 每帧产出后通知引擎取新帧（渲染线程调用）。
+    // 纹理可能已被 dispose 注销（texture_id_ = -1），必须判断，否则
+    // MarkTextureFrameAvailable(-1) 会打到无效的纹理 id 上。
     renderer_->SetOnFrameAvailable([this] {
-      registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
+      if (texture_id_ >= 0) {
+        registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
+      }
     });
     if (!renderer_->Start(static_cast<int>(w), static_cast<int>(h))) {
+      // 回滚：停掉线程 + 注销刚注册的纹理，否则下次 create 拿到「半成品」状态
+      renderer_->SetOnFrameAvailable(nullptr);
+      renderer_->Stop();
+      renderer_.reset();
+      DestroyTexture();
       result->Error("renderer", "渲染线程启动失败");
+      return;
+    }
+    // Start 只是起线程，GL 上下文是在线程里建的 —— 必须等就绪确认，
+    // 否则失败时上层拿到「create 成功但永远空白」，无从排查。
+    if (!renderer_->WaitReady(3000)) {
+      renderer_->SetOnFrameAvailable(nullptr);
+      renderer_->Stop();
+      renderer_.reset();
+      DestroyTexture();
+      result->Error("gl_context",
+                    "GL 上下文创建失败（显卡驱动不支持 OpenGL 3.3 "
+                    "或上下文数量过多，重启应用可释放）");
       return;
     }
     result->Success(flutter::EncodableValue(id));

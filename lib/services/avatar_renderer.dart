@@ -105,4 +105,14 @@ String? backendUnsupportedReason(AvatarBackend backend) {
 }
 
 /// 默认后端：保持 WebView（零风险，行为与之前一致）
-const AvatarBackend kDefaultAvatarBackend = AvatarBackend.webview;
+/// 默认后端
+///
+/// **Windows 默认用原生**（自研纹理插件 `flutter_live2d_windows`）：
+/// WebView2 会常驻 `msedgewebview2.exe`（独立 GPU 进程 + 渲染进程），
+/// 内存占用明显高于原生；而原生走的是外部纹理，同一个进程内合成。
+/// 需要 WebView 时仍然可以在设置页手动切。
+///
+/// 其他平台保持 WebView：Android 的原生后端依赖 pub cache 补丁，
+/// 出问题的排查成本更高，默认走稳的那条。
+AvatarBackend get kDefaultAvatarBackend =>
+    PlatformBridge.isWindows ? AvatarBackend.native : AvatarBackend.webview;
