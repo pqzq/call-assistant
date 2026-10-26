@@ -6,6 +6,8 @@
 #include <flutter/standard_method_codec.h>
 #include <flutter/texture_registrar.h>
 
+#include <cstdint>
+#include <map>
 #include <memory>
 
 #include "renderer/live2d_render_thread.h"
@@ -29,19 +31,34 @@ class FlutterLive2dWindowsPlugin : public flutter::Plugin {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
  private:
-  // 纹理拷贝回调（光栅线程同步调用）：指向已发布帧；无帧返回 nullptr
-  const FlutterDesktopPixelBuffer* CopyFrame(size_t width, size_t height);
+  /// 一个渲染实例（对应 Dart 侧一个 WindowsLive2DController）
+  ///
+  /// ⚠️ **必须支持多实例**：桌面分栏和全屏演示页的数字人可能同时存在，
+  /// 切换页面时还会短暂重叠。以前这里是单个全局实例 —— 任何一个
+  /// controller 的 dispose 都会把它销毁（并注销纹理），
+  /// 表现为「打开演示模式后两边都空白」。
+  struct Instance {
+    std::unique_ptr<Live2DRenderThread> renderer;
+    std::unique_ptr<flutter::PixelBufferTexture> pixel_texture;
+    std::unique_ptr<flutter::TextureVariant> texture_variant;
+    int64_t texture_id = -1;
+    // 回调返回值的宿主（引擎在回调返回前同步拷走像素）
+    FlutterDesktopPixelBuffer pixel_buffer = {};
+  };
 
-  int64_t CreateTexture();
-  void DestroyTexture();
+  /// 纹理拷贝回调（光栅线程同步调用）：指向已发布帧；无帧返回 nullptr
+  const FlutterDesktopPixelBuffer* CopyFrame(Instance* inst, size_t width,
+                                             size_t height);
+
+  int64_t CreateTexture(Instance* inst);
+  void DestroyTexture(Instance* inst);
+
+  /// 按 id 找实例；找不到返回 nullptr
+  Instance* Find(int64_t id);
 
   flutter::PluginRegistrarWindows* registrar_;
-  std::unique_ptr<Live2DRenderThread> renderer_;
-  std::unique_ptr<flutter::PixelBufferTexture> pixel_texture_;
-  std::unique_ptr<flutter::TextureVariant> texture_variant_;
-  int64_t texture_id_ = -1;
-  // 回调返回值的宿主（引擎在回调返回前同步拷走像素）
-  FlutterDesktopPixelBuffer pixel_buffer_ = {};
+  int64_t next_instance_id_ = 1;
+  std::map<int64_t, std::unique_ptr<Instance>> instances_;
 };
 
 }  // namespace flutter_live2d_windows
