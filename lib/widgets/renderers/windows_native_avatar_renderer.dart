@@ -160,7 +160,18 @@ class WindowsNativeAvatarRenderer
     _lastPx = px;
     if (!_created) {
       try {
-        await _controller.create(width: px.width, height: px.height);
+        // create 返回 null 有两种情况：controller 已释放，或原生的 create
+        // 没有返回有效纹理 id。以前这里直接置 _created = true，于是
+        // WindowsLive2DView 一直显示 placeholder（纯白），没有任何提示 ——
+        // 表现为「数字人区域空白、也没有错误框」，很难排查。
+        final textureId =
+            await _controller.create(width: px.width, height: px.height);
+        if (textureId == null) {
+          if (!_disposed) {
+            onError?.call('纹理创建失败：原生 create 没有返回有效纹理 id');
+          }
+          return;
+        }
         _created = true;
         await _loadPending();
       } catch (e) {
