@@ -346,19 +346,30 @@ powershell -ExecutionPolicy Bypass -File tool\make_windows_release.ps1
 powershell -ExecutionPolicy Bypass -File tool\make_windows_release.ps1 -Version 1.2.1
 ```
 
-产物 `build/windows/call-assistant-windows-x64[-<版本>].zip`，解压后**只有一层**：
+产物 `build/windows/call-assistant-<版本>-windows-x64.zip`，解压后**只有一层**：
 
 ```
 call-assistant-windows-x64\call_assistant.exe
 ```
 
-两点说明：
+zip **内**的目录名固定不带版本（用户解压后得到一个稳定名字），版本号只出现在 zip 文件名上。
+
+**GitHub Actions 用的是同一个脚本**（`.github/workflows/release.yml` 的 `release-windows`），
+只是多传一个 `-OutDir build`，让 zip 落在 `build/` 下与上传路径匹配：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool/make_windows_release.ps1 -Version "$env:APP_VERSION" -OutDir build
+```
+
+三点说明：
 
 - Flutter 的产物在 `build\windows\x64\runner\Release\` 下，直接压缩那一层会把 exe 和十几个 dll
   平铺在 zip 根目录（解压后文件散一地）。脚本先把内容搬到 `staging\<发行目录名>\` 再压缩，
   保证 zip 内第一层就是发行目录。
 - 打包时**排除 `userdata/`**：那是运行时生成的（用户数据、导入的模型、日志），
-  打进发行包既占体积又可能带上私人数据。
+  打进发行包既占体积又可能带上私人数据 —— 实测这一项就有 **82MB**，排除后 zip 只有约 37MB。
+- 压缩**优先用 7z**（资源里模型文件名带中文，`Compress-Archive` 在某些环境下会乱码），
+  没有 7z 时退回 `Compress-Archive`。
 
 > ⚠️ 改这个脚本时注意：**PowerShell 5.1 读取「无 BOM 的 UTF-8」会按系统 ANSI 解析**，
 > 中文注释被误解码成乱码后会把引号/括号吞掉，报出莫名其妙的

@@ -283,17 +283,19 @@ jobs:
       - name: 构建 Release Windows 版
         run: flutter build windows --release
 
-      - name: 打包为 zip
+      - name: 打包为 zip（解压后一层：call-assistant-windows-x64/）
+        # 走 tool/make_windows_release.ps1，和**本地打包完全同一套逻辑**：
+        # 先把产物搬进 staging\call-assistant-windows-x64\ 再压缩，保证 zip 内
+        # 第一层就是发行目录。之前直接 7z 压缩 Release 目录，会把 exe 和十几个
+        # dll 平铺在 zip 根目录（解压后文件散一地）。
+        #
+        # 脚本内部优先用 7z（资源里模型文件名带中文，Compress-Archive 在
+        # 某些环境下会乱码），没有 7z 时退回 Compress-Archive。
         shell: pwsh
         run: |
-          $src = "build/windows/x64/runner/Release"
-          if (-not (Test-Path $src)) { throw "构建产物目录不存在: $src" }
+          powershell -ExecutionPolicy Bypass -File tool/make_windows_release.ps1 -Version "$env:APP_VERSION" -OutDir build
           $out = "build/call-assistant-$env:APP_VERSION-windows-x64.zip"
-          if (Test-Path $out) { Remove-Item $out -Force }
-          # 用 7z 而不是 Compress-Archive：资源里有中文文件名，
-          # Compress-Archive 在某些环境下会乱码
-          & "C:\Program Files\7-Zip\7z.exe" a -tzip $out "$src\*" | Out-Host
-          if (-not (Test-Path $out)) { throw "打包失败" }
+          if (-not (Test-Path $out)) { throw "打包失败，没找到 $out" }
           Get-Item $out | Select-Object Name, Length
 
       - name: 上传 Windows 产物

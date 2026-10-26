@@ -10,9 +10,13 @@
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File tool\make_windows_release.ps1
 #   powershell -ExecutionPolicy Bypass -File tool\make_windows_release.ps1 -Version 1.2.1
+#   powershell -ExecutionPolicy Bypass -File tool\make_windows_release.ps1 -Version 1.2.1 -OutDir build
+#
+# GitHub Actions 用的就是第三种（把 zip 直接落在 build/ 下，与上传路径匹配）。
 
 param(
-  [string]$Version = "dev"
+  [string]$Version = "dev",
+  [string]$OutDir  = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +24,12 @@ $ErrorActionPreference = "Stop"
 $root    = Split-Path -Parent $PSScriptRoot
 $src     = Join-Path $root "build\windows\x64\runner\Release"
 $staging = Join-Path $root "build\windows\_staging"
-$outDir  = Join-Path $root "build\windows"
+
+if ($OutDir -ne "") {
+  $outDir = Join-Path $root $OutDir
+} else {
+  $outDir = Join-Path $root "build\windows"
+}
 
 if (-not (Test-Path $src)) {
   Write-Host "找不到产物目录：$src"
@@ -35,16 +44,18 @@ if (-not (Test-Path $exe)) {
   exit 1
 }
 
-if ($Version -eq "dev") {
-  $name = "call-assistant-windows-x64"
-} else {
-  $name = "call-assistant-windows-x64-$Version"
+# zip 内的目录名固定不带版本：用户解压后得到一个稳定名字，
+# 版本号放在 zip 文件名上就够了。
+$folderName = "call-assistant-windows-x64"
+$zipName    = "call-assistant-$Version-windows-x64.zip"
+if (-not (Test-Path $outDir)) {
+  New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 }
-$zip = Join-Path $outDir "$name.zip"
+$zip = Join-Path $outDir $zipName
 
-# 先把 Release 内容搬到 staging\<name>\ 下，再压缩 staging。
-# 这样 zip 里的第一层就是 <name>\。
-$target = Join-Path $staging $name
+# 先把 Release 内容搬到 staging\<folderName>\ 下，再压缩 staging。
+# 这样 zip 里的第一层就是 <folderName>\。
+$target = Join-Path $staging $folderName
 if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 
@@ -64,12 +75,34 @@ if (Test-Path (Join-Path $src $skipName)) {
 }
 
 if (Test-Path $zip) { Remove-Item -Force $zip }
-Write-Host "压缩 -> $zip"
-Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -CompressionLevel Optimal
+
+# 压缩：优先 7z。资源里模型文件名/目录名带中文，Compress-Archive 在
+# 某些环境下会乱码，7z 更稳；没有 7z 时退回 Compress-Archive。
+$sevenZip = @(
+  "C:\Program Files\7-Zip\7z.exe",
+  "C:\Program Files (x86)\7-Zip\7z.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+# 在 staging 目录里执行，这样 "*" 展开成 <folderName>，
+# zip 内的路径就是 <folderName>\...（而不是绝对路径）
+Push-Location $staging
+try {
+  if ($sevenZip) {
+    Write-Host "压缩（7z） -> $zip"
+    & $sevenZip a -tzip $zip "*" | Out-Host
+  } else {
+    Write-Host "压缩（Compress-Archive） -> $zip"
+    Compress-Archive -Path "*" -DestinationPath $zip -CompressionLevel Optimal
+  }
+} finally {
+  Pop-Location
+}
+
+if (-not (Test-Path $zip)) { throw "打包失败：$zip" }
 
 Remove-Item -Recurse -Force $staging
 
 $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 Write-Host ""
 Write-Host "完成：$zip （$size MB）"
-Write-Host "解压后结构：$name\call_assistant.exe"
+Write-Host "解压后结构：$folderName\call_assistant.exe"
