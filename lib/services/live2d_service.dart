@@ -572,6 +572,29 @@ class Live2dService {
     return inUserData;
   }
 
+  /// app 自带资源目录是否**真的可用**（至少要有 index.html 和一个模型）
+  ///
+  /// 这是「不复制」路线的兜底：只在确认 app 目录里有完整资源时才省掉复制。
+  /// 万一发行包布局变了（拿不到 index.html / 模型），下面会自动退化回复制，
+  /// 宁可多占 20MB，也不能让用户加载不到模型。
+  static bool _builtInUsable(Directory dir) {
+    final sep = Platform.pathSeparator;
+    try {
+      if (!File('${dir.path}${sep}index.html').existsSync()) return false;
+      for (final e in dir.listSync(followLinks: false)) {
+        if (e is! Directory) continue;
+        for (final f in e.listSync(followLinks: false, recursive: true)) {
+          if (f is File && f.path.toLowerCase().endsWith('.model3.json')) {
+            return true;
+          }
+        }
+      }
+    } catch (_) {
+      return false;
+    }
+    return false;
+  }
+
   Future<void> _prepareWebRoot() async {
     if (_webRoot != null) return;
 
@@ -581,8 +604,10 @@ class Live2dService {
     print('[Live2D] 资源目录: ${root.path}');
     if (!root.existsSync()) root.createSync(recursive: true);
 
+    // 只在**确认 app 自带资源真的可用**时才省掉复制（见 _builtInUsable）。
+    // 拿不到就自动退化回下面的复制分支 —— 宁可多占 20MB，也不能加载不到模型。
     final builtIn = builtInLive2dDir;
-    if (builtIn != null) {
+    if (builtIn != null && _builtInUsable(builtIn)) {
       // 桌面端（Windows / Linux / macOS）：asset 本身就是实体文件，
       // **直接引用，不复制** —— userdata/live2d 只用来放用户导入的模型。
       // 省掉一整份内置资源（约 20MB）的重复占用。
