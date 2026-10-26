@@ -117,10 +117,8 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     final zoom = PromptLink.instance.avatarModelZoom;
     if ((zoom - _currentZoom).abs() > 0.001) {
       _currentZoom = zoom;
-      final r = _renderer;
-      if (r is WebViewAvatarRenderer) {
-        r.setZoom(zoom);
-      }
+      // 所有后端都支持（WebView 重排 / 原生乘到适配缩放上）
+      _renderer?.setZoom(zoom);
     }
 
     // 贴边紧凑状态变了：让后端把模型在视图内部缩小
@@ -211,9 +209,12 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
   void _onRendererReady() {
     if (!mounted) return;
     setState(() => _error = null);
-    // 页面就绪后立刻同步当前嘴型
+    // 页面就绪后立刻同步当前嘴型和缩放
+    // （缩放要在模型加载完成后补发，否则原生侧收不到）
     final renderer = _renderer;
     renderer?.setMouth(widget.mouth.value);
+    renderer?.setZoom(PromptLink.instance.avatarModelZoom);
+    _currentZoom = PromptLink.instance.avatarModelZoom;
   }
 
   void _onRendererError(String message) {

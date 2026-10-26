@@ -46,6 +46,8 @@ struct Live2DView
     // 原生侧没有 getLocalBounds() 的等价 API —— 只按 canvas 尺寸适配的话，
     // canvas 四周留白会让模型显得又小又偏（和 WebView 对不上）。
     float                 fitBounds[4]    = {0.0f, 0.0f, 0.0f, 0.0f};
+    // 模型放大系数（1.0 = 按自动适配结果显示）
+    float                 renderZoom       = 1.0f;
     bool                  fitBoundsValid  = false;
     // CubismFramework 必须在**有 GL context** 时才初始化（它会生成 shader program），
     // 所以延迟到 nativeOnSurfaceCreated（render hub 线程，已 eglMakeCurrent）
@@ -189,7 +191,7 @@ static void ApplyViewportFit(Live2DView* view)
     // 只做「居中 contain」，左右贴边天然对称、身体完整。margin 留余量吸收超出
     // 顶点的靴子/描边像素（顶点并集不含贴图外溢）。
     const float margin = 0.92f;
-    const float s = fminf(2.0f / (px * fw), 2.0f / (py * fh)) * margin;
+    const float s = fminf(2.0f / (px * fw), 2.0f / (py * fh)) * margin * view->renderZoom;
 
     mm->LoadIdentity();
     mm->ScaleRelative(s, s);
@@ -559,6 +561,14 @@ Java_com_linh18nd_flutter_1live2d_Live2DBridge_nativeSetParameter(JNIEnv* env, j
     {
         view->fitBounds[3] = value;
         view->fitBoundsValid = (value > 0.0f);
+        env->ReleaseStringUTFChars(parameterId, id);
+        return;
+    }
+    // 模型放大系数（设置里的「模型大小」）：原生适配后角色常比 WebView 略小，
+    // 允许用户手动放大（这个滑杆以前只对 WebView 生效）。
+    if (std::string(id) == "__zoom__")
+    {
+        view->renderZoom = (value >= 0.2f && value <= 4.0f) ? value : 1.0f;
         env->ReleaseStringUTFChars(parameterId, id);
         return;
     }

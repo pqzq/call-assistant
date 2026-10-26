@@ -137,6 +137,20 @@ void Live2DRenderThread::Stop() {
   ready_ = false;
 }
 
+void Live2DRenderThread::SetZoom(float zoom) {
+  if (zoom < 0.2f || zoom > 4.0f) zoom = 1.0f;
+  zoom_ = zoom;
+}
+
+void Live2DRenderThread::SetFitBounds(float cx, float cy, float w, float h) {
+  fitCx_ = cx;
+  fitCy_ = cy;
+  fitW_ = w;
+  fitH_ = h;
+  // 宽高为 0 表示清空：退回按 canvas 适配
+  fitValid_ = (w > 0.0f && h > 0.0f);
+}
+
 void Live2DRenderThread::Resize(int width, int height) {
   if (width < 1) width = 1;
   if (height < 1) height = 1;
@@ -478,22 +492,31 @@ bool Live2DRenderThread::RenderModel(int w, int h) {
   Live2DPal::UpdateTime();
   model->Update();
 
-  // —— 视口适配：整视口居中 contain（与 Android 最终版一致，margin 0.92）——
+  // —— 视口适配：整视口居中 contain（margin 0.92）——
+  //
+  // 本体来源优先级：
+  //   1. `setFitBounds`：WebView 侧用 model.getLocalBounds() 量的**真正本体**
+  //   2. canvas 兜底：位置正确、角色略小
+  //
+  // ⚠️ 不要用 drawable 顶点（GetContentBounds）当本体边界：外框含背景/遮罩，
+  // 对 mao 这类模型会大出好几倍 -> 缩放系数被算得极小 -> 实测「小几倍」。
   float cw = 0.0f, ch = 0.0f;
   model->GetCanvasSize(cw, ch);
-  float bminX = 0.0f, bminY = 0.0f, bmaxX = 0.0f, bmaxY = 0.0f;
-  model->GetContentBounds(bminX, bminY, bmaxX, bmaxY);
-  float fw = bmaxX - bminX;
-  float fh = bmaxY - bminY;
-  float fcx = (bminX + bmaxX) * 0.5f;
-  float fcy = (bminY + bmaxY) * 0.5f;
-  if (fw <= 0.0f || fh <= 0.0f) {
-    if (cw <= 0.0f || ch <= 0.0f) return false;
+  if (cw <= 0.0f || ch <= 0.0f) return false;
+  float fw, fh, fcx, fcy;
+  if (fitValid_.load()) {
+    fw = cw * fitW_.load();
+    fh = ch * fitH_.load();
+    // 模型空间以 canvas 中心为原点 -> 减 0.5 再乘尺寸
+    fcx = (fitCx_.load() - 0.5f) * cw;
+    fcy = (fitCy_.load() - 0.5f) * ch;
+  } else {
     fw = cw;
     fh = ch;
     fcx = 0.0f;
     fcy = 0.0f;
   }
+  if (fw <= 0.0f || fh <= 0.0f) return false;
   float px = 1.0f, py = 1.0f;
   Csm::CubismMatrix44 projection;
   projection.LoadIdentity();
@@ -504,7 +527,9 @@ bool Live2DRenderThread::RenderModel(int w, int h) {
     px = static_cast<float>(h) / static_cast<float>(w);
     projection.Scale(px, 1.0f);
   }
-  const float s = fminf(2.0f / (px * fw), 2.0f / (py * fh)) * 0.92f;
+  // 乘以用户设置的放大系数（1.0 = 自动适配结果）
+  const float s =
+      fminf(2.0f / (px * fw), 2.0f / (py * fh)) * 0.92f * zoom_.load();
   auto* mm = model->GetModelMatrix();
   mm->LoadIdentity();
   mm->ScaleRelative(s, s);

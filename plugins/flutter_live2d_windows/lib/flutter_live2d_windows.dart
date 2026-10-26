@@ -47,6 +47,34 @@ class WindowsLive2DController extends ChangeNotifier {
     );
   }
 
+  /// 模型放大系数（1.0 = 按自动适配的结果显示）。
+  ///
+  /// 原生侧按「角色本体」contain 适配后角色常比 WebView 略小，
+  /// 设置里的「模型大小」滑杆需要能调它。
+  Future<void> setZoom(double zoom) {
+    if (!_usable) return Future<void>.value();
+    return _kChannel.invokeMethod<void>(
+      'setZoom',
+      <String, double>{'zoom': zoom},
+    );
+  }
+
+  /// 设置「角色本体」在 canvas 里的归一化矩形（中心x, 中心y, 宽, 高）。
+  ///
+  /// 原生侧没有 `getLocalBounds()` 的等价 API：
+  /// - 用 canvas 适配 → canvas 四周留白大，角色显得小
+  /// - 用 drawable 顶点并集 → 外框含背景/遮罩，mao 这类模型大出好几倍，缩得更小
+  /// 所以由 WebView 侧量好这个矩形传进来。
+  Future<void> setFitBounds(double cx, double cy, double w, double h) {
+    if (!_usable) return Future<void>.value();
+    return _kChannel.invokeMethod<void>('setFitBounds', <String, double>{
+      'cx': cx,
+      'cy': cy,
+      'w': w,
+      'h': h,
+    });
+  }
+
   /// 加载模型。[dir] 为模型目录绝对路径（含结尾分隔符也可省略），
   /// [file] 为 *.model3.json 文件名。异步执行，完成后纹理自动切换为模型画面。
   Future<bool> loadModel({required String dir, required String file}) async {

@@ -245,6 +245,27 @@ void FlutterLive2dWindowsPlugin::HandleMethodCall(
     return;
   }
 
+  if (method == "setZoom") {
+    double zoom = 1.0;
+    if (renderer_ && GetDoubleArg(args, "zoom", &zoom)) {
+      renderer_->SetZoom(static_cast<float>(zoom));
+    }
+    result->Success();
+    return;
+  }
+
+  if (method == "setFitBounds") {
+    double cx = 0, cy = 0, w = 0, h = 0;
+    if (renderer_ && GetDoubleArg(args, "cx", &cx) &&
+        GetDoubleArg(args, "cy", &cy) && GetDoubleArg(args, "w", &w) &&
+        GetDoubleArg(args, "h", &h)) {
+      renderer_->SetFitBounds(static_cast<float>(cx), static_cast<float>(cy),
+                              static_cast<float>(w), static_cast<float>(h));
+    }
+    result->Success();
+    return;
+  }
+
   if (method == "setParameter") {
     std::string id;
     if (renderer_ && GetStringArg(args, "id", &id)) {

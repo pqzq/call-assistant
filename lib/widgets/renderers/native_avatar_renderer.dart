@@ -47,6 +47,22 @@ class NativeAvatarRenderer implements AvatarRenderer {
   /// 原生侧没有 getLocalBounds() 的等价 API，只能靠 WebView 侧量到的
   /// 这个矩形按**角色本体**（而不是含大量留白的 canvas）对齐，
   /// 否则原生和 WebView 的效果对不上（模型又小又偏）。
+  /// 模型放大系数（设置里的「模型大小」）
+  ///
+  /// 原生后端按 canvas / 本体边界做 contain 适配后，角色往往比 WebView 略小，
+  /// 所以这里也要支持手动放大（此前这个滑杆只对 WebView 生效）。
+  double _zoom = 1.0;
+
+  @override
+  void setZoom(double zoom) {
+    final v = zoom.clamp(0.5, 2.5).toDouble();
+    if ((v - _zoom).abs() < 0.001) return;
+    _zoom = v;
+    if (_loaded) {
+      _controller.setParameter('__zoom__', _zoom);
+    }
+  }
+
   void _pushFitBounds() {
     final b = PromptLink.instance.avatarModelBounds;
     if (b.length != 4) {
@@ -158,6 +174,8 @@ class NativeAvatarRenderer implements AvatarRenderer {
         }
       }
       _loaded = ok;
+      // 缩放也要在模型加载后补发（C++ 侧收到才生效）
+      _controller.setParameter('__zoom__', _zoom);
       // 模型加载好了，把本体边界补发一次（边界比模型先到）
       _pushFitBounds();
       if (!ok) {

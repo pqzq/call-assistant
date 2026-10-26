@@ -43,6 +43,16 @@ class Live2DRenderThread {
 
   void Stop();
   void Resize(int width, int height);
+
+  /// 模型放大系数（1.0 = 按自动适配结果显示）
+  void SetZoom(float zoom);
+
+  /// 设置「角色本体」在 canvas 里的归一化矩形（中心x, 中心y, 宽, 高）
+  ///
+  /// 传 0 宽高表示清空（退回按 canvas 适配）。
+  /// 原生侧没有 getLocalBounds() 的等价 API：用 canvas 会偏小，
+  /// 用 drawable 顶点外框会更小（外框含背景/遮罩），所以由 WebView 侧量好传进来。
+  void SetFitBounds(float cx, float cy, float w, float h);
   int width() const { return width_.load(); }
   int height() const { return height_.load(); }
 
@@ -84,6 +94,16 @@ class Live2DRenderThread {
   std::atomic<bool> running_{false};
   /// 渲染线程已建好 GL 上下文（RenderLoop 成功后才置 true）
   std::atomic<bool> ready_{false};
+
+  /// 模型放大系数（平台线程写、渲染线程读）
+  std::atomic<float> zoom_{1.0f};
+
+  /// 角色本体在 canvas 里的归一化矩形（中心x, 中心y, 宽, 高）
+  std::atomic<float> fitCx_{0.0f};
+  std::atomic<float> fitCy_{0.0f};
+  std::atomic<float> fitW_{0.0f};
+  std::atomic<float> fitH_{0.0f};
+  std::atomic<bool> fitValid_{false};
 
   HWND window_ = nullptr;
   HDC dc_ = nullptr;

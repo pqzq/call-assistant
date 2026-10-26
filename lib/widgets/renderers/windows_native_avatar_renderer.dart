@@ -5,6 +5,7 @@ import 'package:flutter_live2d_windows/flutter_live2d_windows.dart';
 
 import '../../services/avatar_renderer.dart';
 import '../../services/live2d_service.dart';
+import '../../services/prompt_link.dart';
 
 /// Windows 原生渲染后端：自研插件 flutter_live2d_windows（外部纹理路线）。
 ///
@@ -18,6 +19,8 @@ class WindowsNativeAvatarRenderer
     implements AvatarRenderer {
   WindowsNativeAvatarRenderer({this.onReady, this.onError}) {
     WidgetsBinding.instance.addObserver(this);
+    // 监听 PromptLink：本体边界 / 模型变化时同步给原生侧
+    PromptLink.instance.addListener(_onLinkChanged);
   }
 
   final void Function()? onReady;
@@ -52,6 +55,55 @@ class WindowsNativeAvatarRenderer
     // 未 create（还没有尺寸）时先记下，等 build 首帧拿到尺寸再加载
     if (_created) await _loadPending();
   }
+
+
+  /// 模型放大系数（设置里的「模型大小」）
+  double _zoom = 1.0;
+
+  /// 上一次下发的本体边界（避免重复下发）
+  List<double>? _lastFitBounds;
+
+  @override
+  void setZoom(double zoom) {
+    final v = zoom.clamp(0.5, 2.5).toDouble();
+    if ((v - _zoom).abs() < 0.001) return;
+    _zoom = v;
+    if (_loaded && !_disposed) unawaited(_controller.setZoom(_zoom));
+  }
+
+  /// 把「角色本体在 canvas 里的归一化矩形」下发给原生
+  ///
+  /// Windows 侧适配如果只用 canvas 会偏小、只用 drawable 顶点外框会更小
+  /// （外框含背景/遮罩），所以要用 WebView 量到的本体边界。
+  void _pushFitBounds() {
+    if (_disposed) return;
+    final b = PromptLink.instance.avatarModelBounds;
+    if (b.length != 4) {
+      if (_lastFitBounds != null) {
+        _lastFitBounds = null;
+        // 0 宽高 = 清空，原生侧退回按 canvas 适配
+        if (_loaded) unawaited(_controller.setFitBounds(0, 0, 0, 0));
+      }
+      return;
+    }
+    final last = _lastFitBounds;
+    if (last != null && last.length == 4) {
+      var same = true;
+      for (var i = 0; i < 4; i++) {
+        if ((last[i] - b[i]).abs() > 0.002) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    _lastFitBounds = List<double>.from(b);
+    if (_loaded) {
+      unawaited(_controller.setFitBounds(b[0], b[1], b[2], b[3]));
+    }
+  }
+
+  void _onLinkChanged() => _pushFitBounds();
 
   Future<void> _loadPending() async {
     final rel = _pendingModel;
@@ -91,6 +143,11 @@ class WindowsNativeAvatarRenderer
       return;
     }
     _loaded = true;
+    // 模型就绪后补发缩放与本体边界（两者都要在加载之后才生效）
+    if (!_disposed) {
+      unawaited(_controller.setZoom(_zoom));
+      _pushFitBounds();
+    }
     _pendingModel = null;
     setMouth(_lastMouth);
     onReady?.call();
@@ -169,6 +226,7 @@ class WindowsNativeAvatarRenderer
     if (_disposed) return;
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
+    PromptLink.instance.removeListener(_onLinkChanged);
     // 必须**等到** C++ 侧真正销毁：切换后端时会紧接着创建下一个实例，
     // 旧的还没销毁就 create 新的，两个 GL 上下文会互相踩（表现为切换时崩溃）。
     await _controller.disposeAsync().catchError((_) {});

@@ -180,6 +180,7 @@ class WebViewAvatarRenderer implements AvatarRenderer {
 
   /// 实时调整模型的放大系数（用户在设置里拖「模型大小」时调用）。
   /// 页面侧只是重排一下，不需要重新加载。
+  @override
   void setZoom(double zoom) {
     final controller = _controller;
     if (controller == null || !_pageReady) return;

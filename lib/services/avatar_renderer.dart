@@ -53,6 +53,17 @@ abstract class AvatarRenderer {
   /// 说话开关（关闭时复位嘴型）
   void setSpeaking(bool speaking);
 
+  /// 模型放大系数（1.0 = 按自动适配的结果显示）
+  ///
+  /// 各后端实现自己的通道：
+  /// - WebView：页面内 `avatar.setZoom()` 重排（不重新加载）
+  /// - Android 原生：`__zoom__` 特殊参数，C++ 乘到适配缩放上
+  /// - Windows 原生：插件 channel `setZoom`
+  ///
+  /// 设置里的「模型大小」以前只对 WebView 生效，原生后端因为按 canvas
+  /// 适配会显得偏小，所以两端都要能调。
+  void setZoom(double zoom) {}
+
   /// 贴边紧凑模式
   ///
   /// 贴边时浮窗只剩一条窄边，但**不能重建渲染视图**（Android 平台视图

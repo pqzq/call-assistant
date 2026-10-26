@@ -340,7 +340,7 @@ class _PromptPageState extends State<PromptPage> {
             ],
           ),
           const Text(
-            '1.00x 为完整显示；调大会放大，超出的部分从脚部裁掉（不会挡脸）。仅 WebView 后端生效。',
+            '1.00x 为自动适配；调大会放大，超出的部分从脚部裁掉（不会挡脸）。两种渲染引擎都生效。',
             style: TextStyle(fontSize: 11, color: Colors.black38, height: 1.4),
           ),
           Wrap(
