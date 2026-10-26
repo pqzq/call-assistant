@@ -57,7 +57,12 @@ class Live2DRenderThread {
   int height() const { return height_.load(); }
 
   // 纹理拷贝回调（光栅线程）取当前已发布帧；无帧时返回 nullptr
-  const uint8_t* AcquirePublished(int* w, int* h);
+  /// 把最新一帧**拷贝**到 out（持 size_mutex_，与 resize 互斥）
+  ///
+  /// ⚠️ 不能返回指向内部缓冲的指针：窗口 resize 时渲染线程会
+  /// `buffers_[i].resize()` 重新分配，光栅线程手里那个指针立刻失效 ——
+  /// 引擎再去读就是 use-after-free，表现为「窗口放大就卡死闪退」。
+  bool CopyPublished(std::vector<uint8_t>* out, int* w, int* h);
 
   // —— M1：模型渲染（平台线程调用，命令入队后在渲染线程执行）——
   bool LoadModel(const std::string& dir, const std::string& file);

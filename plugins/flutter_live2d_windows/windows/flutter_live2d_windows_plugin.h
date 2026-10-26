@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "renderer/live2d_render_thread.h"
 
@@ -44,6 +45,9 @@ class FlutterLive2dWindowsPlugin : public flutter::Plugin {
     int64_t texture_id = -1;
     // 回调返回值的宿主（引擎在回调返回前同步拷走像素）
     FlutterDesktopPixelBuffer pixel_buffer = {};
+    // 帧数据暂存：渲染线程的缓冲会在 resize 时重新分配，
+    // 不能把它的指针直接交给引擎（会 use-after-free → 窗口放大闪退）
+    std::vector<uint8_t> scratch;
   };
 
   /// 纹理拷贝回调（光栅线程同步调用）：指向已发布帧；无帧返回 nullptr

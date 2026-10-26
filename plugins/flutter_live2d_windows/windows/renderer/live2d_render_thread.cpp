@@ -161,12 +161,24 @@ void Live2DRenderThread::Resize(int width, int height) {
   size_dirty_ = true;
 }
 
-const uint8_t* Live2DRenderThread::AcquirePublished(int* w, int* h) {
-  int idx = published_idx_.load();
-  if (idx < 0) return nullptr;
-  *w = width_.load();
-  *h = height_.load();
-  return buffers_[idx].data();
+bool Live2DRenderThread::CopyPublished(std::vector<uint8_t>* out, int* w,
+                                       int* h) {
+  if (!out || !w || !h) return false;
+  // 与 resize 互斥：resize 会重新分配 buffers_，此时把 data() 交给
+  // 光栅线程就是悬空指针（引擎拷贝时崩溃 —— 「窗口放大闪退」）。
+  std::lock_guard<std::mutex> lock(size_mutex_);
+  const int idx = published_idx_.load();
+  if (idx < 0) return false;
+  const int cw = width_.load();
+  const int ch = height_.load();
+  if (cw <= 0 || ch <= 0) return false;
+  const size_t need = static_cast<size_t>(cw) * static_cast<size_t>(ch) * 4;
+  const std::vector<uint8_t>& buf = buffers_[idx];
+  if (buf.size() < need) return false;
+  out->assign(buf.begin(), buf.begin() + static_cast<ptrdiff_t>(need));
+  *w = cw;
+  *h = ch;
+  return true;
 }
 
 // —— 平台线程入口：命令入队，渲染线程执行 ——

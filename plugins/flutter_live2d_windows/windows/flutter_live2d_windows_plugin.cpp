@@ -146,12 +146,13 @@ FlutterLive2dWindowsPlugin::CopyFrame(Instance* inst, size_t width,
                                       size_t height) {
   if (!inst || !inst->renderer) return nullptr;
   int w = 0, h = 0;
-  const uint8_t* pixels = inst->renderer->AcquirePublished(&w, &h);
-  if (!pixels) return nullptr;
-  inst->pixel_buffer.buffer = pixels;
+  // 必须拷到自己这块暂存：渲染线程的缓冲在 resize 时会重新分配，
+  // 把它的指针交给引擎就是 use-after-free（窗口放大 → 卡死闪退）。
+  if (!inst->renderer->CopyPublished(&inst->scratch, &w, &h)) return nullptr;
+  inst->pixel_buffer.buffer = inst->scratch.data();
   inst->pixel_buffer.width = static_cast<size_t>(w);
   inst->pixel_buffer.height = static_cast<size_t>(h);
-  inst->pixel_buffer.release_callback = nullptr;  // 帧数据由 renderer 双缓冲持有
+  inst->pixel_buffer.release_callback = nullptr;  // 数据由 inst->scratch 持有
   return &inst->pixel_buffer;
 }
 
