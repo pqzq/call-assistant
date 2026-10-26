@@ -13,36 +13,53 @@ import 'confirm_dialog.dart';
 class ModelPickerSheet {
   const ModelPickerSheet._();
 
+  /// 是否已经有一个选择器在屏幕上
+  ///
+  /// 连点「切换模型」会叠出多个 bottom sheet（手机浮窗和桌面分栏都有这个
+  /// 入口）。用静态标记挡住重复调用 —— 所有入口共用这一个守卫，
+  /// 不用在每个按钮上各写一遍防抖。
+  static bool _visible = false;
+
   /// 打开模型选择弹窗，返回选中的模型（取消返回 null）
   static Future<String?> show(
     BuildContext context, {
     required PromptLink link,
     required List<String> models,
-  }) {
+  }) async {
     if (models.isEmpty) {
       AppToast.error(context, '没有可用模型');
-      return Future<String?>.value(null);
+      return null;
     }
+    if (_visible) return null; // 已经有弹窗在显示，忽略重复点击
     // 桌面端分栏在 Navigator 之外，必须用全局 navigator 弹
     final navigator = resolveNavigator(context);
-    if (navigator == null) return Future<String?>.value(null);
-    return showModalBottomSheet<String>(
-      context: navigator.context,
-      showDragHandle: true,
-      builder: (sheetContext) => _ModelList(
-        link: link,
-        models: models,
-        onChanged: () async {
-          // 刷新列表（删除模型后重新拉一次）
-          final rest = await link.availableAvatarModels();
-          if (!sheetContext.mounted) return;
-          final navigator = Navigator.of(sheetContext);
-          navigator.pop();
-          if (rest.isEmpty) return;
-          show(context, link: link, models: rest);
-        },
-      ),
-    );
+    if (navigator == null) return null;
+    _visible = true;
+    try {
+      return await showModalBottomSheet<String>(
+        context: navigator.context,
+        showDragHandle: true,
+        builder: (sheetContext) => _ModelList(
+          link: link,
+          models: models,
+          onChanged: () async {
+            // 刷新列表（删除模型后重新拉一次）
+            final rest = await link.availableAvatarModels();
+            if (!sheetContext.mounted) return;
+            final navigator = Navigator.of(sheetContext);
+            navigator.pop();
+            if (rest.isEmpty) return;
+            // 等当前弹窗真正关闭、_visible 复位后再重开（关闭动画 250ms），
+            // 否则这次重开会被上面的防连点守卫挡住，表现为「删完模型列表不刷新」
+            await Future<void>.delayed(const Duration(milliseconds: 350));
+            if (!context.mounted) return;
+            show(context, link: link, models: rest);
+          },
+        ),
+      );
+    } finally {
+      _visible = false;
+    }
   }
 }
 

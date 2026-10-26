@@ -55,6 +55,9 @@ class AppToast {
     // MaterialApp.builder 里的 context 没有 Overlay 祖先，退回全局 navigatorKey
     final overlay = resolveOverlay(context);
     if (overlay == null) return;
+    // 顶掉上一个：不加这步连续点击会把 toast 一层层堆起来
+    final previous = _current;
+    if (previous != null && previous.mounted) previous.remove();
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (ctx) => _ToastLayer(
@@ -64,11 +67,16 @@ class AppToast {
         duration: duration,
         onFinished: () {
           if (entry.mounted) entry.remove();
+          if (identical(_current, entry)) _current = null;
         },
       ),
     );
     overlay.insert(entry);
+    _current = entry;
   }
+
+  /// 当前显示中的 toast（同一时刻只保留一个）
+  static OverlayEntry? _current;
 }
 
 class _ToastLayer extends StatefulWidget {
