@@ -5,7 +5,8 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+
+import 'app_paths.dart';
 
 /// Live2D 数字人资源管理：把打包进 assets 的 web 运行时与模型释放到磁盘，
 /// 再用一个本地 HTTP 服务托管（file:// 下 WebView 的 fetch/model3.json 会被 CORS 拦住，
@@ -488,15 +489,8 @@ class Live2dService {
   Future<void> _prepareWebRoot() async {
     if (_webRoot != null) return;
 
-    Directory base;
-    try {
-      base = await getExternalStorageDirectory() ?? await getApplicationSupportDirectory();
-    } catch (e) {
-      // ignore: avoid_print
-      print('[Live2D] getExternalStorageDirectory 失败: $e');
-      base = await getApplicationSupportDirectory();
-    }
-    final root = Directory('${base.path}/live2d');
+    // 统一数据根目录（AppPaths，Windows 为 exe 同级 userdata）下的 live2d 子目录
+    final root = AppPaths.live2dDir;
     // ignore: avoid_print
     print('[Live2D] 资源目录: ${root.path}');
     if (!root.existsSync()) root.createSync(recursive: true);

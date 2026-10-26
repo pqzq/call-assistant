@@ -381,6 +381,13 @@ class PromptLink extends ChangeNotifier {
       } else {
         _audioPath = savedAudio;
       }
+    } else {
+      // 统一数据目录（AppPaths）迁移后旧绝对路径失效 → 回退到新根下的固定开场白文件
+      final fixed = await TtsSynthesizer.openingAudioFile();
+      if (fixed.existsSync()) {
+        _audioPath = fixed.path;
+        await prefs.setString(_kAudioPath, fixed.path);
+      }
     }
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;

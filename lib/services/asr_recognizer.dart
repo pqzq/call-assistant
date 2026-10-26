@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
+import 'app_paths.dart';
 import 'platform_bridge.dart';
 
 /// 端侧离线语音识别（ASR）：把开场白音频识别成中文文本。
@@ -47,16 +47,9 @@ class AsrRecognizer {
     return parts.last;
   }
 
-  /// 模型存放目录（external files，可用 adb 直接推送）
+  /// 模型存放目录（统一数据根下的 sherpa/asr，可用 adb 直接推送）
   Future<Directory> modelRoot() async {
-    Directory? base;
-    try {
-      base = await getExternalStorageDirectory();
-    } catch (_) {
-      base = null;
-    }
-    base ??= await getApplicationDocumentsDirectory();
-    final dir = Directory('${base.path}/sherpa-asr');
+    final dir = AppPaths.sherpaAsrDir;
     if (!dir.existsSync()) dir.createSync(recursive: true);
     return dir;
   }

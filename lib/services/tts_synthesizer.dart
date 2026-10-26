@@ -3,8 +3,9 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+
+import 'app_paths.dart';
 
 /// 端侧 TTS：用 sherpa-onnx 把开场白文本合成成 wav，播放端直接播音视频文件，
 /// 避免依赖系统 TTS 引擎（很多定制 ROM 不对第三方开放）与播报时的合成延迟。
@@ -26,16 +27,9 @@ class TtsSynthesizer {
   bool get isModelReady => _modelDir != null;
   String? get modelDir => _modelDir;
 
-  /// 模型存放目录（external files，可用 adb 直接推送）
+  /// 模型存放目录（统一数据根下的 sherpa/tts，Android 可用 adb 直接推送）
   Future<Directory> modelRoot() async {
-    Directory? base;
-    try {
-      base = await getExternalStorageDirectory();
-    } catch (_) {
-      base = null;
-    }
-    base ??= await getApplicationDocumentsDirectory();
-    final dir = Directory('${base.path}/sherpa-tts');
+    final dir = AppPaths.sherpaTtsDir;
     if (!dir.existsSync()) dir.createSync(recursive: true);
     return dir;
   }
@@ -103,9 +97,9 @@ class TtsSynthesizer {
   /// 开场白音频的固定文件名（每次生成都覆盖同一个文件）
   static const String openingAudioFileName = 'opening_audio.wav';
 
-  /// 开场白音频的固定路径（应用项目目录 documents 下）
+  /// 开场白音频的固定路径（统一数据根下的 audio/ 目录）
   static Future<File> openingAudioFile() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = AppPaths.audioDir;
     return File('${dir.path}/$openingAudioFileName');
   }
 
@@ -136,7 +130,7 @@ class TtsSynthesizer {
   /// 清理历史遗留的带时间戳的开场白文件
   Future<void> _cleanOldOpeningFiles() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = AppPaths.audioDir;
       for (final entity in dir.listSync()) {
         if (entity is! File) continue;
         final name = entity.path.split(Platform.pathSeparator).last;

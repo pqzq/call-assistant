@@ -1,5 +1,19 @@
 # 更新日志
 
+## v1.2.3
+
+### 新增
+
+- **Windows 数字人原生渲染后端**：自研仓内插件 `plugins/flutter_live2d_windows`（路径依赖），
+  独立 GL 线程（WGL 3.3 + GLEW）+ Cubism Native 离屏渲染 + 外部像素纹理接入 Flutter 合成
+  （Windows 不支持平台视图，纹理路线绕开）；复用已修复的 `ApplyViewportFit` 整视口居中 contain。
+  设置页/悬浮操作栏的引擎切换在桌面端开放原生选项；渲染循环 30fps + 窗口隐藏/最小化自动停帧
+- **应用数据目录统一（`AppPaths`）**：Windows 优先用 **exe 同级 `userdata\`**（绿色便携，不可写时
+  自动回退 `%APPDATA%\com.callassistant\call_assistant`），Android 用应用外部 files 目录；
+  子目录固定为 `live2d\`（运行时+模型，导入模型在其 `models\`）、`audio\`（开场白）、
+  `sherpa\tts|asr\`（离线模型）。旧版本散落在 support/documents 目录的数据启动时**自动迁移**
+  （跨卷重命名失败时降级为复制）， prefs 里失效的音频绝对路径自动回退到新固定位置
+
 ## v1.2.2
 
 ### 新增

@@ -61,9 +61,20 @@ android/                            gradle 工程 + 带 <queries> 的 AndroidMan
 | --- | --- |
 | Flutter SDK | `D:\Android\flutter\sdk\flutter`（3.47.7，未加入 PATH） |
 | Android SDK | `D:\Android\android-sdk`（platform-tools 37.0.1、platforms;android-36、build-tools;36.0.0） |
-| JDK | `D:\Java\temurin\jdk-17.0.19+10`（Temurin 17，JAVA_HOME 已设置） |
+| JDK | `D:\Java\temurin\jdk-21.0.12.1+1`（Temurin 21，JAVA_HOME 已设置，与 CI 一致；Android 编译 source/target 仍为 Java 17 字节码） |
 
 环境变量已写入用户级：`ANDROID_HOME`、`ANDROID_SDK_ROOT` 指向 SDK，PATH 追加了 `platform-tools` 和 `cmdline-tools\latest\bin`；`flutter config --android-sdk D:\Android\android-sdk` 已设置。`flutter doctor` 报 `[√] Android toolchain (SDK 36.0.0)`、许可全部接受。
+
+### 应用数据目录（AppPaths）
+
+所有导入/释放/下载的文件统一到一个数据根（`lib/services/app_paths.dart`，启动时自动迁移旧位置）：
+
+| 平台 | 根目录 |
+| --- | --- |
+| Windows | **exe 同级 `userdata\`**（绿色便携；不可写时回退 `%APPDATA%\com.callassistant\call_assistant`） |
+| Android | 应用外部 files（`Android/data/com.callassistant.call_assistant/files`） |
+
+子目录：`live2d\`（WebView 运行时+内置模型，**导入模型在 `live2d\models\`**）、`audio\opening_audio.wav`（开场白）、`sherpa\tts\`、`sherpa\asr\`（离线模型，可 adb 推送/直接拷入）。建议把整个程序文件夹放在**非同步盘**目录（sherpa 模型几百 MB，OneDrive 会同步）。SharedPreferences（设置项）始终在系统 support 目录，不随 userdata 走。
 
 ```powershell
 cd d:/test/flutter/call-assistant
