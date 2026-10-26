@@ -101,14 +101,21 @@ class _AvatarPanel extends StatelessWidget {
                         ),
                         clipBehavior: Clip.antiAlias,
                         alignment: Alignment.center,
-                        child: link.avatarEnabled
-                            ? AvatarStage(
-                                link: link,
-                                avatarHeight: constraints.maxHeight,
-                                showBubble: false,
-                                avatarBoxWidth: panelWidth - 32,
-                              )
-                            : const _AvatarOffHint(),
+                        child: !link.avatarEnabled
+                            ? const _AvatarOffHint()
+                            // 演示页是全屏数字人，会 setSuppressAvatar(true)。
+                            // 左栏这份**必须卸载**：两个 Live2dAvatar 同时存在时，
+                            // Windows 插件是单实例（create 会先销毁上一个并注销它的
+                            // 纹理），后建的那个会把先建的顶掉 —— 表现为左栏数字人
+                            // 变窄/空白/消失。浮窗侧早就在检查这个标志，左栏漏了。
+                            : (link.suppressAvatar
+                                ? const SizedBox.shrink()
+                                : AvatarStage(
+                                    link: link,
+                                    avatarHeight: constraints.maxHeight,
+                                    showBubble: false,
+                                    avatarBoxWidth: panelWidth - 32,
+                                  )),
                       ),
                     ),
                   ),
