@@ -62,7 +62,9 @@ class WindowsNativeAvatarRenderer
       onError?.call('模型路径不正确：$rel');
       return;
     }
-    final dir = '${root.path}/${normalized.substring(0, slash)}';
+    // 内置模型可能不在 userdata 里（桌面端不复制内置资源，直接读 app 自带目录），
+    // 所以目录要按同一套规则解析：先 userdata，再 app 自带资源。
+    final dir = Live2dService.resolveModelDir(root.path, normalized);
     final file = normalized.substring(slash + 1);
 
     final ok = await _controller.loadModel(dir: dir, file: file);

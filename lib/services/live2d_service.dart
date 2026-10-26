@@ -191,8 +191,10 @@ class Live2dService {
         }
       }
     }
-    result.sort();
-    return result;
+    // 两个目录可能扫到同名模型（userdata 里的旧副本没删掉时），去重
+    final deduped = result.toSet().toList();
+    deduped.sort();
+    return deduped;
   }
 
   /// 被排除的 Cubism 3 模型（供界面提示）
@@ -543,6 +545,31 @@ class Live2dService {
       // 拿不到就返回 null，走「复制」的兜底路径
     }
     return null;
+  }
+
+  /// 解析模型的**目录**：先找 userdata，再回退到 app 自带资源
+  ///
+  /// ⚠️ 光给 HTTP 服务加回退是不够的：**Windows 原生渲染后端不走 HTTP**，
+  /// 它把模型目录路径直接交给插件按文件加载（贴图 / moc3 都由插件读）。
+  /// 内置模型现在不在 userdata 里，所以这条路径也必须走同一套回退逻辑，
+  /// 否则表现就是「Windows 加载不到默认模型」。
+  static String resolveModelDir(String rootPath, String relativePath) {
+    final sep = Platform.pathSeparator;
+    final normalized = relativePath.replaceAll('\\', '/');
+    final slash = normalized.lastIndexOf('/');
+    if (slash <= 0) return rootPath;
+    final sub = normalized.substring(0, slash).replaceAll('/', sep);
+
+    final inUserData = '$rootPath$sep$sub';
+    if (Directory(inUserData).existsSync()) return inUserData;
+
+    final builtIn = builtInLive2dDir;
+    if (builtIn != null) {
+      final inApp = '${builtIn.path}$sep$sub';
+      if (Directory(inApp).existsSync()) return inApp;
+    }
+    // 两边都没有就返回原来的路径，让上层按原样报错
+    return inUserData;
   }
 
   Future<void> _prepareWebRoot() async {

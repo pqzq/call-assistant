@@ -393,6 +393,10 @@ powershell -ExecutionPolicy Bypass -File tool/make_windows_release.ps1 -Version 
 
 - 本地 HTTP 服务读文件时会**回退**到 app 自带目录（`_handle`）
 - 模型列表会**同时扫** userdata 与 app 自带目录（`listModels`），并对同名去重
+- ⚠️ **Windows 原生渲染后端也要走同一套规则**：它**不走 HTTP**，而是把模型目录路径
+  直接交给插件按文件加载（贴图 / moc3 都是插件自己读）。所以目录必须经过
+  `Live2dService.resolveModelDir()` 解析（先 userdata，再 app 自带资源）——
+  v1.2.4 就是漏了这一处，表现是「Windows 加载不到默认模型」（v1.2.5 修复）
 - 旧版本已经复制过的那份，首次启动会**自动回收**（只保留 `models/`，见
   `_removeCopiedBuiltInAssets`）
 
