@@ -1,5 +1,36 @@
 # 更新日志
 
+## v1.2.4
+
+### 新增
+
+- **Windows 发行包打包脚本 `tool/make_windows_release.ps1`**：一条命令产出
+  `call-assistant-<版本>-windows-x64.zip`，解压后**只有一层**
+  （`call-assistant-windows-x64\call_assistant.exe`）。
+  Flutter 产物在 `build\windows\x64\runner\Release\` 下，直接压缩那一层会把 exe 和十几个 dll
+  平铺在 zip 根目录（解压后文件散一地），手动打包又容易多套几层目录；
+  脚本统一先把内容搬进 `staging\call-assistant-windows-x64\` 再压缩。
+  zip **内**的目录名固定不带版本，版本号只出现在 zip 文件名上 —— 用户解压后得到一个稳定名字
+
+### 优化
+
+- **桌面端内置资源不再重复占用约 20MB**：`assets/live2d/`（7 个内置模型，约 20MB）在
+  Android 上必须释放成文件（apk 里的 asset 没有文件路径）；但**桌面端 asset 本来就是实体文件**
+  （Windows / Linux 在可执行文件旁的 `data/flutter_assets/`，macOS 在
+  `App.framework/.../Resources/flutter_assets/`），现在直接按路径读取，不再复制一份到 userdata。
+  userdata 下的 `live2d\` 只留用户导入的模型（`models\`）；旧版本已经复制过的那份
+  **首次启动自动回收**（`_removeCopiedBuiltInAssets`）
+- **发行包体积从约 120MB 降到 37MB**：打包时排除运行时生成的 `userdata\`
+  （实测 82MB，含用户数据、导入的模型和日志）—— 打进发行包既占体积又可能夹带私人数据
+- **压缩优先用 7z**：资源里模型文件名带中文，`Compress-Archive` 在某些环境下会乱码；
+  没有 7z 时自动退回 `Compress-Archive`
+
+### 变更
+
+- **CI 与本地打包统一**：GitHub Actions 的 `release-windows` 改成调用同一个
+  `tool/make_windows_release.ps1`（多传一个 `-OutDir build` 以匹配上传路径），
+  不再自己拼 7z 命令 —— 保证 CI 产物和本地打包的目录结构完全一致
+
 ## v1.2.3
 
 ### 新增
