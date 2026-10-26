@@ -68,7 +68,14 @@ class AvatarStage extends StatelessWidget {
           modelPath: link.avatarModel,
           mouth: link.mouth,
           height: avatarHeight,
-          backend: backend ?? link.avatarBackend,
+          // ⚠️ 不要把 link.avatarBackend 固化后传进来：
+          // 本组件是 StatelessWidget、不监听 PromptLink，切换后端时不会重建，
+          // 于是 Live2dAvatar 拿到的 widget.backend 一直是**旧值**，
+          // 它的 _onLinkChanged 判断 target == _currentBackend 就不会换 renderer
+          // —— 表现就是「在设置页切了后端，分栏里的数字人没反应」。
+          // 这里只传**显式指定**的 backend，其余情况交给 Live2dAvatar
+          // 每次自己去读 PromptLink 的当前值。
+          backend: backend,
           compact: compact,
           compactSide: compactSide,
           compactWidth: compactWidth,
@@ -87,7 +94,8 @@ class AvatarStage extends StatelessWidget {
             modelPath: link.avatarModel,
             mouth: link.mouth,
             height: avatarHeight,
-            backend: backend ?? link.avatarBackend,
+            // 同上：只传显式指定的 backend，不固化 link 的当前值
+            backend: backend,
             compact: compact,
             compactSide: compactSide,
             compactWidth: compactWidth,

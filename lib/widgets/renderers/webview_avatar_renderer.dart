@@ -471,7 +471,11 @@ class WebViewAvatarRenderer implements AvatarRenderer {
     final win = _winController;
     _winController = null;
     if (win != null) {
-      unawaited(win.dispose().catchError((_) {}));
+      // ⚠️ 必须 **await**：切换后端时上层会 `await old.dispose()` 然后立刻
+      // 创建下一个实例。Windows 的 WebView2 是**原生控件 + 独立 GPU 进程**，
+      // 只 unawaited 的话它会边释放边让原生后端去建 GL 上下文 ——
+      // 两者抢 GPU 资源，表现为「切到原生时报错 / 崩溃」。
+      await win.dispose().catchError((_) {});
     }
     _controller = null;
   }

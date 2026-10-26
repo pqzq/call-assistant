@@ -164,7 +164,13 @@ class _Live2dAvatarState extends State<Live2dAvatar> {
     final old = _renderer;
     _renderer = null;
     if (old != null) {
-      await old.dispose();
+      // 旧后端的释放**失败也不能阻断切换** —— 否则会卡在「空白 + 没换成」。
+      // 尤其是 Windows：WebView2 释放或 GL 上下文销毁都可能抛异常。
+      try {
+        await old.dispose();
+      } catch (_) {
+        // 忽略：继续用新后端
+      }
     }
 
     final renderer = effective == AvatarBackend.native

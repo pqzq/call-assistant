@@ -18,9 +18,16 @@ class WindowsLive2DController extends ChangeNotifier {
   /// 引擎侧纹理 id；create 成功后有效。
   int? get textureId => _textureId;
 
+  /// 已释放后**任何 channel 调用都必须跳过**：
+  /// C++ 侧的渲染实例已经销毁，再调过去会访问已释放的资源 → 进程崩溃。
+  ///
+  /// 典型场景：切换渲染后端时，旧 controller 已经 dispose，但渲染循环 /
+  /// 生命周期回调还在往它发指令。
+  bool get _usable => !_disposed;
+
   /// 创建渲染实例与纹理。[width]/[height] 用**物理像素**（逻辑尺寸 × dpr）。
   Future<int?> create({required double width, required double height}) async {
-    assert(!_disposed, 'controller already disposed');
+    if (!_usable) return null;
     if (_textureId != null) return _textureId;
     final id = await _kChannel.invokeMethod<int>(
       'create',
@@ -33,6 +40,7 @@ class WindowsLive2DController extends ChangeNotifier {
 
   /// 尺寸变化（物理像素），不重建纹理。
   Future<void> setSize({required double width, required double height}) {
+    if (!_usable) return Future<void>.value();
     return _kChannel.invokeMethod<void>(
       'setSize',
       <String, double>{'width': width, 'height': height},
@@ -42,6 +50,7 @@ class WindowsLive2DController extends ChangeNotifier {
   /// 加载模型。[dir] 为模型目录绝对路径（含结尾分隔符也可省略），
   /// [file] 为 *.model3.json 文件名。异步执行，完成后纹理自动切换为模型画面。
   Future<bool> loadModel({required String dir, required String file}) async {
+    if (!_usable) return false;
     final ok = await _kChannel.invokeMethod<bool>(
       'loadModel',
       <String, Object>{'dir': dir, 'file': file},
@@ -51,6 +60,7 @@ class WindowsLive2DController extends ChangeNotifier {
 
   /// 设置模型参数（如嘴型 ParamMouthOpenY，0~1）。
   Future<void> setParameter(String id, double value) {
+    if (!_usable) return Future<void>.value();
     return _kChannel.invokeMethod<void>(
       'setParameter',
       <String, Object>{'id': id, 'value': value},
@@ -59,6 +69,7 @@ class WindowsLive2DController extends ChangeNotifier {
 
   /// 播放动作组。
   Future<void> startMotion(String group, int index, {int priority = 1}) {
+    if (!_usable) return Future<void>.value();
     return _kChannel.invokeMethod<void>(
       'startMotion',
       <String, Object>{
@@ -71,6 +82,7 @@ class WindowsLive2DController extends ChangeNotifier {
 
   /// 暂停/恢复出帧（窗口最小化等不可见场景省 CPU，GL 上下文保留）。
   Future<void> setPaused(bool paused) {
+    if (!_usable) return Future<void>.value();
     return _kChannel.invokeMethod<void>(
       'setPaused',
       <String, Object>{'paused': paused},
@@ -87,10 +99,26 @@ class WindowsLive2DController extends ChangeNotifier {
     _textureId = null;
   }
 
+  /// 释放渲染实例。
+  ///
+  /// ⚠️ `ChangeNotifier.dispose()` 不能改成 async，所以真正的释放放在这里。
+  /// 切换渲染后端时**必须 await 它**：C++ 侧销毁完成前不能创建下一个实例，
+  /// 否则两个 GL 上下文互相踩（表现为切换时报错 / 崩溃）。
+  Future<void> disposeAsync() async {
+    if (_disposeStarted) return _disposeFuture ?? Future<void>.value();
+    _disposeStarted = true;
+    _disposed = true;
+    _disposeFuture = _disposeInternal();
+    await _disposeFuture;
+  }
+
+  bool _disposeStarted = false;
+  Future<void>? _disposeFuture;
+
   @override
   void dispose() {
     _disposed = true;
-    unawaited(_disposeInternal());
+    unawaited(disposeAsync());
     super.dispose();
   }
 }

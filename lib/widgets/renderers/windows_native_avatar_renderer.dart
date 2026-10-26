@@ -31,6 +31,12 @@ class WindowsNativeAvatarRenderer
   Size _lastPx = Size.zero;
   String? _pendingModel;
 
+  /// 是否正在加载模型（防止两条路径并发调 loadModel）
+  bool _loading = false;
+
+  /// 是否已释放 —— 释放后所有插件调用都要跳过，否则 C++ 侧会访问已销毁的实例
+  bool _disposed = false;
+
   static bool _sizeDiffers(Size a, Size b) =>
       (a.width - b.width).abs() >= 1 || (a.height - b.height).abs() >= 1;
 
@@ -49,7 +55,19 @@ class WindowsNativeAvatarRenderer
 
   Future<void> _loadPending() async {
     final rel = _pendingModel;
-    if (rel == null || !_created) return;
+    if (rel == null || !_created || _disposed) return;
+    // ⚠️ 防止并发加载：`load()` 与「create 完成后的回调」是两条独立路径，
+    // 都可能触发这里。同时调 loadModel 会让 C++ 侧并发加载模型 → 崩溃。
+    if (_loading) return;
+    _loading = true;
+    try {
+      await _loadPendingInner(rel);
+    } finally {
+      _loading = false;
+    }
+  }
+
+  Future<void> _loadPendingInner(String rel) async {
 
     final root = await Live2dService.instance.ensureWebRoot();
     if (root == null) {
@@ -79,6 +97,7 @@ class WindowsNativeAvatarRenderer
   }
 
   Future<void> _syncSize(Size px) async {
+    if (_disposed) return;
     if (px.width < 1 || px.height < 1) return;
     if (!_sizeDiffers(px, _lastPx)) return;
     _lastPx = px;
@@ -98,7 +117,7 @@ class WindowsNativeAvatarRenderer
   @override
   void setMouth(double value) {
     _lastMouth = value.clamp(0.0, 1.0);
-    if (_loaded) {
+    if (_loaded && !_disposed) {
       unawaited(_controller.setParameter('ParamMouthOpenY', _lastMouth));
     }
   }
@@ -107,7 +126,7 @@ class WindowsNativeAvatarRenderer
   void setSpeaking(bool speaking) {
     if (!speaking) {
       _lastMouth = 0;
-      if (_loaded) {
+      if (_loaded && !_disposed) {
         unawaited(_controller.setParameter('ParamMouthOpenY', 0));
       }
     }
@@ -147,8 +166,12 @@ class WindowsNativeAvatarRenderer
 
   @override
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
-    _controller.dispose();
+    // 必须**等到** C++ 侧真正销毁：切换后端时会紧接着创建下一个实例，
+    // 旧的还没销毁就 create 新的，两个 GL 上下文会互相踩（表现为切换时崩溃）。
+    await _controller.disposeAsync().catchError((_) {});
   }
 
   /// 窗口最小化/失焦隐藏时暂停出帧（省 CPU，恢复时自动继续）
