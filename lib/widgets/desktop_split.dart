@@ -16,15 +16,6 @@ class DesktopSplitView extends StatelessWidget {
   /// 右侧的主界面
   final Widget child;
 
-  /// 左栏占窗口宽度的比例（2/5）
-  static const double panelRatio = 0.4;
-
-  /// 左栏最小宽度
-  static const double minPanelWidth = 260;
-
-  /// 左栏最大宽度
-  static const double maxPanelWidth = 640;
-
   /// 数字人区域占左栏高度的比例
   static const double avatarHeightRatio = 0.5;
 
@@ -40,27 +31,32 @@ class DesktopSplitView extends StatelessWidget {
     return ListenableBuilder(
       listenable: link,
       builder: (context, _) {
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            // 左栏固定为窗口宽度的 2/5
-            final panelWidth = (constraints.maxWidth * panelRatio)
-                .clamp(minPanelWidth, maxPanelWidth)
-                .toDouble();
-            // 必须有 Material 祖先：左栏用了 Switch / BottomSheet 等 Material 组件
-            return Material(
-              type: MaterialType.transparency,
-              child: Row(
-                children: <Widget>[
-                  SizedBox(
-                    width: panelWidth,
-                    child: _AvatarPanel(link: link, panelWidth: panelWidth),
+        // 左右**各占一半**：两边都用 Expanded 均分，窗口怎么缩放都严格对半。
+        // （分隔线占 1px，两边各少 0.5px，可忽略）
+        //
+        // 必须有 Material 祖先：左栏用了 Switch / BottomSheet 等 Material 组件
+        return Material(
+          type: MaterialType.transparency,
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                // 左栏宽度由 Expanded 决定，这里读**真实约束**再传下去：
+                // 数字人盒宽是 panelWidth - 32，拿不到实际宽度会算错
+                child: LayoutBuilder(
+                  builder: (context, panelConstraints) => _AvatarPanel(
+                    link: link,
+                    panelWidth: panelConstraints.maxWidth,
                   ),
-                  const VerticalDivider(width: 1, thickness: 1, color: Color(0xFFE3E8F0)),
-                  Expanded(child: child),
-                ],
+                ),
               ),
-            );
-          },
+              const VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Color(0xFFE3E8F0),
+              ),
+              Expanded(child: child),
+            ],
+          ),
         );
       },
     );

@@ -463,7 +463,7 @@ flutter build windows --release        # 产物在 build/windows/x64/runner/Rele
 
 **为什么改**：Windows 的 WebView2 是**原生控件**（hybrid composition），浮在 Flutter 内容之上时会出现一串问题 —— 透明背景要等控件创建后设置才生效、resize 后背景色会被重置、Flutter 的裁剪对原生控件无效导致贴边露灰条。改成固定分栏后，数字人就是普通布局的一部分，行为稳定。
 
-- 左栏宽度固定为**窗口宽度的 2/5**（DesktopSplitView.panelRatio，限制在 260~640px）
+- 左栏与右栏**各占一半**（两边都用 `Expanded` 均分，只有中间 1px 分隔线；窗口怎么缩放都严格对半）
 - 中间是 Live2D 角色（白底卡片内渲染，**没有裁剪/透明问题**）
 - 下面是提词气泡（客户信息 + 话术提词，最大高度为**窗口高度的 40%**）
 - 再下面是「上一步 / 下一步」和**「切换模型」快捷入口**（与手机端共用 ModelPickerSheet）
