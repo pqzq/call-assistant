@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 import 'app_paths.dart';
@@ -30,7 +31,7 @@ class AsrRecognizer {
   bool _bindingsReady = false;
   sherpa.OfflineRecognizer? _recognizer;
   String? _modelDir;
-  _AsrFiles? _files;
+  AsrModelFiles? _files;
 
   /// 是否已安装识别模型
   bool get isModelReady => _files != null;
@@ -56,12 +57,100 @@ class AsrRecognizer {
     return dir;
   }
 
-  /// 扫描模型目录，找到可用的识别模型（*.onnx + tokens.txt）
+  /// 上次扫描 / 初始化失败的原因（给用户看的，成功时为 null）
+  String? _lastError;
+  String? get lastError => _lastError;
+
+  /// 从目录里已列出的**文件路径**判定架构与所需部件（纯函数，便于单测）
+  ///
+  /// 判定只看文件名特征：
+  /// - `encoder` + `decoder` + `joiner` → **transducer**（zipformer 等）
+  /// - `encoder` + `decoder` 且目录名含 `whisper` → **whisper**
+  /// - 单个 `model*.onnx` + tokens → **sense-voice / paraformer**
+  ///   （这两族的模型文件都叫 `model.int8.onnx`，从文件上分不开，只能看目录名）
+  ///
+  /// 返回 null 表示这个目录组不成可用模型。
+  @visibleForTesting
+  static AsrModelFiles? classifyFiles(List<String> paths, String dirPath) {
+    final onnx = paths.where((p) => p.toLowerCase().endsWith('.onnx')).toList();
+    // Whisper 的 token 文件名是 `<名字>-tokens.txt`，所以用 endsWith 而不是等值
+    final tokens = paths
+        .where((p) => _baseName(p).toLowerCase().endsWith('tokens.txt'))
+        .toList();
+    if (onnx.isEmpty || tokens.isEmpty) return null;
+
+    String? single;
+    String? encoder;
+    String? decoder;
+    String? joiner;
+    for (final p in onnx) {
+      final name = _baseName(p).toLowerCase();
+      if (name.contains('vocoder')) continue;
+      if (name.contains('joiner')) {
+        joiner ??= p;
+      } else if (name.contains('encoder') || name.contains('encode')) {
+        encoder ??= p;
+      } else if (name.contains('decoder') || name.contains('decode')) {
+        decoder ??= p;
+      } else {
+        single ??= p;
+      }
+    }
+
+    final dirName = dirPath.toLowerCase();
+    final AsrArch arch;
+    if (encoder != null && decoder != null && joiner != null) {
+      arch = AsrArch.transducer;
+    } else if (encoder != null &&
+        decoder != null &&
+        dirName.contains('whisper')) {
+      arch = AsrArch.whisper;
+    } else if (dirName.contains('sense')) {
+      arch = AsrArch.senseVoice;
+    } else {
+      arch = AsrArch.paraformer;
+    }
+
+    final bool usable = switch (arch) {
+      AsrArch.transducer => encoder != null && decoder != null && joiner != null,
+      AsrArch.whisper => encoder != null && decoder != null,
+      AsrArch.senseVoice || AsrArch.paraformer => single != null,
+    };
+    if (!usable) return null;
+
+    return AsrModelFiles(
+      arch: arch,
+      model: single ?? '',
+      encoder: encoder ?? '',
+      decoder: decoder ?? '',
+      joiner: joiner ?? '',
+      tokens: tokens.first,
+    );
+  }
+
+  /// 给用户看的「为什么这个目录不能用」（`classifyFiles` 返回 null 时）
+  static String _reasonOf(List<String> paths) {
+    final hasOnnx = paths.any((p) => p.toLowerCase().endsWith('.onnx'));
+    final hasTokens =
+        paths.any((p) => _baseName(p).toLowerCase().endsWith('tokens.txt'));
+    if (!hasOnnx && !hasTokens) return '没有 .onnx 模型文件，也没有 tokens.txt';
+    if (!hasOnnx) return '没有 .onnx 模型文件';
+    if (!hasTokens) return '没有 tokens.txt（whisper 需要 *-tokens.txt）';
+    return '缺少该架构必需的部件（transducer 需要 encoder + decoder + joiner）';
+  }
+
+  static String _dirNameOf(String path) {
+    final parts = path.split(Platform.pathSeparator);
+    return parts.isEmpty ? path : parts.last;
+  }
+
+  /// 扫描模型目录，找到可用的识别模型
   Future<String?> detectModel() async {
     final root = await modelRoot();
-    // ignore: avoid_print
-    print('[ASR] 扫描目录: ${root.path} 存在=${root.existsSync()}');
-    if (!root.existsSync()) return null;
+    if (!root.existsSync()) {
+      _lastError = '模型目录不存在：${root.path}';
+      return null;
+    }
 
     final candidates = <Directory>[root];
     try {
@@ -69,84 +158,39 @@ class AsrRecognizer {
         if (entity is Directory) candidates.add(entity);
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('[ASR] 列举目录失败: $e');
+      _lastError = '列举模型目录失败：$e';
       return null;
     }
 
-
+    final reasons = <String>[];
     for (final dir in candidates) {
-      final entries = dir.listSync();
-      final files = entries.whereType<File>().toList();
-      final onnx =
-          files.where((f) => f.path.toLowerCase().endsWith('.onnx')).toList();
-      final tokens =
-          files.where((f) => _baseName(f.path) == 'tokens.txt').toList();
-      if (onnx.isEmpty || tokens.isEmpty) continue;
-
-      // 按文件名把各架构需要的部件分出来。
-      //
-      // sense-voice / paraformer 都是单个 model*.onnx，**从文件上分不开**，
-      // 只能看目录名；而 zipformer（transducer）和 whisper 有多文件特征：
-      //   transformer: encoder + decoder + joiner
-      //   whisper:     encoder + decoder
-      File? single;
-      File? encoder;
-      File? decoder;
-      File? joiner;
-      for (final f in onnx) {
-        final name = _baseName(f.path).toLowerCase();
-        if (name.contains('vocoder')) continue;
-        if (name.contains('joiner')) {
-          joiner ??= f;
-        } else if (name.contains('encoder') || name.contains('encode')) {
-          encoder ??= f;
-        } else if (name.contains('decoder') || name.contains('decode')) {
-          decoder ??= f;
-        } else {
-          single ??= f;
-        }
+      List<String> paths;
+      try {
+        paths =
+            dir.listSync().whereType<File>().map((f) => f.path).toList();
+      } catch (e) {
+        reasons.add('${_dirNameOf(dir.path)}：读取失败（$e）');
+        continue;
       }
+      if (paths.isEmpty) continue;
 
-      final dirName = dir.path.toLowerCase();
-      final AsrArch modelArch;
-      if (encoder != null && decoder != null && joiner != null) {
-        modelArch = AsrArch.transducer;
-      } else if (encoder != null &&
-          decoder != null &&
-          dirName.contains('whisper')) {
-        modelArch = AsrArch.whisper;
-      } else if (dirName.contains('sense')) {
-        modelArch = AsrArch.senseVoice;
-      } else {
-        modelArch = AsrArch.paraformer;
+      final files = classifyFiles(paths, dir.path);
+      if (files == null) {
+        reasons.add('${_dirNameOf(dir.path)}：${_reasonOf(paths)}');
+        continue;
       }
-
-      // 该架构必需的部件必须齐，否则跳过这个目录
-      final bool usable = switch (modelArch) {
-        AsrArch.transducer =>
-          encoder != null && decoder != null && joiner != null,
-        AsrArch.whisper => encoder != null && decoder != null,
-        AsrArch.senseVoice || AsrArch.paraformer => single != null,
-      };
-      if (!usable) continue;
 
       _modelDir = dir.path;
-      _files = _AsrFiles(
-        arch: modelArch,
-        model: single?.path ?? '',
-        encoder: encoder?.path ?? '',
-        decoder: decoder?.path ?? '',
-        joiner: joiner?.path ?? '',
-        tokens: tokens.first.path,
-      );
-      // ignore: avoid_print
-      print('[ASR] 找到模型: $modelArch');
+      _files = files;
+      _lastError = null;
       return _modelDir;
     }
 
     _modelDir = null;
     _files = null;
+    _lastError = reasons.isEmpty
+        ? '模型目录是空的（${root.path}）'
+        : reasons.join('\n');
     return null;
   }
   /// 导入模型压缩包（.tar.bz2），解压后自动识别
@@ -294,6 +338,9 @@ class AsrRecognizer {
       _recognizer = recognizer;
       return recognizer;
     } catch (e) {
+      // 别静默吞掉：架构 / 模型的 config 不对时就是这里抛异常，
+      // 之前直接 return null，用户只看到「识别失败」毫无线索。
+      _lastError = '识别器创建失败（${files.arch.name}）：$e';
       return null;
     }
   }
@@ -320,8 +367,8 @@ enum AsrArch {
 }
 
 /// 一个识别模型目录里识别出来的文件组合
-class _AsrFiles {
-  const _AsrFiles({
+class AsrModelFiles {
+  const AsrModelFiles({
     required this.arch,
     required this.tokens,
     this.model = '',

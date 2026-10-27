@@ -836,7 +836,13 @@ class PromptLink extends ChangeNotifier {
       notifyListeners();
       final dir = await AsrRecognizer.instance.importArchive(archiveFile);
       if (dir == null) {
-        _log('导入失败：压缩包里没有找到模型文件（*.onnx + tokens.txt）');
+        // 把具体原因带出来（缺 .onnx / 缺 tokens / 缺 encoder-joiner / 目录空），
+        // 否则只报「没找到模型文件」，排查时完全不知道差什么
+        final reason = AsrRecognizer.instance.lastError;
+        _log(
+          '导入失败：${reason ?? '压缩包里没有找到可用的模型文件（*.onnx + tokens.txt）'}',
+          important: true,
+        );
         return false;
       }
       notifyListeners();
@@ -867,7 +873,12 @@ class PromptLink extends ChangeNotifier {
     try {
       final text = await AsrRecognizer.instance.recognize(path);
       if (text == null || text.isEmpty) {
-        _log('识别失败：没有得到识别结果');
+        // 识别器建不起来（架构 / config 不匹配）时 lastError 有具体原因，
+        // 比笼统的「没有得到识别结果」有用得多
+        _log(
+          '识别失败：${AsrRecognizer.instance.lastError ?? '没有得到识别结果'}',
+          important: true,
+        );
         return null;
       }
       _log('识别完成：$text', important: true);
