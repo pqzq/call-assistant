@@ -948,6 +948,29 @@ lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现
 
 模型解压到 `Android/data/com.callassistant.call_assistant/files/sherpa-tts/`（可用 adb 直接推），也可手动放模型目录后重启 App 自动识别。
 
+**模型架构自适应**（`TtsArch`）
+
+不再写死 VITS，按模型目录里的**文件特征**自动识别：
+
+| 目录里的特征 | 判定的架构 | 用的 config |
+| --- | --- | --- |
+| 有 `vocoder.onnx` | **Matcha** | `acousticModel` + `vocoder` |
+| 有 `voices.bin` | **Kokoro** | `model` + `voices` |
+| 其余（`model.onnx` + `tokens.txt`） | **VITS** | `model` + `tokens` |
+
+所有架构都会自动带上（存在时）：`espeak-ng-data/`、`lexicon.txt`、`dict/`（jieba 词典）。
+
+**模型选择建议**
+
+| 需求 | 模型 | 体积 | 语言 |
+| --- | --- | --- | --- |
+| 只要中文、省空间 | `vits-piper-zh_CN-xiao_ya-medium-int8` | 13.4MB | 中文 |
+| 多语言 + 音质更好 | `kokoro-multi-lang-v1_1`（int8） | 约 86MB | 中/英/日/法/西/印地/意/葡 |
+| 中英混读 | `matcha-icefall-zh-en` + vocoder | 约 70MB | 中英 |
+
+Kokoro 的多语言模型如果要指定语言，在模型目录里放一个 `lang.txt`（内容如 `zh` / `en` / `ja`）；
+不放则交给引擎按默认（英文）处理。piper 那类单语言模型不需要这个文件。
+
 **实测数据（小米 2410DPN6CC / Android 17）**
 
 | 环节 | 耗时 |

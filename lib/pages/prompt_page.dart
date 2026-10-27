@@ -732,7 +732,7 @@ class _PromptPageState extends State<PromptPage> {
           ),
           const SizedBox(height: 6),
           const Text(
-            '在本机离线把上面的开场白文本合成成 wav（sherpa-onnx + 中文 VITS，int8 模型约 13MB）。合成只在点按钮时跑一次，之后接通播的就是这个 wav，不需要系统 TTS。',
+                      '在本机离线把上面的开场白文本合成成 wav（sherpa-onnx 端侧合成，支持 VITS / Kokoro / Matcha，架构按模型目录里的文件自动识别）。合成只在点按钮时跑一次，之后接通播的就是这个 wav。',
             style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
           ),
           if (ready) ...<Widget>[
@@ -794,7 +794,7 @@ class _PromptPageState extends State<PromptPage> {
             onTap: () => _openUrl('https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models'),
             child: const Text(
               '模型下载：github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models（点击打开）\n'
-              '推荐 vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2（13.4MB），下载后传手机再点「导入模型包」。',
+                      '中文首选 vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2（13.4MB，最省空间）；要多语言且音质更好可用 kokoro-multi-lang-v1_1（int8 约 86MB，覆盖中英日法西等）。下载后传手机再点「导入模型包」，架构会按目录里的文件自动识别。',
               style: TextStyle(
                 fontSize: 11,
                 height: 1.6,

@@ -45,22 +45,74 @@ class TtsSynthesizer {
     }
 
     for (final dir in candidates) {
-      final files = dir.listSync().whereType<File>().toList();
+      final entries = dir.listSync();
+      final files = entries.whereType<File>().toList();
       final onnx = files.where((f) => f.path.toLowerCase().endsWith('.onnx')).toList();
       final tokens = files.where((f) => _baseName(f.path) == 'tokens.txt').toList();
       if (onnx.isEmpty || tokens.isEmpty) continue;
-      final modelFile = onnx.firstWhere(
-        (f) => !_baseName(f.path).contains('vocoder'),
-        orElse: () => onnx.first,
-      );
+
+      // 主模型 / vocoder 分开（Matcha 有独立的 vocoder.onnx）
+      File? modelFile;
+      File? vocoderFile;
+      String voices = '';
+      for (final f in onnx) {
+        final name = _baseName(f.path).toLowerCase();
+        if (name.contains('vocoder')) {
+          vocoderFile ??= f;
+        } else {
+          modelFile ??= f;
+        }
+      }
+      if (modelFile == null) continue; // 只有 vocoder 组不成模型
+      for (final f in files) {
+        if (_baseName(f.path).toLowerCase() == 'voices.bin') voices = f.path;
+      }
+
+      // 架构判定（按目录里的文件特征，不靠命名约定）：
+      //   有 vocoder.onnx         -> Matcha（声学模型 + 声码器分离）
+      //   有 voices.bin           -> Kokoro（音色表）
+      //   其余                    -> VITS（piper 等都在这一类）
+      final TtsArch arch;
+      if (vocoderFile != null) {
+        arch = TtsArch.matcha;
+      } else if (voices.isNotEmpty) {
+        arch = TtsArch.kokoro;
+      } else {
+        arch = TtsArch.vits;
+      }
+      // 只有 Matcha 必须有 vocoder；Kokoro/VITS 忽略这个字段
+      if (arch == TtsArch.matcha && vocoderFile == null) continue;
+
+      // 中文模型常带 jieba 词典目录
+      String dictDir = '';
+      for (final e in entries) {
+        if (e is Directory && _baseName(e.path) == 'dict') dictDir = e.path;
+      }
+
+      // Kokoro 多语言模型可以指定语言；放个 lang.txt（内容如 zh / en / ja）即可
+      String lang = '';
+      final langFile = File('${dir.path}/lang.txt');
+      if (langFile.existsSync()) {
+        try {
+          lang = langFile.readAsStringSync().trim();
+        } catch (_) {
+          // 读不到就用默认（sherpa 按英文处理）
+        }
+      }
+
       _modelDir = modelFile.parent.path;
       _modelConfig = _ModelFiles(
+        arch: arch,
         model: modelFile.path,
+        vocoder: vocoderFile?.path ?? '',
+        voices: voices,
         tokens: tokens.first.path,
         dataDir: Directory('${dir.path}/espeak-ng-data').existsSync()
             ? '${dir.path}/espeak-ng-data'
             : '',
         lexicon: File('${dir.path}/lexicon.txt').existsSync() ? '${dir.path}/lexicon.txt' : '',
+        dictDir: dictDir,
+        lang: lang,
       );
       return _modelDir;
     }
@@ -223,19 +275,59 @@ class TtsSynthesizer {
       _bindingsReady = true;
     }
 
+    // 按识别到的架构填对应的 config。
+    // 之前写死 vits，导致 kokoro / matcha 的模型即使导入了也用不起来。
+    final sherpa.OfflineTtsModelConfig modelConfig;
+    switch (files.arch) {
+      case TtsArch.matcha:
+        modelConfig = sherpa.OfflineTtsModelConfig(
+          matcha: sherpa.OfflineTtsMatchaModelConfig(
+            acousticModel: files.model,
+            vocoder: files.vocoder,
+            tokens: files.tokens,
+            dataDir: files.dataDir,
+            lexicon: files.lexicon,
+            dictDir: files.dictDir,
+            lengthScale: 1.0,
+          ),
+          numThreads: 2,
+          debug: false,
+          provider: 'cpu',
+        );
+      case TtsArch.kokoro:
+        modelConfig = sherpa.OfflineTtsModelConfig(
+          kokoro: sherpa.OfflineTtsKokoroModelConfig(
+            model: files.model,
+            voices: files.voices,
+            tokens: files.tokens,
+            dataDir: files.dataDir,
+            lexicon: files.lexicon,
+            dictDir: files.dictDir,
+            lang: files.lang,
+            lengthScale: 1.0,
+          ),
+          numThreads: 2,
+          debug: false,
+          provider: 'cpu',
+        );
+      case TtsArch.vits:
+        modelConfig = sherpa.OfflineTtsModelConfig(
+          vits: sherpa.OfflineTtsVitsModelConfig(
+            model: files.model,
+            tokens: files.tokens,
+            dataDir: files.dataDir,
+            lexicon: files.lexicon,
+            dictDir: files.dictDir,
+            lengthScale: 1.0,
+          ),
+          numThreads: 2,
+          debug: false,
+          provider: 'cpu',
+        );
+    }
+
     final config = sherpa.OfflineTtsConfig(
-      model: sherpa.OfflineTtsModelConfig(
-        vits: sherpa.OfflineTtsVitsModelConfig(
-          model: files.model,
-          tokens: files.tokens,
-          dataDir: files.dataDir,
-          lexicon: files.lexicon,
-          lengthScale: 1.0,
-        ),
-        numThreads: 2,
-        debug: false,
-        provider: 'cpu',
-      ),
+      model: modelConfig,
       maxNumSenetences: 1,
     );
 
@@ -305,16 +397,49 @@ class SynthesisResult {
   Duration get duration => Duration(milliseconds: envelope.length * stepMs);
 }
 
+/// TTS 模型架构（按模型目录里的文件特征自动识别）
+enum TtsArch {
+  /// 单模型（piper / vits-* 等），只需 model + tokens
+  vits,
+
+  /// 声学模型 + 独立声码器（acousticModel + vocoder）
+  matcha,
+
+  /// 带音色表的模型（model + voices.bin）
+  kokoro,
+}
+
 class _ModelFiles {
   const _ModelFiles({
+    required this.arch,
     required this.model,
     required this.tokens,
     required this.dataDir,
     required this.lexicon,
+    this.vocoder = '',
+    this.voices = '',
+    this.dictDir = '',
+    this.lang = '',
   });
 
+  final TtsArch arch;
+
+  /// 主模型：VITS/Kokoro 的 model，Matcha 的 acousticModel
   final String model;
+
+  /// Matcha 专用
+  final String vocoder;
+
+  /// Kokoro 专用
+  final String voices;
+
   final String tokens;
   final String dataDir;
   final String lexicon;
+
+  /// jieba 词典目录（中文模型常有）
+  final String dictDir;
+
+  /// Kokoro 多语言模型的语言代码（空 = 交给引擎按默认处理）
+  final String lang;
 }
