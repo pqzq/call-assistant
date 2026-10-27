@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -6,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/asr_recognizer.dart';
 import '../services/tts_synthesizer.dart';
+import '../services/voice_recorder.dart';
 import '../services/call_state_watcher.dart';
 import '../services/platform_bridge.dart';
 import '../services/avatar_renderer.dart';
@@ -886,6 +888,16 @@ class _PromptPageState extends State<PromptPage> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          // 没有现成音频时最省事的做法：直接对着麦克风念一遍
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _showRecordSheet,
+              icon: const Icon(Icons.mic, size: 18),
+              label: const Text('用麦克风录制'),
+            ),
+          ),
           if (hasAudio)
             Align(
               alignment: Alignment.centerRight,
@@ -1248,6 +1260,128 @@ class _PromptPageState extends State<PromptPage> {
       descOf: (o) => '${o.languages} · ${o.note}',
       urlOf: (o) => o.url,
     );
+  }
+
+  /// 用麦克风录一段开场白（录完直接设为播报音频）
+  Future<void> _showRecordSheet() async {
+    final recorder = VoiceRecorder.instance;
+    String? error;
+    var recording = false;
+    var elapsed = Duration.zero;
+    Timer? ticker;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isDismissible: false,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          Future<void> startRec() async {
+            final err = await recorder.start();
+            if (!context.mounted) return;
+            setSheetState(() {
+              error = err;
+              recording = err == null;
+              elapsed = Duration.zero;
+            });
+            if (err == null) {
+              ticker?.cancel();
+              ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+                if (!context.mounted) return;
+                setSheetState(() => elapsed = recorder.elapsed);
+              });
+            }
+          }
+
+          Future<void> stopRec() async {
+            ticker?.cancel();
+            ticker = null;
+            final path = await recorder.stop();
+            if (!context.mounted) return;
+            if (path == null) {
+              setSheetState(() {
+                error = '录音失败，请重试';
+                recording = false;
+              });
+              return;
+            }
+            final ok = await _link.setOpeningAudioFromFile(path);
+            if (!context.mounted) return;
+            if (!ok) {
+              setSheetState(() {
+                error = '保存失败';
+                recording = false;
+              });
+              return;
+            }
+            Navigator.of(sheetContext).pop();
+            AppToast.show(context, '已保存录音，可点「本机试听」确认');
+          }
+
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Text(
+                    '用麦克风录制开场白',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Text(
+                    '对着麦克风念一遍开场白，录完自动设为播报音频（会覆盖已有音频）。',
+                    style: TextStyle(
+                        fontSize: 11, color: Colors.black45, height: 1.4),
+                  ),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(
+                      error!,
+                      style: const TextStyle(fontSize: 12, color: Colors.red),
+                    ),
+                  ),
+                if (recording) ...<Widget>[
+                  Text(
+                    '${elapsed.inMinutes.toString().padLeft(2, '0')}:'
+                    '${(elapsed.inSeconds % 60).toString().padLeft(2, '0')}',
+                    style: const TextStyle(
+                        fontSize: 30, fontWeight: FontWeight.w300),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: stopRec,
+                    icon: const Icon(Icons.stop, size: 18),
+                    label: const Text('停止并保存'),
+                  ),
+                ] else
+                  FilledButton.icon(
+                    onPressed: startRec,
+                    icon: const Icon(Icons.mic, size: 18),
+                    label: const Text('开始录音'),
+                  ),
+                TextButton(
+                  onPressed: () async {
+                    ticker?.cancel();
+                    await recorder.cancel();
+                    if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+                  },
+                  child: const Text('取消'),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    ticker?.cancel();
+    // 关闭时清理没保存的录音（保存过的已经拷到固定位置，不受影响）
+    await recorder.cancel();
   }
 
   /// 可下载的 ASR 模型列表

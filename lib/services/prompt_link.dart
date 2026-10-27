@@ -998,6 +998,32 @@ class PromptLink extends ChangeNotifier {
   }
 
   /// 选择开场白音频文件（复制到应用目录，避免被系统清理）
+  /// 把**录音**得到的音频设为开场白
+  ///
+  /// 与「导入音频文件」走同一条落盘链路（都拷到固定的 opening_audio 位置），
+  /// 所以播报、试听、识别都不需要区分音频来源。
+  Future<bool> setOpeningAudioFromFile(String srcPath) async {
+    try {
+      final src = File(srcPath);
+      if (!src.existsSync()) {
+        _log('录音文件不存在');
+        return false;
+      }
+      final target = await TtsSynthesizer.openingAudioFile();
+      await target.parent.create(recursive: true);
+      await src.copy(target.path);
+      _audioPath = target.path;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kAudioPath, target.path);
+      _log('已用录音作为开场白音频', important: true);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _log('保存录音失败：$e');
+      return false;
+    }
+  }
+
   Future<bool> pickAudio() async {
     try {
       final result = await FilePicker.platform.pickFiles(

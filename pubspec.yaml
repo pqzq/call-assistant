@@ -33,6 +33,7 @@ dependencies:
   # Windows 原生 Live2D（自研插件，外部纹理路线，仓内路径依赖）
   flutter_live2d_windows:
     path: plugins/flutter_live2d_windows
+  record: ^7.1.2
 
 dev_dependencies:
   flutter_test:
