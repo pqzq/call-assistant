@@ -1,5 +1,61 @@
 # 更新日志
 
+## v1.2.7
+
+### 新增
+
+- **开场白支持麦克风录制**：卡片上「用麦克风录制」→ 弹窗里「开始录音」（显示计时，`停止并保存`），
+  录完自动设为播报音频。录 **16kHz 单声道 wav**（播放和离线识别都能直接读），
+  落盘复用「导入音频」那条链路（`TtsSynthesizer.openingAudioFile()`），旧的被覆盖
+- **端侧 TTS 支持多种模型架构**（`TtsArch`）：不再写死 VITS，按模型目录里的**文件特征**判定 ——
+  有 `vocoder.onnx` → Matcha、有 `voices.bin` → Kokoro、其余 → VITS。
+  于是 **Kokoro**（中/英/日/法/西等 8 种语言，音质明显更好）、**Matcha**（中英混读）都能直接导入
+- **ASR 也做架构自适应**（`AsrArch`）：原来只判断目录名含 `sense`、其他一律按 paraformer，
+  导致 zipformer（transducer）和 whisper 的模型导入了也用不起来。现在按文件特征识别
+  **transducer**（encoder + decoder + joiner）/ **whisper** / **senseVoice** / **paraformer** 四种
+- **TTS / ASR 可下载模型清单**：App 内「模型下载」「下载模型」入口改成弹窗列表，
+  点条目**直接下载模型包**（`.tar.bz2` 直链），底部保留「查看全部模型」；README 里也有完整表格
+- **两端都支持「模型大小」调节**：以前这个滑杆只对 WebView 生效，现在原生后端也接了
+  （Android 走 `__zoom__` 特殊参数、Windows 走插件 channel），模型加载完成后补发
+- **Windows 原生渲染支持多实例**：分栏和全屏页各用独立实例（自己的渲染线程 + GL 上下文 + 纹理），
+  一方 dispose 不再销毁另一方
+- **桌面端分栏改为左右各占一半**：原来左栏是窗口宽度的 2/5 并 clamp 到 260~640px，
+  窗口变宽时左侧显得偏窄；现在两边都用 `Expanded` 均分
+
+### 修复
+
+- **Windows 分栏切换渲染后端时报错/崩溃**：三处「释放不彻底就建新实例」——
+  WebView2 的 dispose 用 `unawaited`（原生控件 + 独立 GPU 进程还在释放中就去建 GL 上下文）、
+  插件 controller 的 dispose 同样是 `unawaited` 且释放后仍会调 channel、
+  `loadModel` 存在两条并发路径
+- **Windows 原生后端多次切换后 `create` 报 `PlatformException`**：纹理释放是 use-after-free
+  （`UnregisterTexture(id, nullptr)` 之后立刻 reset）、renderer 插件级复用且 `Start` 失败不回滚
+  （残留「存在但没跑」的实例 → 越切越坏）、`Start` 失败时纹理泄漏；
+  另外新增 `WaitReady`，GL 上下文建不起来时**明确报错**而不是静默空白
+- **Windows 窗口放大卡死闪退**：`resize` 会重新分配帧缓冲，而引擎取帧拿到的是内部缓冲的**裸指针**，
+  重新分配后就是 use-after-free；改成持锁拷贝到自己的暂存区
+- **换模型后原生渲染尺寸不对（mao 小几倍）**：本体边界**没绑定模型** —— 它是相对**该模型的 canvas**
+  算的，不同模型 canvas 尺寸差很多；现在边界记在模型名下，换模型即失效并退回 canvas 适配。
+  同时两端原生适配不再用 drawable 顶点外框（含背景/遮罩，量不准）
+- **演示模式与左栏数字人冲突**：`suppressAvatar` 只有浮动数字人在检查，左栏漏了 →
+  两个实例并存互相顶掉（表现为左栏变窄 / 空白 / 消失）
+- **原生 `create` 返回空时不再静默**：以前仍然置 `_created = true`，于是数字人区域一直纯白、
+  既没画面也没提示；现在会明确报错
+- **连点「切换模型」叠出多个弹窗**：`ModelPickerSheet` 加静态守卫（所有入口共用一处），
+  `AppToast` 也加了去重（新 toast 顶掉旧的）
+
+### 变更
+
+- **Windows 默认渲染后端改为「原生」**：WebView2 会常驻 `msedgewebview2.exe`
+  （浏览器进程 + GPU 进程 + 渲染进程），内存占用明显高于原生；原生是外部纹理，同进程合成
+- **Windows 上不再提供「演示模式」入口**：全屏页要再创建一个数字人实例，和左栏并存时
+  两者互相影响（实测演示页一直纯白）；与其留一个「点了就空白」的入口，直接隐藏。其他平台保留
+- **WebView 页面渲染限制 30fps**：PIXI 默认 60，数字人动作 30fps 够用，CPU/GPU 占用减半
+- **Android `minSdk` 21 → 24**（Android 7.0）：麦克风录制用的 `record` 插件要求 24+
+- **原生后端的「贴边缩成小人」仍未启用**：走 Cubism 官方的「按 canvas 适配 + 允许裁切」，
+  贴边时裁剪露出中央那一段（模型可见、比例正确）。C++ 侧的 `__render_scale__` / `__fit_*`
+  通道都保留着，理清缩放与居中的关系后可再打开
+
 ## v1.2.6
 
 ### 修复
