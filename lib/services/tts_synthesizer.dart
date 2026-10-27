@@ -443,3 +443,40 @@ class _ModelFiles {
   /// Kokoro 多语言模型的语言代码（空 = 交给引擎按默认处理）
   final String lang;
 }
+
+/// 可下载的推荐 TTS 模型（直链，点了直接下 .tar.bz2）
+class TtsModelOption {
+  const TtsModelOption({
+    required this.name,
+    required this.languages,
+    required this.note,
+  });
+
+  /// 模型名（也是 tar.bz2 的文件名前缀）
+  final String name;
+  final String languages;
+  final String note;
+
+  /// 直链下载地址
+  String get url =>
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$name.tar.bz2';
+}
+
+/// 推荐模型清单（与 README 的表格保持一致）
+const List<TtsModelOption> kTtsModelOptions = <TtsModelOption>[
+  TtsModelOption(
+    name: 'vits-piper-zh_CN-xiao_ya-medium-int8',
+    languages: '中文',
+    note: '最省空间（约 13MB），日常播报够用',
+  ),
+  TtsModelOption(
+    name: 'kokoro-multi-lang-v1_1',
+    languages: '中 / 英 / 日 / 法 / 西 / 印地 / 意 / 葡',
+    note: '音质明显更好，但体积大（int8 约 86MB），合成也慢一些',
+  ),
+  TtsModelOption(
+    name: 'matcha-icefall-zh-en',
+    languages: '中英混读',
+    note: '一句话里中英夹杂读得自然（包里含 vocoder）',
+  ),
+];

@@ -289,10 +289,30 @@ mp3 / m4a / aac / ogg / wav / amr 等常见格式都能读，统一转成 16kHz 
 
 **模型**（在「语音识别模型」卡片导入，`.tar.bz2` 格式，导入后自动识别，无需手动解压）：
 
-| 模型 | 体积 | 说明 |
+| 模型 | 体积 | 语言 | 说明 | 下载 |
+| --- | --- | --- | --- | --- |
+| `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17` | 155 MB | 中/英/日/韩/粤（自动检测） | 推荐，自带标点 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2) |
+| `sherpa-onnx-paraformer-zh-small-2024-03-09` | 74 MB | 中文 | 更轻，速度快 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-small-2024-03-09.tar.bz2) |
+| zipformer（transducer 族） | 视模型 | 中/英 | encoder + decoder + joiner 三件套 | [全部模型](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) |
+| whisper | 视模型 | 99 种 | 语种最全，但慢且大 | [全部模型](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) |
+
+> 上面两个直链是 `asr-models` release 里的固定资源；如果点了 404，去「全部模型」页搜同名文件即可。
+
+**模型架构自适应**（`AsrArch`）
+
+按模型目录里的**文件特征**判定，不再只看目录名（之前只支持 SenseVoice / Paraformer）：
+
+| 目录特征 | 判定的架构 | 用的 config |
 | --- | --- | --- |
-| `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2` | 155 MB | 推荐，中文效果最好、自带标点 |
-| `sherpa-onnx-paraformer-zh-small-2024-03-09.tar.bz2` | 74 MB | 更轻，速度快 |
+| `encoder*` + `decoder*` + `joiner*` | **Transducer**（zipformer 等） | `OfflineTransducerModelConfig` |
+| `*encoder*` + `*decoder*` 且目录名含 `whisper` | **Whisper** | `OfflineWhisperModelConfig` |
+| 目录名含 `sense` | **SenseVoice** | `OfflineSenseVoiceModelConfig` |
+| 其余（单文件 + `tokens.txt`） | **Paraformer** | `OfflineParaformerModelConfig` |
+
+⚠️ sense-voice 和 paraformer 的模型文件**都叫** `model*.onnx`，从文件上分不开，只能看目录名 ——
+所以解压后**不要改目录名**（`sherpa-onnx-sense-voice-...` / `-paraformer-...`）。
+
+不设 `modelType`：sherpa 按「填了哪个 config」自行判断架构，手写字符串反而容易错。
 
 - 模型目录：`/storage/emulated/0/Android/data/<包名>/files/sherpa-asr/`，也可直接用 adb 推入
 - 识别开了**逆文本正规化**：数字会输出成「10086」而不是「一万零八十六」
@@ -962,11 +982,14 @@ lib/widgets/renderers/native_avatar_renderer.dart    # 原生实现
 
 **模型选择建议**
 
-| 需求 | 模型 | 体积 | 语言 |
-| --- | --- | --- | --- |
-| 只要中文、省空间 | `vits-piper-zh_CN-xiao_ya-medium-int8` | 13.4MB | 中文 |
-| 多语言 + 音质更好 | `kokoro-multi-lang-v1_1`（int8） | 约 86MB | 中/英/日/法/西/印地/意/葡 |
-| 中英混读 | `matcha-icefall-zh-en` + vocoder | 约 70MB | 中英 |
+| 需求 | 模型 | 体积 | 语言 | 下载 |
+| --- | --- | --- | --- | --- |
+| 只要中文、省空间 | `vits-piper-zh_CN-xiao_ya-medium-int8` | 13.4MB | 中文 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2) |
+| 多语言 + 音质更好 | `kokoro-multi-lang-v1_1`（int8） | 约 86MB | 中/英/日/法/西/印地/意/葡 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_1.tar.bz2) |
+| 中英混读 | `matcha-icefall-zh-en` + vocoder | 约 70MB | 中英 | [下载](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-zh-en.tar.bz2) |
+
+> 这几项在 App 内也能直接点：端侧语音合成卡片里点「模型下载」会弹出同样的清单，
+> 点条目即跳直链下载（`_showTtsModels`）；识别的「下载模型」按钮同理（`_showAsrModels`）。
 
 Kokoro 的多语言模型如果要指定语言，在模型目录里放一个 `lang.txt`（内容如 `zh` / `en` / `ja`）；
 不放则交给引擎按默认（英文）处理。piper 那类单语言模型不需要这个文件。

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/asr_recognizer.dart';
+import '../services/tts_synthesizer.dart';
 import '../services/call_state_watcher.dart';
 import '../services/platform_bridge.dart';
 import '../services/avatar_renderer.dart';
@@ -789,12 +790,12 @@ class _PromptPageState extends State<PromptPage> {
             ],
           ),
           const SizedBox(height: 8),
-          // 下载地址可点击跳转
+          // 点这里弹可下载模型列表（每项跳直链）
           GestureDetector(
-            onTap: () => _openUrl('https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models'),
+            onTap: _showTtsModels,
             child: const Text(
-              '模型下载：github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models（点击打开）\n'
-                      '中文首选 vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2（13.4MB，最省空间）；要多语言且音质更好可用 kokoro-multi-lang-v1_1（int8 约 86MB，覆盖中英日法西等）。下载后传手机再点「导入模型包」，架构会按目录里的文件自动识别。',
+              '模型下载：**点这里选择**（中文 piper 约 13MB / 多语言 Kokoro 约 86MB / 中英混读 Matcha）\n'
+              '下载后传手机，再点「导入模型包」；架构按目录里的文件自动识别（VITS / Kokoro / Matcha）。',
               style: TextStyle(
                 fontSize: 11,
                 height: 1.6,
@@ -966,8 +967,8 @@ class _PromptPageState extends State<PromptPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _openUrl(AsrRecognizer.modelDownloadPage),
-                  icon: const Icon(Icons.open_in_new, size: 18),
+                  onPressed: _showAsrModels,
+                  icon: const Icon(Icons.download, size: 18),
                   label: const Text('下载模型'),
                 ),
               ),
@@ -1238,6 +1239,89 @@ class _PromptPageState extends State<PromptPage> {
   }
 
   /// 打开外部链接（模型下载页等）
+  /// 可下载的 TTS 模型列表（点某项直接下载 .tar.bz2）
+  void _showTtsModels() {
+    _showModelSheet<TtsModelOption>(
+      title: '下载语音合成模型',
+      options: kTtsModelOptions,
+      nameOf: (o) => o.name,
+      descOf: (o) => '${o.languages} · ${o.note}',
+      urlOf: (o) => o.url,
+    );
+  }
+
+  /// 可下载的 ASR 模型列表
+  void _showAsrModels() {
+    _showModelSheet<AsrModelOption>(
+      title: '下载语音识别模型',
+      options: kAsrModelOptions,
+      nameOf: (o) => o.name,
+      descOf: (o) => '${o.languages} · ${o.note}',
+      urlOf: (o) => o.url,
+    );
+  }
+
+  /// 通用的「可下载模型」弹窗：点条目跳直链，底部留一个「全部模型」入口
+  void _showModelSheet<T>({
+    required String title,
+    required List<T> options,
+    required String Function(T) nameOf,
+    required String Function(T) descOf,
+    required String Function(T) urlOf,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                '点条目直接下载 .tar.bz2，传手机后点「导入模型包」',
+                style: TextStyle(fontSize: 11, color: Colors.black45),
+              ),
+            ),
+            for (final option in options)
+              ListTile(
+                dense: true,
+                title: Text(nameOf(option), style: const TextStyle(fontSize: 13)),
+                subtitle: Text(descOf(option),
+                    style: const TextStyle(fontSize: 11, height: 1.4)),
+                trailing: const Icon(Icons.download, size: 20),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openUrl(urlOf(option));
+                },
+              ),
+            const Divider(height: 1),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.open_in_new, size: 18),
+              title: const Text('查看全部模型', style: TextStyle(fontSize: 13)),
+              subtitle: const Text('sherpa-onnx 的 releases 页面',
+                  style: TextStyle(fontSize: 11)),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _openUrl('https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _openUrl(String url) async {
     final uri = Uri.parse(url);
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
