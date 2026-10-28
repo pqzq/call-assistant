@@ -145,14 +145,70 @@ class TtsSynthesizer {
     return detectModel();
   }
 
-  /// 合成语音，返回 wav 路径 + 振幅包络（用于驱动 Live2D 嘴型）
-  /// 开场白音频的固定文件名（每次生成都覆盖同一个文件）
-  static const String openingAudioFileName = 'opening_audio.wav';
+  /// 开场白音频的基名
+  ///
+  /// 后缀**随实际格式变化**（`opening_audio.mp3` / `.m4a` …）：导入外部音频时
+  /// 保留原后缀，用户能一眼看出是什么格式；合成与录音固定产 wav。
+  static const String openingAudioBaseName = 'opening_audio';
 
-  /// 开场白音频的固定路径（统一数据根下的 audio/ 目录）
-  static Future<File> openingAudioFile() async {
+  /// 支持的开场白音频后缀（也是 `findOpeningAudio` 的查找顺序）
+  static const List<String> openingAudioExts = <String>[
+    'wav',
+    'mp3',
+    'm4a',
+    'aac',
+    'ogg',
+    'flac',
+    'amr',
+  ];
+
+  /// 取文件后缀（小写、不含点）；没有后缀返回空串
+  static String extOf(String path) {
+    final slash = path.lastIndexOf(Platform.pathSeparator);
+    final name = slash >= 0 ? path.substring(slash + 1) : path;
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) return '';
+    return name.substring(dot + 1).toLowerCase();
+  }
+
+  /// 开场白音频路径（统一数据根下的 audio/ 目录）
+  ///
+  /// [ext] 默认 wav（合成与录音都产 wav）；导入外部音频时传原后缀。
+  static Future<File> openingAudioFile({String ext = 'wav'}) async {
     final dir = AppPaths.audioDir;
-    return File('${dir.path}/$openingAudioFileName');
+    final e = ext.toLowerCase().replaceAll('.', '');
+    return File('${dir.path}/$openingAudioBaseName.${e.isEmpty ? 'wav' : e}');
+  }
+
+  /// 找到**实际存在**的开场白音频（后缀可能是导入时的原格式）
+  static Future<File?> findOpeningAudio() async {
+    final dir = AppPaths.audioDir;
+    if (!dir.existsSync()) return null;
+    for (final ext in openingAudioExts) {
+      final f = File('${dir.path}/$openingAudioBaseName.$ext');
+      if (f.existsSync()) return f;
+    }
+    return null;
+  }
+
+  /// 删掉除 [keepPath] 之外的同名音频（连同各自的 `.env.json`）
+  ///
+  /// 换格式后必须清理：否则 `opening_audio.wav` 和 `opening_audio.mp3` 并存，
+  /// 启动时按顺序找到哪一个是不确定的。
+  static Future<void> removeOtherOpeningAudio(String keepPath) async {
+    final dir = AppPaths.audioDir;
+    if (!dir.existsSync()) return;
+    for (final ext in openingAudioExts) {
+      final f = File('${dir.path}/$openingAudioBaseName.$ext');
+      if (f.path == keepPath) continue;
+      try {
+        if (f.existsSync()) await f.delete();
+        final env = File('${f.path}.env.json');
+        if (env.existsSync()) await env.delete();
+      } catch (_) {
+        // 忽略（文件被占用等）
+      }
+    }
   }
 
   Future<SynthesisResult?> synthesize({required String text, double speed = 1.0}) async {
@@ -175,6 +231,8 @@ class TtsSynthesizer {
     await File('${file.path}.env.json').writeAsString(_encodeEnvelope(envelope, audio.sampleRate));
 
     await _cleanOldOpeningFiles();
+    // 合成总是产 wav：清掉之前导入的 mp3/m4a 等，避免两份并存
+    await removeOtherOpeningAudio(file.path);
 
     return SynthesisResult(wavPath: file.path, envelope: envelope, stepMs: 50);
   }

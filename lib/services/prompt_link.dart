@@ -354,8 +354,11 @@ class PromptLink extends ChangeNotifier {
     _link.localDeviceId = _deviceId;
 
     var name = prefs.getString(_kDeviceName) ?? '';
-    // Platform.localHostname 在 Android 上恒为 localhost，改用机型名
-    if (name.isEmpty || name == 'localhost') {
+    // 需要重取默认名的情况：
+    //   - 没存过 / 拿到过 localhost
+    //   - 之前落到过「设备 xxxx」兜底（说明当时没取到名字 —— 比如桌面端
+    //     还没实现设备名获取，这里顺手把它升级成计算机名）
+    if (name.isEmpty || name == 'localhost' || name.startsWith('设备 ')) {
       final model = await CallStateWatcher.deviceModel();
       name = model.isEmpty ? '设备 ${_deviceId.substring(0, 4)}' : model;
       await prefs.setString(_kDeviceName, name);
@@ -373,7 +376,11 @@ class PromptLink extends ChangeNotifier {
     final savedAudio = prefs.getString(_kAudioPath);
     if (savedAudio != null && File(savedAudio).existsSync()) {
       // 旧版本存的是带时间戳的文件，迁移到固定的开场白文件后删掉旧的
-      final fixed = await TtsSynthesizer.openingAudioFile();
+      // （保留原后缀：旧文件可能是导入的 mp3 / m4a）
+      final savedExt = TtsSynthesizer.extOf(savedAudio);
+      final fixed = await TtsSynthesizer.openingAudioFile(
+        ext: savedExt.isEmpty ? 'wav' : savedExt,
+      );
       if (savedAudio != fixed.path) {
         try {
           await File(savedAudio).copy(fixed.path);
@@ -390,11 +397,12 @@ class PromptLink extends ChangeNotifier {
         _audioPath = savedAudio;
       }
     } else {
-      // 统一数据目录（AppPaths）迁移后旧绝对路径失效 → 回退到新根下的固定开场白文件
-      final fixed = await TtsSynthesizer.openingAudioFile();
-      if (fixed.existsSync()) {
-        _audioPath = fixed.path;
-        await prefs.setString(_kAudioPath, fixed.path);
+      // 统一数据目录（AppPaths）迁移后旧绝对路径失效 → 回退到新根下的开场白音频
+      // （后缀可能是导入时的原格式，按候选顺序找实际存在的那个）
+      final found = await TtsSynthesizer.findOpeningAudio();
+      if (found != null) {
+        _audioPath = found.path;
+        await prefs.setString(_kAudioPath, found.path);
       }
     }
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
@@ -570,7 +578,11 @@ class PromptLink extends ChangeNotifier {
   /// 这里再做一次「搬移」，兼容旧版本留下的带时间戳的文件。
   Future<void> useAudioFile(String path) async {
     var target = path;
-    final fixed = await TtsSynthesizer.openingAudioFile();
+    // 保留原后缀：外部音频可能是 mp3 / m4a，文件名要能看出格式
+    final ext = TtsSynthesizer.extOf(path);
+    final fixed = await TtsSynthesizer.openingAudioFile(
+      ext: ext.isEmpty ? 'wav' : ext,
+    );
     if (path != fixed.path && File(path).existsSync()) {
       try {
         await File(path).copy(fixed.path);
@@ -579,6 +591,8 @@ class PromptLink extends ChangeNotifier {
         if (env.existsSync()) {
           await env.copy('${fixed.path}.env.json');
         }
+        // 换格式后清掉旧后缀那份，避免启动时读到旧文件
+        await TtsSynthesizer.removeOtherOpeningAudio(fixed.path);
         target = fixed.path;
         // 旧文件删掉，避免残留
         try {
@@ -1036,6 +1050,8 @@ class PromptLink extends ChangeNotifier {
       final target = await TtsSynthesizer.openingAudioFile();
       await target.parent.create(recursive: true);
       await src.copy(target.path);
+      // 录音固定产 wav：清掉之前导入的 mp3/m4a 等，避免两份并存
+      await TtsSynthesizer.removeOtherOpeningAudio(target.path);
       _audioPath = target.path;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kAudioPath, target.path);
@@ -1061,10 +1077,15 @@ class PromptLink extends ChangeNotifier {
         _log('无法读取所选文件');
         return false;
       }
-      // 固定存成同一个文件（覆盖替换），不再每次生成带时间戳的新文件
-      final target = await TtsSynthesizer.openingAudioFile();
+      // 保留原后缀（opening_audio.mp3 / .m4a …）：文件名就能看出是什么格式
+      final ext = TtsSynthesizer.extOf(srcPath);
+      final target = await TtsSynthesizer.openingAudioFile(
+        ext: ext.isEmpty ? 'wav' : ext,
+      );
       await target.parent.create(recursive: true);
       await File(srcPath).copy(target.path);
+      // 换格式后清掉旧后缀那份，否则启动时按查找顺序可能读到旧文件
+      await TtsSynthesizer.removeOtherOpeningAudio(target.path);
       _audioPath = target.path;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kAudioPath, target.path);
@@ -1087,6 +1108,8 @@ class PromptLink extends ChangeNotifier {
         final env = File('$path.env.json');
         if (env.existsSync()) await env.delete();
       }
+      // 其他后缀的同名音频也清掉（比如导入过 mp3、后来又合成过 wav）
+      await TtsSynthesizer.removeOtherOpeningAudio('');
     } catch (_) {
       // 忽略
     }

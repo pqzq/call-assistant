@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
+
+import 'platform_bridge.dart';
 
 /// 一次通话状态变化
 class CallStateEvent {
@@ -176,7 +180,21 @@ class CallStateWatcher {
   }
 
   /// 设备机型（用作默认设备名），取不到时返回空串
+  /// 设备默认名
+  ///
+  /// - Android：原生 `deviceModel`（系统设备名 · 认证型号，如「小米手机 · 2410DPN6CC」）
+  /// - 桌面端：`Platform.localHostname` 就是计算机名（Windows 的 COMPUTERNAME）
+  ///
+  /// Android 上 `localHostname` 恒为 `localhost`，所以那边必须走原生；
+  /// 桌面端没有这个 MethodChannel，走原生只会拿到空。
   static Future<String> deviceModel() async {
+    if (PlatformBridge.isDesktop) {
+      try {
+        return Platform.localHostname.trim();
+      } catch (_) {
+        return '';
+      }
+    }
     try {
       final result = await _methodChannel.invokeMethod<String>('deviceModel');
       return (result ?? '').trim();
