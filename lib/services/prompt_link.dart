@@ -1423,6 +1423,8 @@ class PromptLink extends ChangeNotifier {
 
       case LanMessageType.connected:
         // 拨号端确认连接
+        _connectingPeerId = null;
+        _lastConnectError = null;
         _markConnected(peer, '已连接拨号端：${peer.displayName}');
         break;
 
@@ -1456,10 +1458,10 @@ class PromptLink extends ChangeNotifier {
         break;
 
       case LanMessageType.busy:
-        _log(
-          '${peer.displayName} 已被其他播放端占用，换一台试试',
-          important: true,
-        );
+        _connectingPeerId = null;
+        _lastConnectError =
+            '${peer.displayName} 无法连接：对方未开启「拨号端」，或已被其他播放端占用';
+        _log(_lastConnectError!, important: true);
         notifyListeners();
         break;
 
@@ -1503,6 +1505,14 @@ class PromptLink extends ChangeNotifier {
     return list;
   }
 
+  /// 正在连接的对端 id（null = 当前没在连）
+  String? _connectingPeerId;
+  String? get connectingPeerId => _connectingPeerId;
+
+  /// 最近一次连接失败的原因（成功 / 重新发起连接时清空）
+  String? _lastConnectError;
+  String? get lastConnectError => _lastConnectError;
+
   /// 连接指定的对端（播放端 -> 拨号端）
   Future<bool> connectToPeer(LanPeer peer) async {
     if (!_asPlayer) {
@@ -1510,9 +1520,29 @@ class PromptLink extends ChangeNotifier {
       return false;
     }
     if (peer.deviceId == _deviceId) return false;
+    _lastConnectError = null;
+    _connectingPeerId = peer.deviceId;
+    notifyListeners();
     _log('正在连接 ${peer.displayName}…');
     _send(peer, LanMessageType.connect);
+    _scheduleConnectTimeout(peer);
     return true;
+  }
+
+  /// 5 秒内没收到 connected / busy 就算失败
+  ///
+  /// 以前连接是「发出去就不管」—— 对方没开拨号端、或根本不在线时，
+  /// 用户点了毫无反馈（只有 30 秒后搜索超时的一条日志）。
+  void _scheduleConnectTimeout(LanPeer peer) {
+    Timer(const Duration(seconds: 5), () {
+      // 已经被 connected / busy 处理过就不再报超时
+      if (_connectingPeerId != peer.deviceId) return;
+      _connectingPeerId = null;
+      _lastConnectError =
+          '连接 ${peer.displayName} 超时：对方可能没开启「拨号端」，或已不在同一 Wi-Fi';
+      notifyListeners();
+      _log(_lastConnectError!, important: true);
+    });
   }
 
   /// 播放端：广播一次查询，刷新「扫描到的设备」列表

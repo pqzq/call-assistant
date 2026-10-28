@@ -595,15 +595,19 @@ class _PromptPageState extends State<PromptPage> {
   Widget _buildConnChip() {
     // 同时开两个角色 = 本机自己播，不需要连任何设备
     final both = _link.asPlayer && _link.autoTrigger;
-    final text = both
-        ? '本机双角色：无需连接'
-        : _link.peerConnected
-            ? '已连接 ${_link.connectedPeerName ?? '对端'}'
-            : _link.seeking
-                ? '正在搜索局域网设备…'
-                : _link.listening
-                    ? (_link.asPlayer ? '等待手机拨号端连接' : '等待播放端连接')
-                    : '局域网未启动';
+    // 两个角色都没开：以前显示「局域网未启动」，容易让人以为是网络问题
+    final neither = !_link.asPlayer && !_link.autoTrigger;
+    final text = neither
+        ? '未开启角色：请先打开拨号端或播放端'
+        : both
+            ? '本机双角色：无需连接'
+            : _link.peerConnected
+                ? '已连接 ${_link.connectedPeerName ?? '对端'}'
+                : _link.seeking
+                    ? '正在搜索局域网设备…'
+                    : _link.listening
+                        ? (_link.asPlayer ? '等待手机拨号端连接' : '等待播放端连接')
+                        : '局域网未启动';
     final color = both || _link.peerConnected
         ? const Color(0xFF17A05A)
         : _link.listening
@@ -730,10 +734,41 @@ class _PromptPageState extends State<PromptPage> {
             onSubmitted: (v) => _link.setDeviceName(v),
             onTapOutside: (_) => _link.setDeviceName(_nameController.text),
           ),
-        ],
-      ),
-    );
-  }
+          // 已连接时把**对方设备名完整显示**出来
+          // （顶部快捷条空间小，长名字会被省略号截断，看不出连的是哪台）
+          if (_link.peerConnected) ...<Widget>[
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                const Icon(Icons.link, size: 16, color: Color(0xFF17A05A)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '已连接${_link.asPlayer ? '拨号端' : '播放端'}：'
+                    '${_link.connectedPeerName ?? '对端'}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: Color(0xFF17A05A),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _link.disconnectPeer(notifyPeer: true),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('断开', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ],
+          ],
+          ),
+          );
+          }
 
   Widget _buildSynthCard() {
     final ready = _link.ttsModelReady;
@@ -1314,15 +1349,45 @@ class _PromptPageState extends State<PromptPage> {
                       ),
                       title: Text(peer.displayName,
                           style: const TextStyle(fontSize: 13)),
-                      subtitle: Text(peer.role == 'dialer' ? '拨号端' : '播放端',
-                          style: const TextStyle(fontSize: 11)),
-                      trailing: const Icon(Icons.link, size: 20),
-                      onTap: () async {
-                        final ok = await link.connectToPeer(peer);
-                        if (!sheetContext.mounted) return;
-                        if (ok) Navigator.of(sheetContext).pop();
+                      subtitle: Text(
+                        link.peerConnected &&
+                                link.connectedPeerName == peer.displayName
+                            ? '已连接'
+                            : (peer.role == 'dialer' ? '拨号端' : '播放端'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: link.peerConnected &&
+                                  link.connectedPeerName == peer.displayName
+                              ? const Color(0xFF17A05A)
+                              : Colors.black45,
+                        ),
+                      ),
+                      // 连接中显示转圈，避免以为没点上而反复点
+                      trailing: link.connectingPeerId == peer.deviceId
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.link, size: 20),
+                      onTap: () {
+                        if (link.connectingPeerId != null) return;
+                        link.connectToPeer(peer);
                       },
                     ),
+                // 连接失败的原因（超时 / 对方没开拨号端 / 已被占用）
+                if (link.lastConnectError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                    child: Text(
+                      link.lastConnectError!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: Color(0xFFD03B3B),
+                      ),
+                    ),
+                  ),
                 const Divider(height: 1),
                 TextButton.icon(
                   onPressed: () => link.connectToDialer(),
