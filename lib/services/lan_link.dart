@@ -23,6 +23,15 @@ class LanMessageType {
 
   /// 拨号端通知：停止当前播报（打断）
   static const String stop = 'stop';
+
+  /// 主动断开：任一方关掉角色 / 手动断开时广播，对端按 deviceId 匹配后清状态
+  ///
+  /// 用**广播**而不是单播：断开时对端可能 already 从 peers 列表过期，
+  /// 拿不到 LanPeer 就没法单播。带上 deviceId 让对端自己判断。
+  static const String bye = 'bye';
+
+  /// 拨号端忙：已有播放端连着，拒绝新的连接请求
+  static const String busy = 'busy';
 }
 
 /// 局域网消息

@@ -617,7 +617,10 @@ class _PromptPageState extends State<PromptPage> {
       return TextButton(
         // 不再「一键自动连第一个」：同网段可能有多台设备在跑本应用，
         // 点开列表由用户挑（设备来自 lan_link 的 15 秒心跳筛选）
-        onPressed: _link.peerConnected ? _link.disconnectPeer : _showDevicePicker,
+        // 手动断开要通知对端（否则对方还以为连着，接通时仍往我这儿播）
+        onPressed: _link.peerConnected
+            ? () => _link.disconnectPeer(notifyPeer: true)
+            : _showDevicePicker,
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           minimumSize: const Size(0, 30),
@@ -1647,7 +1650,7 @@ class _PromptPageState extends State<PromptPage> {
           ),
           SizedBox(height: 8),
           Text(
-            '1. 两台手机连同一个 Wi-Fi，且都装了本应用\n'
+            '1. 两台设备连同一个 Wi-Fi，且都装了本应用\n'
             '2. 拨号端：点顶部「拨号端」胶囊打开，并在系统里开启无障碍权限\n'
             '3. 播放端：点顶部「播放端」胶囊打开，再点「连接拨号端」完成配对\n'
             '4. 把播放端手机放在拨号端麦克风旁 5~10cm，音量 60~80%\n'

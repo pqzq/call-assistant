@@ -1206,7 +1206,13 @@ class PromptLink extends ChangeNotifier {
 
   Future<void> setAutoTrigger(bool value) async {
     _autoTrigger = value;
-    if (!value) _armed = false;
+    if (!value) {
+      _armed = false;
+      // 关掉拨号端：已连的播放端必须跟着断开，否则它还会继续往这里播
+      if (_peerConnected) {
+        await disconnectPeer(notifyPeer: true);
+      }
+    }
     notifyListeners();
     // 固化配置 + 按需启停服务
     final prefs = await SharedPreferences.getInstance();
@@ -1218,6 +1224,10 @@ class PromptLink extends ChangeNotifier {
 
   Future<void> setAsPlayer(bool value) async {
     _asPlayer = value;
+    // 关掉播放端：与拨号端的那条连接已经没有意义，主动断开并通知对方
+    if (!value && _peerConnected) {
+      await disconnectPeer(notifyPeer: true);
+    }
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kAsPlayer, value);
@@ -1381,14 +1391,27 @@ class PromptLink extends ChangeNotifier {
         break;
 
       case LanMessageType.connect:
-        // 播放端请求连接：拨号端确认
-        if (_autoTrigger) {
-          _send(peer, LanMessageType.connected);
-          _markConnected(
-            peer,
-            isSelf ? '模拟拨号端已连接（本机自测）' : '播放端已连接：${peer.displayName}',
-          );
+        // 播放端请求连接：拨号端确认。
+        // **一个拨号端只接一个播放端**：否则多个播放端同时连上，
+        // 接通时它们会一起播（多台同时响），状态也会被后连的覆盖。
+        if (!_autoTrigger) {
+          // 没开拨号端：明确回 busy，别让对方干等 15 次重试
+          _send(peer, LanMessageType.busy);
+          break;
         }
+        if (_peerConnected && _connectedPeerId != peer.deviceId) {
+          _send(peer, LanMessageType.busy);
+          _log(
+            '拒绝 ${peer.displayName} 的连接：已连着 ${_connectedPeerName ?? '其他播放端'}',
+            important: true,
+          );
+          break;
+        }
+        _send(peer, LanMessageType.connected);
+        _markConnected(
+          peer,
+          isSelf ? '模拟拨号端已连接（本机自测）' : '播放端已连接：${peer.displayName}',
+        );
         break;
 
       case LanMessageType.connected:
@@ -1410,6 +1433,27 @@ class PromptLink extends ChangeNotifier {
         if (!_asPlayer) return;
         await stopSpeaking();
         _log('收到停止播报指令', important: true);
+        break;
+
+      case LanMessageType.bye:
+        // 对端关掉了角色 / 主动断开。
+        // ⚠️ 只清本地状态，**不能**调 disconnectPeer —— 它会再广播一次 bye，
+        // 两边会无限对发。
+        if (_peerConnected && _connectedPeerId == peer.deviceId) {
+          _peerConnected = false;
+          _connectedPeerId = null;
+          _connectedPeerName = null;
+          notifyListeners();
+          _log('${peer.displayName} 已断开连接', important: true);
+        }
+        break;
+
+      case LanMessageType.busy:
+        _log(
+          '${peer.displayName} 已被其他播放端占用，换一台试试',
+          important: true,
+        );
+        notifyListeners();
         break;
 
       default:
@@ -1513,12 +1557,23 @@ class PromptLink extends ChangeNotifier {
   }
 
   /// 断开与拨号端的连接
-  Future<void> disconnectPeer() async {
+  Future<void> disconnectPeer({bool notifyPeer = false}) async {
     _queryTimer?.cancel();
     _queryTimer = null;
     _seeking = false;
-    if (_peerConnected) {
-      _log('已断开拨号端连接');
+    final wasConnected = _peerConnected;
+    if (wasConnected && notifyPeer && _link.isRunning) {
+      // 广播「我走了」：对端按 deviceId 匹配自己的连接后清状态。
+      // 用广播是因为断开时对端可能已从 peers 里过期，拿不到 LanPeer 无法单播。
+      _link.broadcast(LanMessage(
+        type: LanMessageType.bye,
+        deviceId: _deviceId,
+        deviceName: _deviceName,
+        role: _roleName,
+      ));
+    }
+    if (wasConnected) {
+      _log('已断开连接');
     }
     _peerConnected = false;
     _connectedPeerId = null;
