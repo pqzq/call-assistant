@@ -466,7 +466,19 @@ class _PromptPageState extends State<PromptPage> {
                   label: '拨号端',
                   icon: Icons.phone_in_talk,
                   on: _link.autoTrigger,
-                  onChanged: (v) => _link.setAutoTrigger(v),
+                  onChanged: (v) async {
+                // 开拨号端前先确认「有东西可播」：
+                // 既没有开场白音频、端侧 TTS 也没就绪 -> 接通后广播出去是静音，
+                // 等到电话接通才发现就晚了。
+                if (v && !_link.hasAudio && !_link.ttsReady) {
+                  AppToast.error(
+                    context,
+                    '请先在「播报」页设置开场白音频，否则接通后播放端没有声音',
+                  );
+                  return;
+                }
+                await _link.setAutoTrigger(v);
+              },
                 ),
                 const SizedBox(width: 8),
               ],

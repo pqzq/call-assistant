@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'pages/home_page.dart';
 import 'services/app_navigator.dart';
+import 'services/app_notifier.dart';
 import 'services/app_paths.dart';
 import 'services/platform_bridge.dart';
 import 'services/prompt_link.dart';
@@ -12,6 +13,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 统一数据目录（含旧位置迁移）：必须在任何用到路径的服务之前初始化
   await AppPaths.init();
+  // 系统通知：桌面端需要先 setup（Windows 会建一个开始菜单快捷方式当 AUMID）
+  await AppNotifier.setup();
   // 双机联动：提前初始化（恢复设置、启动局域网监听、订阅通话状态）
   PromptLink.instance.init();
   PlatformBridge.logPlatformInfo();

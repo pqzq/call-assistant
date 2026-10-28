@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/active_lead.dart';
 import 'asr_recognizer.dart';
 import 'call_log_store.dart';
+import 'app_notifier.dart';
 import 'call_state_watcher.dart';
 import 'platform_bridge.dart';
 import 'lan_link.dart';
@@ -1316,7 +1317,7 @@ class PromptLink extends ChangeNotifier {
         _log('本机同时是播放端，直接本机播报：$label', important: true);
       }
       speak(_script);
-      CallStateWatcher.notifyBroadcast(
+      AppNotifier.notify(
         title: '已本机播报',
         body: '$label · 本机同时是播放端',
       );
@@ -1325,7 +1326,7 @@ class PromptLink extends ChangeNotifier {
 
     if (!_link.isRunning) {
       _log('局域网未就绪，无法通知播放端');
-      CallStateWatcher.notifyBroadcast(
+      AppNotifier.notify(
         title: '播报未发送',
         body: '$label · 局域网未启动，请检查角色开关',
       );
@@ -1349,17 +1350,17 @@ class PromptLink extends ChangeNotifier {
 
     // 系统通知：接通那一刻人往往不在界面上，锁屏也能确认「到底通知到没有」
     if (connectedName != null) {
-      CallStateWatcher.notifyBroadcast(
+      AppNotifier.notify(
         title: '已通知播放端',
         body: '$label → $connectedName',
       );
     } else if (hasOnlinePlayer) {
-      CallStateWatcher.notifyBroadcast(
+      AppNotifier.notify(
         title: '已广播（未连接）',
         body: '$label · 列表里有播放端，但不保证它在播',
       );
     } else {
-      CallStateWatcher.notifyBroadcast(
+      AppNotifier.notify(
         title: '播报可能未送达',
         body: '$label · 没有检测到在线的播放端',
       );
@@ -1468,6 +1469,12 @@ class PromptLink extends ChangeNotifier {
         final text = message.script.trim().isEmpty ? _script : message.script;
         _log('收到播报指令（来自 ${peer.displayName}）：${message.rowLabel}', important: true);
         speak(text);
+        // 桌面端最小化 / 在别的窗口时也能看到「谁触发了播报、播的哪一条」
+        await AppNotifier.notify(
+          title: '正在播报',
+          body: '${message.rowLabel.isEmpty ? '开场白' : message.rowLabel}'
+              ' · 来自 ${peer.displayName}',
+        );
         break;
 
       case LanMessageType.stop:
