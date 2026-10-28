@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'glass_surface.dart';
+
 import '../services/prompt_link.dart';
 import 'app_toast.dart';
 import 'avatar_stage.dart';
@@ -74,7 +76,8 @@ class _AvatarPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: panelWidth,
-      color: const Color(0xFFF7F9FC),
+      // 与右栏（Scaffold 背景）一致，两栏底色不再有分界感
+      color: const Color(0xFFF4F6FB),
       child: Column(
         children: <Widget>[
           _panelHeader(context),
@@ -142,23 +145,43 @@ class _AvatarPanel extends StatelessWidget {
     );
   }
 
-  /// 面板顶部：标题 + 开关
+  /// 面板顶部：标题 + 开关 + 后端/模型信息
+  ///
+  /// 用 minHeight 96 而不是固定高度：右栏顶部是「角色胶囊 + 立即播报」两行
+  /// （8 + 32 + 8 + 40 + 8 = 96），这里撑到同高，**两栏顶部边界对齐**成一条横线，
+  /// 内容超高也不会溢出。
   Widget _panelHeader(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+      constraints: const BoxConstraints(minHeight: 96),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFE3E8F0))),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          const Icon(Icons.face_retouching_natural, size: 18, color: Color(0xFF2F6BFF)),
-          const SizedBox(width: 8),
-          const Text('数字人', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          Switch(
-            value: link.avatarEnabled,
-            onChanged: (v) => link.setAvatarEnabled(v),
+          Row(
+            children: <Widget>[
+              const Icon(Icons.face_retouching_natural,
+                  size: 18, color: Color(0xFF2F6BFF)),
+              const SizedBox(width: 8),
+              const Text('数字人',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Switch(
+                value: link.avatarEnabled,
+                onChanged: (v) => link.setAvatarEnabled(v),
+              ),
+            ],
+          ),
+          // 第二行：渲染后端 + 当前模型（填充高度，顶部信息也更完整）
+          Text(
+            '${link.avatarBackend.displayName} · ${link.avatarModel}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: Colors.black54),
           ),
         ],
       ),
@@ -194,52 +217,66 @@ class _ActionArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final steps = link.scriptSteps;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: link.stepIndex > 0 ? link.previousStep : null,
-                icon: const Icon(Icons.chevron_left, size: 18),
-                label: const Text('上一步', style: TextStyle(fontSize: 13)),
-                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
+    // 用和右栏底部 GlassNavBar 同一套参数（圆角 24 / blur 24 / opacity 0.82），
+    // 两栏底部看起来是同一个材质的悬浮玻璃块。
+    return GlassSurface(
+      borderRadius: 20,
+      blur: 24,
+      opacity: 0.82,
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: link.stepIndex > 0 ? link.previousStep : null,
+                  icon: const Icon(Icons.chevron_left, size: 18),
+                  label: const Text('上一步', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(38)),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: link.stepIndex < steps.length - 1 ? link.nextStep : null,
-                icon: const Icon(Icons.chevron_right, size: 18),
-                label: const Text('下一步', style: TextStyle(fontSize: 13)),
-                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: link.stepIndex < steps.length - 1
+                      ? link.nextStep
+                      : null,
+                  icon: const Icon(Icons.chevron_right, size: 18),
+                  label: const Text('下一步', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(38)),
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        // 切换模型：放在按钮区，保证始终可见（之前放在最底部会被挤到视口外）
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () async {
-              final models = await link.availableAvatarModels();
-              if (!context.mounted) return;
-              if (models.isEmpty) {
-                AppToast.error(context, '没有可用模型');
-                return;
-              }
-              final chosen = await ModelPickerSheet.show(context, link: link, models: models);
-              if (chosen == null || !context.mounted) return;
-              await link.setAvatarModel(chosen);
-            },
-            icon: const Icon(Icons.swap_horiz, size: 18),
-            label: const Text('切换模型', style: TextStyle(fontSize: 13)),
-            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          // 切换模型：放在按钮区，保证始终可见（之前放在最底部会被挤到视口外）
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final models = await link.availableAvatarModels();
+                if (!context.mounted) return;
+                if (models.isEmpty) {
+                  AppToast.error(context, '没有可用模型');
+                  return;
+                }
+                final chosen = await ModelPickerSheet.show(context,
+                    link: link, models: models);
+                if (chosen == null || !context.mounted) return;
+                await link.setAvatarModel(chosen);
+              },
+              icon: const Icon(Icons.swap_horiz, size: 18),
+              label: const Text('切换模型', style: TextStyle(fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(38)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

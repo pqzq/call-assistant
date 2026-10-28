@@ -66,10 +66,11 @@ class AppNotifier {
     _lastAt = now;
 
     if (PlatformBridge.isDesktop) {
-      if (!_ready) {
-        _fallback(title, body);
-        return;
-      }
+      // 应用内浮层 + 系统 Toast 都发：作用不同 ——
+      // 浮层在窗口内立刻可见（最小化时看不到），系统 Toast 进通知中心（最小化也看得到）。
+      // 系统通知本身只发一条（固定 identifier + 上面的 2 秒去重）。
+      _fallback(title, body);
+      if (!_ready) return;
       try {
         // 固定 identifier：后来的覆盖前一条，不在通知中心堆积
         await LocalNotification(
@@ -78,7 +79,7 @@ class AppNotifier {
           body: body,
         ).show();
       } catch (_) {
-        _fallback(title, body);
+        // 系统通知失败无所谓，应用内那条已经出了
       }
       return;
     }
