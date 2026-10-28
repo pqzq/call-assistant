@@ -63,20 +63,20 @@ class ArcActionBar extends StatelessWidget {
   final bool dragging;
 
   /// 图标点击区尺寸
-  static const double tapSize = 46;
+  static const double tapSize = 42;
 
   /// 图标本身的尺寸
-  static const double iconSize = 27;
+  static const double iconSize = 23;
 
   /// 整条操作栏的宽度（含图标外扩空间）
-  static const double barWidth = 84;
+  static const double barWidth = 70;
 
   @override
   Widget build(BuildContext context) {
     if (actions.isEmpty) return const SizedBox(width: barWidth, height: 0);
 
     // 弧：半径按高度取值，图标越多角度铺得越开
-    final radius = height * 0.28;
+    final radius = height * 0.20;
     final spreadDeg = actions.length <= 4 ? 48.0 : 56.0;
     final spread = spreadDeg * math.pi / 180;
     final half = tapSize / 2;

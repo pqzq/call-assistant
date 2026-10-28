@@ -20,15 +20,19 @@ class FloatingAvatarHost extends StatefulWidget {
 
   final Widget child;
 
-  /// 弧形操作栏宽度（月亮型，图标 40 点击区 + 弧线外扩空间）
+  /// 弧形操作栏宽度（月亮型，图标点击区 + 弧线外扩空间）
   static const double barWidth = ArcActionBar.barWidth;
 
   /// 贴边时（缩小）尺寸
-  static const double dockedWidth = 112;
+  static const double dockedWidth = 96;
   static const double dockedHeight = 152;
 
-  /// 角色盒与操作栏之间的间隔
-  static const double barGap = 8;
+  /// 角色盒与操作栏之间的间距
+  ///
+  /// **负值** = 让月牙压住角色盒边缘：弧的凹面朝角色、两端本来就更贴近轮廓，
+  /// 压进去几个像素视觉上是「包住」而不是「并排」，比留 8px 空隙紧凑得多。
+  /// 布局里 `padL = barWidth + barGap`，负值天然支持（角色向左多占几像素）。
+  static const double barGap = -4;
 
   /// 贴边判定阈值（距屏幕边缘多少像素内触发）
   static const double dockThreshold = 36;
@@ -46,9 +50,12 @@ class FloatingAvatarHost extends StatefulWidget {
   /// 角色盒的最小宽度
   ///
   /// 话术框和角色同宽，太窄的话提词会疯狂换行、被高度裁掉。
-  /// 瘦高模型（如 Haru ≈0.45）按真实比例只有 180 宽，这里托底到 232，
+  /// 瘦高模型（如 Haru ≈0.45）按真实比例只有 180 宽，这里托底到 208，
   /// 模型在框内居中 —— 左右留白对称，不会再出现「只有一边空一大片」。
-  static const double minAvatarBoxWidth = 232;
+  ///
+  /// 从 232 收到 208：配合操作栏收窄，整组宽度能再省 24px；提词框仍够放
+  /// 十来个字一行（12px 字号下约 17 字）。
+  static const double minAvatarBoxWidth = 208;
 
   /// 角色盒高度：按屏幕宽度推导（竖屏下约 58%），限制在 260~420
   static double avatarHeight(double screenWidth) =>
