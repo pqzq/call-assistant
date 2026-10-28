@@ -153,11 +153,13 @@ class _PromptPageState extends State<PromptPage> {
         // 白底玻璃：主题把 AppBar 的 foregroundColor / titleTextStyle 都设成了白色
         // （原本配蓝底），改成白底后必须显式改回深色，否则白字白底看不见
         backgroundColor: Colors.white.withValues(alpha: 0.92),
-        foregroundColor: const Color(0xFF1B2A44),
+        // 图标用主题蓝
+        foregroundColor: const Color(0xFF2F6BFF),
+        // 标题：与左栏标题一致（15 / w700）
         titleTextStyle: const TextStyle(
           color: Color(0xFF1B2A44),
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
         ),
         elevation: 0,
         scrolledUnderElevation: 0,

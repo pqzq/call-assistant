@@ -200,14 +200,14 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: const Text('话务助手'),
-        // 白底玻璃：主题的 foregroundColor / titleTextStyle 是白色（配蓝底用的），
-        // 白底上必须显式改深色
-        backgroundColor: Colors.white.withValues(alpha: 0.92),
-        foregroundColor: const Color(0xFF1B2A44),
+        // 与左栏标题栏一致：背景用**底色**（不是白色块）、图标主题蓝、
+        // 标题 15 / w700（主题里那套白底白字要显式覆盖）
+        backgroundColor: const Color(0xFFF1F5FF),
+        foregroundColor: const Color(0xFF2F6BFF),
         titleTextStyle: const TextStyle(
           color: Color(0xFF1B2A44),
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
         ),
         elevation: 0,
         scrolledUnderElevation: 0,
