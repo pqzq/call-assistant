@@ -1395,11 +1395,23 @@ class PromptLink extends ChangeNotifier {
 
   // ---------------- 播放端 ----------------
 
+  /// 上一条处理过的消息指纹（用于丢弃重复广播）
+  String _lastMsgKey = '';
+
   Future<void> _onLanMessage(LanMessage message, LanPeer peer) async {
     final isSelf = message.deviceId == _deviceId;
     // 自己的广播不处理（双角色时本机直接播，不需要网络回环）
     if (isSelf) return;
     _lastPeerMessageAt = DateTime.now();
+
+    // **丢弃重复广播**：UDP 广播在多网卡机器上（Wi-Fi + 有线 + 虚拟网卡）
+    // 会被收多次，同一条 answered 就会处理多次 —— 语音因为有打断听不出来，
+    // 但系统通知没有去重，会叠成两条。
+    // 用「发送方 + 类型 + 消息时间戳」做指纹（同一条消息这些值完全相同）。
+    final ts = message.timestamp?.millisecondsSinceEpoch ?? 0;
+    final key = '${message.deviceId}|${message.type}|$ts';
+    if (ts > 0 && key == _lastMsgKey) return;
+    if (ts > 0) _lastMsgKey = key;
 
     switch (message.type) {
       case LanMessageType.query:

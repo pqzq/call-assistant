@@ -43,10 +43,28 @@ class AppNotifier {
   ///   （快捷方式建不起来等）才退回应用内浮层
   /// - **Android**：应用内浮层 + 状态栏通知 —— 这两条各有用途
   ///   （浮层不怕通知权限被拒，状态栏锁屏也能看到），但也同样只有一次播报
+  /// 上一条通知的内容与时间（做去重）
+  static String? _lastTitle;
+  static String? _lastBody;
+  static DateTime? _lastAt;
+
   static Future<void> notify({
     required String title,
     required String body,
   }) async {
+    // 2 秒内完全相同的通知只发一条：兜底防重。
+    // （消息层已按时间戳去重，这里防的是「同一事件被两条代码路径各发一次」）
+    final now = DateTime.now();
+    if (_lastTitle == title &&
+        _lastBody == body &&
+        _lastAt != null &&
+        now.difference(_lastAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastTitle = title;
+    _lastBody = body;
+    _lastAt = now;
+
     if (PlatformBridge.isDesktop) {
       if (!_ready) {
         _fallback(title, body);
