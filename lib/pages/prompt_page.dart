@@ -869,6 +869,17 @@ class _PromptPageState extends State<PromptPage> {
                     style: const TextStyle(fontSize: 12, color: Colors.black87),
                   ),
                 ),
+                // 清除：紧跟在文件名后面的红色 ×（就在这一行末尾）
+                IconButton(
+                  onPressed: _link.clearAudio,
+                  icon: const Icon(Icons.close, size: 16),
+                  // 与「未设置」状态、停止按钮同一套警示红
+                  color: const Color(0xFFD03B3B),
+                  tooltip: '清除音频',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                ),
               ],
             ),
           ],
@@ -898,36 +909,6 @@ class _PromptPageState extends State<PromptPage> {
               ),
             ],
           ),
-          // 已选音频：文件名 + 紧跟其后的**红色 ×**，
-          // 就贴在「选择音频文件 / 重新选择」这一行下面
-          if (hasAudio)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                children: <Widget>[
-                  const Icon(Icons.audiotrack, size: 14, color: Colors.black45),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      _audioFileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: _link.clearAudio,
-                    icon: const Icon(Icons.close, size: 16),
-                    // 红色：和「未设置」状态、停止按钮同一套警示色
-                    color: const Color(0xFFD03B3B),
-                    tooltip: '清除音频',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                  ),
-                ],
-              ),
-            ),
           const SizedBox(height: 10),
           // 没有现成音频时最省事的做法：直接对着麦克风念一遍
           SizedBox(
@@ -1283,14 +1264,6 @@ class _PromptPageState extends State<PromptPage> {
       descOf: (o) => '${o.languages} · ${o.note}',
       urlOf: (o) => o.url,
     );
-  }
-
-  /// 当前开场白音频的文件名（显示在「已设置」下面，后面跟 × 清除按钮）
-  String get _audioFileName {
-    final path = _link.audioPath;
-    if (path == null || path.isEmpty) return '';
-    final parts = path.split(RegExp(r'[/\\]'));
-    return parts.isEmpty ? path : parts.last;
   }
 
   /// 用麦克风录一段开场白（录完直接设为播报音频）
