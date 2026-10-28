@@ -55,6 +55,13 @@ class _PromptPageState extends State<PromptPage> {
   }
 
   void _onChanged() {
+    // 对端推来开场白文本时把输入框同步过来。
+    // 以前只在 initState 后同步一次，所以「接收」能改到 PromptLink.script，
+    // 界面上却还是旧文字。内容相同时不赋值，避免每次 notify 都重置光标。
+    final s = _link.script;
+    if (_scriptController.text != s) {
+      _scriptController.text = s;
+    }
     if (mounted) setState(() {});
   }
 
@@ -971,35 +978,37 @@ class _PromptPageState extends State<PromptPage> {
             ],
           ),
           const SizedBox(height: 10),
-          // 没有现成音频时最省事的做法：直接对着麦克风念一遍
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _showRecordSheet,
-              icon: const Icon(Icons.mic, size: 18),
-              label: const Text('用麦克风录制'),
-            ),
-          ),
-          // 把这份音频推给已连接的播放端（对方会自动设为它的开场白音频）
-          if (hasAudio) ...<Widget>[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  final err = await _link.pushOpeningAudio();
-                  if (!mounted) return;
-                  if (err != null) {
-                    AppToast.error(context, err);
-                  } else {
-                    AppToast.show(context, '已通知播放端接收开场白音频');
-                  }
-                },
-                icon: const Icon(Icons.send_outlined, size: 18),
-                label: const Text('发送到播放端'),
+          // 录制 / 发送 放同一行；没有音频时录制自动占满整行
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _showRecordSheet,
+                  icon: const Icon(Icons.mic, size: 18),
+                  label: const Text('用麦克风录制'),
+                ),
               ),
-            ),
-          ],
+              // 把这份音频推给已连接的播放端（对方会自动设为它的开场白音频）
+              if (hasAudio) ...<Widget>[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final err = await _link.pushOpeningAudio();
+                      if (!mounted) return;
+                      if (err != null) {
+                        AppToast.error(context, err);
+                      } else {
+                        AppToast.show(context, '已通知播放端接收开场白音频');
+                      }
+                    },
+                    icon: const Icon(Icons.send_outlined, size: 18),
+                    label: const Text('发送到播放端'),
+                  ),
+                ),
+              ],
+            ],
+          ),
           const SizedBox(height: 10),
           // 用离线语音识别把这段录音转成文本
           SizedBox(
