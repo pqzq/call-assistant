@@ -76,114 +76,134 @@ class _AvatarPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: panelWidth,
-      // 与右栏（Scaffold 背景）一致，两栏底色不再有分界感
-      color: const Color(0xFFF4F6FB),
-      child: Column(
+      // 浅蓝渐变底：和右栏同一套，玻璃卡片才有东西可透
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Color(0xFFEDF2FE),
+            Color(0xFFF7F9FC),
+            Color(0xFFF1F5FF),
+          ],
+        ),
+      ),
+      child: Stack(
         children: <Widget>[
-          _panelHeader(context),
-          Expanded(
-            // 高度按比例分配：数字人 50% / 气泡 30% / 按钮区 20%
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  // 数字人本体（50%）
-                  Expanded(
-                    flex: 50,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) => Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFE3E8F0)),
+          Column(
+            children: <Widget>[
+              _panelHeader(context),
+              Expanded(
+                // 底部留出悬浮玻璃条的位置（86 = 条高 + 上下留白）
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 86),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      // 数字人本体（60%）
+                      Expanded(
+                        flex: 60,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) => Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            alignment: Alignment.center,
+                            child: !link.avatarEnabled
+                                ? const _AvatarOffHint()
+                                // 演示页是全屏数字人，会 setSuppressAvatar(true)。
+                                // 左栏这份**必须卸载**：两个 Live2dAvatar 同时存在时，
+                                // Windows 插件是单实例（create 会先销毁上一个并注销它的
+                                // 纹理），后建的那个会把先建的顶掉 —— 表现为左栏数字人
+                                // 变窄/空白/消失。浮窗侧早就在检查这个标志，左栏漏了。
+                                : (link.suppressAvatar
+                                    ? const SizedBox.shrink()
+                                    : AvatarStage(
+                                        link: link,
+                                        avatarHeight: constraints.maxHeight,
+                                        showBubble: false,
+                                        avatarBoxWidth: panelWidth - 32,
+                                      )),
+                          ),
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        alignment: Alignment.center,
-                        child: !link.avatarEnabled
-                            ? const _AvatarOffHint()
-                            // 演示页是全屏数字人，会 setSuppressAvatar(true)。
-                            // 左栏这份**必须卸载**：两个 Live2dAvatar 同时存在时，
-                            // Windows 插件是单实例（create 会先销毁上一个并注销它的
-                            // 纹理），后建的那个会把先建的顶掉 —— 表现为左栏数字人
-                            // 变窄/空白/消失。浮窗侧早就在检查这个标志，左栏漏了。
-                            : (link.suppressAvatar
-                                ? const SizedBox.shrink()
-                                : AvatarStage(
-                                    link: link,
-                                    avatarHeight: constraints.maxHeight,
-                                    showBubble: false,
-                                    avatarBoxWidth: panelWidth - 32,
-                                  )),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // 提词气泡（30%）
-                  Expanded(
-                    flex: 30,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) => AvatarBubble(
-                        link: link,
-                        maxHeight: constraints.maxHeight,
-                        solid: true,
+                      const SizedBox(height: 12),
+                      // 提词气泡（40%）
+                      Expanded(
+                        flex: 40,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) => AvatarBubble(
+                            link: link,
+                            maxHeight: constraints.maxHeight,
+                            solid: true,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  // 按钮区（20%）：上一步 / 下一步 / 切换模型
-                  Expanded(
-                    flex: 20,
-                    child: _ActionArea(link: link),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
+          ),
+          // 底部悬浮玻璃条：一行按钮，和右栏 GlassNavBar 同一套材质/位置
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 14,
+            child: GlassNavBar(child: _ActionArea(link: link)),
           ),
         ],
       ),
     );
   }
 
-  /// 面板顶部：标题 + 开关 + 后端/模型信息
+  /// 面板顶部：标题 + 开关 + 后端/模型信息（悬浮玻璃块）
   ///
-  /// 用 minHeight 96 而不是固定高度：右栏顶部是「角色胶囊 + 立即播报」两行
-  /// （8 + 32 + 8 + 40 + 8 = 96），这里撑到同高，**两栏顶部边界对齐**成一条横线，
-  /// 内容超高也不会溢出。
+  /// 高度**固定** 98，与右栏快捷条完全一致（右栏：8 外 + 6 + 26 + 6 + 40 + 6 = 92，
+  /// 取 98 留余量），两栏顶部边界严格对齐成一条横线。
   Widget _panelHeader(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 96),
-      padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE3E8F0))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: <Widget>[
-          Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: SizedBox(
+        height: 98,
+        child: GlassSurface(
+          borderRadius: 20,
+          blur: 24,
+          opacity: 0.82,
+          padding: const EdgeInsets.fromLTRB(14, 10, 8, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
-              const Icon(Icons.face_retouching_natural,
-                  size: 18, color: Color(0xFF2F6BFF)),
-              const SizedBox(width: 8),
-              const Text('数字人',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-              const Spacer(),
-              Switch(
-                value: link.avatarEnabled,
-                onChanged: (v) => link.setAvatarEnabled(v),
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.face_retouching_natural,
+                      size: 18, color: Color(0xFF2F6BFF)),
+                  const SizedBox(width: 8),
+                  const Text('数字人',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Switch(
+                    value: link.avatarEnabled,
+                    onChanged: (v) => link.setAvatarEnabled(v),
+                  ),
+                ],
+              ),
+              // 第二行：渲染后端 + 当前模型
+              Text(
+                '${link.avatarBackend.displayName} · ${link.avatarModel}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
               ),
             ],
           ),
-          // 第二行：渲染后端 + 当前模型（填充高度，顶部信息也更完整）
-          Text(
-            '${link.avatarBackend.displayName} · ${link.avatarModel}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, color: Colors.black54),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -217,65 +237,77 @@ class _ActionArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final steps = link.scriptSteps;
-    // 用和右栏底部 GlassNavBar 同一套参数（圆角 24 / blur 24 / opacity 0.82），
-    // 两栏底部看起来是同一个材质的悬浮玻璃块。
-    return GlassSurface(
-      borderRadius: 20,
-      blur: 24,
-      opacity: 0.82,
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: link.stepIndex > 0 ? link.previousStep : null,
-                  icon: const Icon(Icons.chevron_left, size: 18),
-                  label: const Text('上一步', style: TextStyle(fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(38)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: link.stepIndex < steps.length - 1
-                      ? link.nextStep
-                      : null,
-                  icon: const Icon(Icons.chevron_right, size: 18),
-                  label: const Text('下一步', style: TextStyle(fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(38)),
-                ),
-              ),
-            ],
+    // 一行三个项，视觉语言与右栏底部 GlassNavItem 一致（图标 + 11px 文字）。
+    // 外层已经是 GlassNavBar，这里只排内容。
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _item(
+            icon: Icons.chevron_left,
+            label: '上一步',
+            enabled: link.stepIndex > 0,
+            onTap: link.previousStep,
           ),
-          const SizedBox(height: 8),
-          // 切换模型：放在按钮区，保证始终可见（之前放在最底部会被挤到视口外）
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final models = await link.availableAvatarModels();
-                if (!context.mounted) return;
-                if (models.isEmpty) {
-                  AppToast.error(context, '没有可用模型');
-                  return;
-                }
-                final chosen = await ModelPickerSheet.show(context,
-                    link: link, models: models);
-                if (chosen == null || !context.mounted) return;
-                await link.setAvatarModel(chosen);
-              },
-              icon: const Icon(Icons.swap_horiz, size: 18),
-              label: const Text('切换模型', style: TextStyle(fontSize: 13)),
-              style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(38)),
+        ),
+        Expanded(
+          child: _item(
+            icon: Icons.chevron_right,
+            label: '下一步',
+            enabled: link.stepIndex < steps.length - 1,
+            onTap: link.nextStep,
+          ),
+        ),
+        Expanded(
+          child: _item(
+            icon: Icons.swap_horiz,
+            label: '切模型',
+            enabled: true,
+            onTap: () async {
+              final models = await link.availableAvatarModels();
+              if (!context.mounted) return;
+              if (models.isEmpty) {
+                AppToast.error(context, '没有可用模型');
+                return;
+              }
+              final chosen = await ModelPickerSheet.show(context,
+                  link: link, models: models);
+              if (chosen == null || !context.mounted) return;
+              await link.setAvatarModel(chosen);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 一个按钮项：图标 + 短文字（和右栏 GlassNavItem 同一视觉语言）
+  Widget _item({
+    required IconData icon,
+    required String label,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    final color = enabled ? const Color(0xFF2F6BFF) : const Color(0xFFB6BECC);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 19, color: color),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

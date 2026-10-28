@@ -146,8 +146,14 @@ class _PromptPageState extends State<PromptPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // 与左栏渐变的中间色一致：两栏底色看不出分界
+      backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: const Text('双机联动播报'),
+        // 半透明白 + 无阴影：让底部内容透上来一点，接近玻璃质感
+        backgroundColor: Colors.white.withValues(alpha: 0.72),
+        elevation: 0,
+        scrolledUnderElevation: 0,
         actions: <Widget>[
           PopupMenuButton<String>(
             tooltip: '数字人模型',
@@ -458,11 +464,18 @@ class _PromptPageState extends State<PromptPage> {
 
   /// 常驻快捷条：角色开关 + 连接状态 + 立即播报
   Widget _buildQuickBar() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      color: Colors.white,
-      child: Column(
+    // 顶部快捷条：做成和左栏顶部一样的悬浮玻璃块。
+    // 高度固定 98（与左栏 _panelHeader 一致），两栏顶部边界严格对齐。
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: SizedBox(
+        height: 98,
+        child: GlassSurface(
+          borderRadius: 20,
+          blur: 24,
+          opacity: 0.82,
+          padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
@@ -566,6 +579,8 @@ class _PromptPageState extends State<PromptPage> {
             ),
           ],
         ],
+          ),
+        ),
       ),
     );
   }
