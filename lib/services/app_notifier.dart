@@ -38,28 +38,40 @@ class AppNotifier {
 
   /// 发一条通知
   ///
-  /// 两条通道一起走：
-  /// 1. **应用内全局提示**（`AppToast`，用全局 navigatorKey 的 overlay）——
-  ///    不管在哪个页面都看得到，也不受系统通知权限/专注助手影响
-  /// 2. **系统通知** —— Android 状态栏；**Windows 10/11 原生 Toast**
-  ///    （macOS / Linux 不做，按需求只考虑 Win10/11）
+  /// **按平台只走一条通道**（以前是应用内 + 系统都发，一次播报看起来像两条）：
+  /// - **桌面端（Windows 10/11）**：只发系统 Toast；系统通知不可用
+  ///   （快捷方式建不起来等）才退回应用内浮层
+  /// - **Android**：应用内浮层 + 状态栏通知 —— 这两条各有用途
+  ///   （浮层不怕通知权限被拒，状态栏锁屏也能看到），但也同样只有一次播报
   static Future<void> notify({
     required String title,
     required String body,
   }) async {
-    // 应用内先出：系统通知可能被拒/被专注助手折叠，这条一定看得到
-    AppToast.show(null, '$title · $body',
-        duration: const Duration(milliseconds: 3200));
-
     if (PlatformBridge.isDesktop) {
-      if (!_ready) return;
+      if (!_ready) {
+        _fallback(title, body);
+        return;
+      }
       try {
-        await LocalNotification(title: title, body: body).show();
+        // 固定 identifier：后来的覆盖前一条，不在通知中心堆积
+        await LocalNotification(
+          identifier: 'broadcast-status',
+          title: title,
+          body: body,
+        ).show();
       } catch (_) {
-        // 忽略
+        _fallback(title, body);
       }
       return;
     }
+    // Android
+    _fallback(title, body);
     await CallStateWatcher.notifyBroadcast(title: title, body: body);
+  }
+
+  /// 应用内浮层（全局 overlay，任何页面都看得到）
+  static void _fallback(String title, String body) {
+    AppToast.show(null, '$title · $body',
+        duration: const Duration(milliseconds: 3200));
   }
 }
