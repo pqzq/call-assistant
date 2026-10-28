@@ -366,8 +366,8 @@ class _RecordListPageState extends State<RecordListPage> {
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: Text(sheet.name.isEmpty ? '号码列表' : sheet.name),
-        // 与其它页面统一：背景用底色、图标主题蓝、标题 15 / w700
-        backgroundColor: const Color(0xFFF1F5FF),
+        // 与其它页面统一：透明底（透出 Scaffold 底色）、图标主题蓝、标题 15 / w700
+        backgroundColor: Colors.transparent,
         foregroundColor: const Color(0xFF2F6BFF),
         titleTextStyle: const TextStyle(
           color: Color(0xFF1B2A44),

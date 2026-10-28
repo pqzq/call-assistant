@@ -150,9 +150,10 @@ class _PromptPageState extends State<PromptPage> {
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: const Text('双机联动播报'),
-        // 白底玻璃：主题把 AppBar 的 foregroundColor / titleTextStyle 都设成了白色
-        // （原本配蓝底），改成白底后必须显式改回深色，否则白字白底看不见
-        backgroundColor: Colors.white.withValues(alpha: 0.92),
+        // 完全透明：直接透出 Scaffold 底色（和左栏是同一片底，看不出分界）。
+        // 主题把 AppBar 的 foregroundColor / titleTextStyle 都设成了白色（配蓝底用的），
+        // 所以文字和图标颜色必须显式指定，否则透明底上白字看不见。
+        backgroundColor: Colors.transparent,
         // 图标用主题蓝
         foregroundColor: const Color(0xFF2F6BFF),
         // 标题：与左栏标题一致（15 / w700）

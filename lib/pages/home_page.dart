@@ -200,9 +200,9 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: const Text('话务助手'),
-        // 与左栏标题栏一致：背景用**底色**（不是白色块）、图标主题蓝、
+        // 与左栏标题栏一致：**完全透明**（透出 Scaffold 底色）、图标主题蓝、
         // 标题 15 / w700（主题里那套白底白字要显式覆盖）
-        backgroundColor: const Color(0xFFF1F5FF),
+        backgroundColor: Colors.transparent,
         foregroundColor: const Color(0xFF2F6BFF),
         titleTextStyle: const TextStyle(
           color: Color(0xFF1B2A44),
