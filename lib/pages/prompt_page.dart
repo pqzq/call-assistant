@@ -188,6 +188,9 @@ class _PromptPageState extends State<PromptPage> {
                   child: TabBarView(
                     children: <Widget>[
                       _tabView(<Widget>[
+                        // 使用要点放最上面：进「连接」页第一眼就知道怎么配
+                        _buildTipCard(),
+                        const SizedBox(height: 12),
                         _buildStatusCard(),
                         const SizedBox(height: 12),
                         _buildDeviceCard(),
@@ -210,8 +213,6 @@ class _PromptPageState extends State<PromptPage> {
                       ]),
                       _tabView(<Widget>[
                         _buildLogCard(),
-                        const SizedBox(height: 16),
-                        _buildTipCard(),
                       ]),
                     ],
                   ),
@@ -975,7 +976,7 @@ class _PromptPageState extends State<PromptPage> {
           Text(
             ready
                 ? '当前模型：${_link.asrModelName}'
-                : '把「开场白音频」转成文本需要离线语音识别模型（SenseVoice，约 155MB）。'
+                : '把「开场白音频」转成文本需要离线语音识别模型。'
                     '模型只在本机运行，录音不会上传。',
             style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
@@ -998,12 +999,6 @@ class _PromptPageState extends State<PromptPage> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '模型包：sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2\n'
-            '（tar.bz2 格式，导入后自动识别，无需手动解压）',
-            style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black54),
           ),
         ],
       ),
@@ -1140,7 +1135,7 @@ class _PromptPageState extends State<PromptPage> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '内置样例为 Live2D 官方 Hiyori（仅测试用）。自备模型请打包成 zip'
+              '内置样例为 Live2D 官方模型（仅测试用）。自备模型请打包成 zip'
               '（内含 *.model3.json 及其贴图/动作文件），在上面「模型与展示」里点'
               '「导入 zip」或「导入文件夹」。',
               style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black54),
@@ -1550,7 +1545,8 @@ class _PromptPageState extends State<PromptPage> {
             '3. 播放端：点顶部「播放端」胶囊打开，再点「连接拨号端」完成配对\n'
             '4. 把播放端手机放在拨号端麦克风旁 5~10cm，音量 60~80%\n'
             '5. 拨号端建议关闭「AI 通话降噪/人声增强」，否则可能削弱外放声音\n'
-            '6. 系统省电策略请设为「无限制/允许后台运行」，避免通话中进程被回收',
+            '6. 系统省电策略请设为「无限制/允许后台运行」，避免通话中进程被回收\n'
+            '7. 想让播报有声音：先在「播报」页准备开场白音频（选择文件 / 端侧生成 / 麦克风录制）',
             style: TextStyle(fontSize: 12, height: 1.7, color: Color(0xFF8A5A00)),
           ),
         ],
