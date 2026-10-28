@@ -194,8 +194,6 @@ class _PromptPageState extends State<PromptPage> {
                         _buildStatusCard(),
                         const SizedBox(height: 12),
                         _buildDeviceCard(),
-                        const SizedBox(height: 12),
-                        _buildSingleDeviceCard(),
                       ]),
                       _tabView(<Widget>[
                         _buildScriptCard(),
@@ -1241,37 +1239,6 @@ class _PromptPageState extends State<PromptPage> {
     );
   }
 
-  Widget _buildSingleDeviceCard() {
-    final on = _link.singleDeviceTest;
-    return _card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              const Icon(Icons.smartphone, size: 18, color: Color(0xFF2F6BFF)),
-              const SizedBox(width: 8),
-              const Text('单机自测', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-              const Spacer(),
-              Switch(
-                value: on,
-                onChanged: (v) => _link.setSingleDeviceTest(v),
-              ),
-            ],
-          ),
-          Text(
-            on
-                ? '本机同时扮演拨号端与播放端：拨号接通后**直接本机播报**，不用连接任何设备，'
-                    '就能走通「接通 → 播报 → 口型」全链路。'
-                    '（想用另一台手机播时，把本机的「播放端」关掉即可）'
-                : '只有一台手机时打开它，就能模拟出另一台手机，不用真机对测就能验证整条播报链路。',
-            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 打开外部链接（模型下载页等）
   /// 可下载的 TTS 模型列表（点某项直接下载 .tar.bz2）
   void _showTtsModels() {
@@ -1656,7 +1623,9 @@ class _PromptPageState extends State<PromptPage> {
             '4. 把播放端手机放在拨号端麦克风旁 5~10cm，音量 60~80%\n'
             '5. 拨号端建议关闭「AI 通话降噪/人声增强」，否则可能削弱外放声音\n'
             '6. 系统省电策略请设为「无限制/允许后台运行」，避免通话中进程被回收\n'
-            '7. 想让播报有声音：先在「播报」页准备开场白音频（选择文件 / 端侧生成 / 麦克风录制）',
+            '7. 想让播报有声音：先在「播报」页准备开场白音频（选择文件 / 端侧生成 / 麦克风录制）\n'
+            '8. 只有一台手机时：同时打开「拨号端」和「播放端」就是单机自测 —— '
+            '接通后直接本机播报，不用连任何设备（此时也不接受其他设备连接）',
             style: TextStyle(fontSize: 12, height: 1.7, color: Color(0xFF8A5A00)),
           ),
         ],

@@ -125,10 +125,6 @@ class PromptLink extends ChangeNotifier {
   /// 正在寻找拨号端
   bool _seeking = false;
 
-  /// 单机自测：本机同时扮演拨号端与播放端（不用第二台手机就能测全链路）
-  bool _singleDeviceTest = false;
-
-  bool get singleDeviceTest => _singleDeviceTest;
   int _connectAttempts = 0;
   Timer? _queryTimer;
 
@@ -1368,14 +1364,15 @@ class PromptLink extends ChangeNotifier {
 
   Future<void> _onLanMessage(LanMessage message, LanPeer peer) async {
     final isSelf = message.deviceId == _deviceId;
-    // 单机自测时允许处理自己的广播（模拟另一台手机）
-    if (isSelf && !_singleDeviceTest) return;
+    // 自己的广播不处理（双角色时本机直接播，不需要网络回环）
+    if (isSelf) return;
     _lastPeerMessageAt = DateTime.now();
 
     switch (message.type) {
       case LanMessageType.query:
-        // 播放端在找拨号端：拨号端回应自己的身份
-        if (_autoTrigger && (!_asPlayer || _singleDeviceTest)) {
+        // 播放端在找拨号端：拨号端回应自己的身份。
+        // 双角色（本机闭环）时不回应 —— 连进来也没意义，见 connect 分支
+        if (_autoTrigger && !_asPlayer) {
           _send(peer, LanMessageType.hello);
         }
         break;
@@ -1397,6 +1394,16 @@ class PromptLink extends ChangeNotifier {
         if (!_autoTrigger) {
           // 没开拨号端：明确回 busy，别让对方干等 15 次重试
           _send(peer, LanMessageType.busy);
+          break;
+        }
+        // 双角色 = 本机闭环（等同于单机自测），不接受外部连接：
+        // 本机自己就会播报，再让别的设备连进来只会重复响
+        if (_asPlayer) {
+          _send(peer, LanMessageType.busy);
+          _log(
+            '拒绝 ${peer.displayName}：本机同时扮演两端（闭环），无需连接',
+            important: true,
+          );
           break;
         }
         if (_peerConnected && _connectedPeerId != peer.deviceId) {
@@ -1545,15 +1552,6 @@ class PromptLink extends ChangeNotifier {
         role: _roleName,
       ));
     });
-  }
-
-  /// 单机自测开关：本机同时扮演拨号端与播放端
-  Future<void> setSingleDeviceTest(bool value) async {
-    if (_singleDeviceTest == value) return;
-    _singleDeviceTest = value;
-    _link.acceptSelf = value;
-    notifyListeners();
-    _log(value ? '已开启单机自测（本机模拟拨号端）' : '已关闭单机自测');
   }
 
   /// 断开与拨号端的连接
