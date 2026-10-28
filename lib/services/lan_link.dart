@@ -32,6 +32,14 @@ class LanMessageType {
 
   /// 拨号端忙：已有播放端连着，拒绝新的连接请求
   static const String busy = 'busy';
+
+  /// 拨号端 -> 播放端：我的开场白音频已挂到 TCP 服务上，你拉一下
+  ///
+  /// 只在**已连接**时响应用（消息里带 deviceId，播放端核对是不是自己那条连接）。
+  static const String pushAudio = 'push_audio';
+
+  /// 拨号端 -> 播放端：把我的开场白文本填到你那边
+  static const String pushScript = 'push_script';
 }
 
 /// 局域网消息
@@ -43,7 +51,6 @@ class LanMessage {
     required this.role,
     this.script = '',
     this.rowLabel = '',
-    this.hasAudio = false,
     this.timestamp,
   });
 
@@ -63,12 +70,6 @@ class LanMessage {
   /// 当前拨打的是谁（仅用于日志展示）
   final String rowLabel;
 
-  /// 发送端是否提供开场白音频（播放端会按需通过 TCP 拉取）
-  ///
-  /// 音频几 MB，塞不进 UDP 广播，所以只在消息里带「有没有」这个标志，
-  /// 真正的文件由播放端单播去取（见 `AudioTransfer`）。
-  final bool hasAudio;
-
   final DateTime? timestamp;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
@@ -79,7 +80,6 @@ class LanMessage {
         'role': role,
         'script': script,
         'row': rowLabel,
-        'audio': hasAudio ? 1 : 0,
         'ts': (timestamp ?? DateTime.now()).millisecondsSinceEpoch,
       };
 
@@ -107,8 +107,6 @@ class LanMessage {
       role: (raw['role'] as String?) ?? '',
       script: (raw['script'] as String?) ?? '',
       rowLabel: (raw['row'] as String?) ?? '',
-      // 老版本没有这个字段 -> 默认 false（退化成对方用本地音频）
-      hasAudio: raw['audio'] == 1,
       timestamp: ts is int ? DateTime.fromMillisecondsSinceEpoch(ts) : null,
     );
   }

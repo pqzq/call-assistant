@@ -980,6 +980,26 @@ class _PromptPageState extends State<PromptPage> {
               label: const Text('用麦克风录制'),
             ),
           ),
+          // 把这份音频推给已连接的播放端（对方会自动设为它的开场白音频）
+          if (hasAudio) ...<Widget>[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final err = await _link.pushOpeningAudio();
+                  if (!mounted) return;
+                  if (err != null) {
+                    AppToast.error(context, err);
+                  } else {
+                    AppToast.show(context, '已通知播放端接收开场白音频');
+                  }
+                },
+                icon: const Icon(Icons.send_outlined, size: 18),
+                label: const Text('发送到播放端'),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           // 用离线语音识别把这段录音转成文本
           SizedBox(
@@ -1226,6 +1246,27 @@ class _PromptPageState extends State<PromptPage> {
             decoration: const InputDecoration(hintText: '输入接通后要朗读的固定文本'),
             onTapOutside: (_) => _link.setScript(_scriptController.text),
             onSubmitted: (v) => _link.setScript(v),
+          ),
+          // 把这份文本推给已连接的播放端（对方会填成它的开场白文本）
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                // 先落盘：输入框是 onTapOutside / onSubmitted 才保存的，
+                // 点这个按钮时可能还没存
+                await _link.setScript(_scriptController.text);
+                final err = await _link.pushOpeningScript();
+                if (!mounted) return;
+                if (err != null) {
+                  AppToast.error(context, err);
+                } else {
+                  AppToast.show(context, '已把开场白文本发给播放端');
+                }
+              },
+              icon: const Icon(Icons.send_outlined, size: 18),
+              label: const Text('发送文本到播放端'),
+            ),
           ),
           const SizedBox(height: 8),
           Row(

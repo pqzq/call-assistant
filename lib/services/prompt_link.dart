@@ -1340,15 +1340,6 @@ class PromptLink extends ChangeNotifier {
       );
       return;
     }
-    // 把本机音频挂到 TCP 服务上：已连接的播放端会主动来拉
-    // （音频几 MB，UDP 广播塞不下，只能单播拉取）
-    final audioFile = _audioPath == null ? null : File(_audioPath!);
-    final hasAudioFile = audioFile != null && audioFile.existsSync();
-    if (hasAudioFile) {
-      final ok = await AudioTransfer.serve(audioFile);
-      if (!ok) _log('音频传输服务启动失败（端口 ${AudioTransfer.defaultPort} 被占用）');
-    }
-
     // 能否送达：已连接最确定；否则看列表里有没有在线的播放端
     // （广播是无差别发的，连没连上都会收到 —— 但只有在线设备能收到）
     final connectedName = _peerConnected ? (_connectedPeerName ?? '对端') : null;
@@ -1362,7 +1353,6 @@ class PromptLink extends ChangeNotifier {
       role: 'dialer',
       script: _script,
       rowLabel: label,
-      hasAudio: hasAudioFile,
     ));
     _log('已广播播报指令');
 
@@ -1499,20 +1489,7 @@ class PromptLink extends ChangeNotifier {
         final text = message.script.trim().isEmpty ? _script : message.script;
         _log('收到播报指令（来自 ${peer.displayName}）：${message.rowLabel}', important: true);
 
-        // 对方带了开场白音频 → 拉过来用它播：音色统一，播放端不用自己配
-        String? remote;
-        if (message.hasAudio) {
-          final target = File('${AppPaths.audioDir.path}/from_dialer.wav');
-          final got = await AudioTransfer.fetch(peer.address, target);
-          if (got != null) {
-            final kb = (await got.length()) ~/ 1024;
-            remote = got.path;
-            _log('已接收拨号端的开场白音频（$kb KB）', important: true);
-          } else {
-            _log('拉取开场白音频失败，改用本机音频 / TTS');
-          }
-        }
-        speak(text, audioPath: remote);
+        speak(text);
         // 桌面端最小化 / 在别的窗口时也能看到「谁触发了播报、播的哪一条」
         await AppNotifier.notify(
           title: '正在播报',
@@ -1538,6 +1515,38 @@ class PromptLink extends ChangeNotifier {
           notifyListeners();
           _log('${peer.displayName} 已断开连接', important: true);
         }
+        break;
+
+      case LanMessageType.pushAudio:
+        // 拨号端手动推来开场白音频：拉下来**直接设为本地开场白**
+        if (!_peerConnected || _connectedPeerId != message.deviceId) return;
+        final target = File('${AppPaths.audioDir.path}/from_dialer.wav');
+        final got = await AudioTransfer.fetch(peer.address, target);
+        if (got == null) {
+          _log('拉取开场白音频失败（检查防火墙 / 两端是否在同一 Wi-Fi）', important: true);
+          AppNotifier.notify(title: '接收开场白音频失败', body: '来自 ${peer.displayName}');
+          return;
+        }
+        final kb = (await got.length()) ~/ 1024;
+        await setOpeningAudioFromFile(got.path);
+        _log('已接收拨号端的开场白音频并设为本地开场白（$kb KB）', important: true);
+        AppNotifier.notify(
+          title: '已接收开场白音频',
+          body: '来自 ${peer.displayName} · $kb KB',
+        );
+        break;
+
+      case LanMessageType.pushScript:
+        // 拨号端手动推来开场白文本：直接填成本地的
+        if (!_peerConnected || _connectedPeerId != message.deviceId) return;
+        final text = message.script.trim();
+        if (text.isEmpty) return;
+        await setScript(text);
+        _log('已接收拨号端的开场白文本（${text.length} 字）并填入', important: true);
+        AppNotifier.notify(
+          title: '已接收开场白文本',
+          body: '来自 ${peer.displayName} · ${text.length} 字',
+        );
         break;
 
       case LanMessageType.busy:
@@ -1626,6 +1635,45 @@ class PromptLink extends ChangeNotifier {
       notifyListeners();
       _log(_lastConnectError!, important: true);
     });
+  }
+
+  /// 把本机开场白音频推到已连接的播放端
+  ///
+  /// 对方收到后会自动**设为它自己的开场白音频**，以后播报就用这份（音色统一）。
+  /// 返回 null 表示已发出；否则是给用户看的失败原因。
+  Future<String?> pushOpeningAudio() async {
+    if (!_peerConnected) return '请先连接播放端';
+    final path = _audioPath;
+    final file = path == null ? null : File(path);
+    if (file == null || !file.existsSync()) return '本机还没有开场白音频';
+    final ok = await AudioTransfer.serve(file);
+    if (!ok) {
+      return '音频服务启动失败：端口 ${AudioTransfer.defaultPort} 可能被占用';
+    }
+    _link.broadcast(LanMessage(
+      type: LanMessageType.pushAudio,
+      deviceId: _deviceId,
+      deviceName: _deviceName,
+      role: _roleName,
+    ));
+    _log('已通知播放端来拉开场白音频', important: true);
+    return null;
+  }
+
+  /// 把本机开场白文本推到已连接的播放端（对方会填成它的开场白文本）
+  Future<String?> pushOpeningScript() async {
+    if (!_peerConnected) return '请先连接播放端';
+    final text = _script.trim();
+    if (text.isEmpty) return '本机开场白文本是空的';
+    _link.broadcast(LanMessage(
+      type: LanMessageType.pushScript,
+      deviceId: _deviceId,
+      deviceName: _deviceName,
+      role: _roleName,
+      script: text,
+    ));
+    _log('已把开场白文本发给播放端（${text.length} 字）', important: true);
+    return null;
   }
 
   /// 播放端：广播一次查询，刷新「扫描到的设备」列表
