@@ -12,6 +12,8 @@ import '../models/active_lead.dart';
 import 'asr_recognizer.dart';
 import 'call_log_store.dart';
 import 'app_notifier.dart';
+import 'app_paths.dart';
+import 'audio_transfer.dart';
 import 'call_state_watcher.dart';
 import 'platform_bridge.dart';
 import 'lan_link.dart';
@@ -1124,11 +1126,17 @@ class PromptLink extends ChangeNotifier {
   Future<void> playAudio() async {
     final path = _audioPath;
     if (path == null) return;
+    await _playFile(path);
+  }
+
+  /// 播放指定音频文件（本机开场白 / 对端发来的音频共用）
+  Future<void> _playFile(String path) async {
     try {
       await _player.stop();
       await _player.play(DeviceFileSource(path));
       _startAudioMouth();
-      _log('开始播放音频：$audioFileName');
+      final name = path.split(Platform.pathSeparator).last;
+      _log('开始播放音频：$name');
     } catch (e) {
       _log('播放音频失败：$e');
       _stopMouth();
@@ -1304,7 +1312,7 @@ class PromptLink extends ChangeNotifier {
     _broadcastAnswered(label);
   }
 
-  void _broadcastAnswered(String label) {
+  Future<void> _broadcastAnswered(String label) async {
     // 本机同时是播放端 -> **直接本机播，不再广播**
     //
     // 以前是「广播 + 本机也播」，同一 Wi-Fi 下如果还有别的播放端，
@@ -1332,6 +1340,15 @@ class PromptLink extends ChangeNotifier {
       );
       return;
     }
+    // 把本机音频挂到 TCP 服务上：已连接的播放端会主动来拉
+    // （音频几 MB，UDP 广播塞不下，只能单播拉取）
+    final audioFile = _audioPath == null ? null : File(_audioPath!);
+    final hasAudioFile = audioFile != null && audioFile.existsSync();
+    if (hasAudioFile) {
+      final ok = await AudioTransfer.serve(audioFile);
+      if (!ok) _log('音频传输服务启动失败（端口 ${AudioTransfer.defaultPort} 被占用）');
+    }
+
     // 能否送达：已连接最确定；否则看列表里有没有在线的播放端
     // （广播是无差别发的，连没连上都会收到 —— 但只有在线设备能收到）
     final connectedName = _peerConnected ? (_connectedPeerName ?? '对端') : null;
@@ -1345,6 +1362,7 @@ class PromptLink extends ChangeNotifier {
       role: 'dialer',
       script: _script,
       rowLabel: label,
+      hasAudio: hasAudioFile,
     ));
     _log('已广播播报指令');
 
@@ -1480,7 +1498,21 @@ class PromptLink extends ChangeNotifier {
         }
         final text = message.script.trim().isEmpty ? _script : message.script;
         _log('收到播报指令（来自 ${peer.displayName}）：${message.rowLabel}', important: true);
-        speak(text);
+
+        // 对方带了开场白音频 → 拉过来用它播：音色统一，播放端不用自己配
+        String? remote;
+        if (message.hasAudio) {
+          final target = File('${AppPaths.audioDir.path}/from_dialer.wav');
+          final got = await AudioTransfer.fetch(peer.address, target);
+          if (got != null) {
+            final kb = (await got.length()) ~/ 1024;
+            remote = got.path;
+            _log('已接收拨号端的开场白音频（$kb KB）', important: true);
+          } else {
+            _log('拉取开场白音频失败，改用本机音频 / TTS');
+          }
+        }
+        speak(text, audioPath: remote);
         // 桌面端最小化 / 在别的窗口时也能看到「谁触发了播报、播的哪一条」
         await AppNotifier.notify(
           title: '正在播报',
@@ -1654,6 +1686,8 @@ class PromptLink extends ChangeNotifier {
     if (wasConnected) {
       _log('已断开连接');
     }
+    // 断开后没人会来拉音频了，把 TCP 服务收掉
+    await AudioTransfer.stop();
     _peerConnected = false;
     _connectedPeerId = null;
     _connectedPeerName = null;
@@ -1661,9 +1695,15 @@ class PromptLink extends ChangeNotifier {
   }
 
   /// 播放开场白：优先用音频文件，其次系统 TTS
-  Future<void> speak(String text) async {
+  Future<void> speak(String text, {String? audioPath}) async {
     // 先打断正在播的内容（避免叠音，也实现「打断播报」）
     await stopSpeaking();
+    // 优先用调用方给的音频（播放端刚收到拨号端发来的那份）
+    final override = audioPath;
+    if (override != null && File(override).existsSync()) {
+      await _playFile(override);
+      return;
+    }
     if (hasAudio) {
       await playAudio();
       return;
