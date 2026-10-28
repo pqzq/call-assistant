@@ -37,8 +37,32 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, bridgeChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAccessibilityEnabled" -> result.success(isAccessibilityEnabled())
-                // 默认设备名用机型，避免 Dart 端拿到 "localhost"
-                "deviceModel" -> result.success(android.os.Build.MODEL ?: "")
+                // 默认设备名 = 系统设置的设备名 + 认证型号，避免 Dart 端拿到 "localhost"
+                // 例：「小米手机 · 2410DPN6CC」；系统没起名字时退化成纯型号
+                "deviceModel" -> {
+                    val model = android.os.Build.MODEL?.trim().orEmpty()
+                    var label = ""
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >=
+                            android.os.Build.VERSION_CODES.N_MR1
+                        ) {
+                            // API 25+ 才有 DEVICE_NAME
+                            label = Settings.Global.getString(
+                                contentResolver,
+                                Settings.Global.DEVICE_NAME,
+                            )?.trim().orEmpty()
+                        }
+                    } catch (_: Exception) {
+                        // 某些 ROM 不允许读，忽略
+                    }
+                    result.success(
+                        when {
+                            label.isNotEmpty() && model.isNotEmpty() -> "$label · $model"
+                            label.isNotEmpty() -> label
+                            else -> model
+                        },
+                    )
+                }
                 "openAccessibilitySettings" -> {
                     try {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

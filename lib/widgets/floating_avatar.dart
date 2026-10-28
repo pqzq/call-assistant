@@ -342,6 +342,18 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
         tooltip: '拖动',
         isDragHandle: true,
       ),
+      // 立即播报：和顶部快捷条那个按钮等价，放在操作栏最上面方便单手按
+      ArcAction(
+        icon: Icons.campaign_outlined,
+        tooltip: '立即播报',
+        onTap: () {
+          if (!link.hasAudio) {
+            AppToast.error(context, '请先添加开场白音频（选择 / 生成 / 录制）');
+            return;
+          }
+          link.triggerManually();
+        },
+      ),
       if (multiStep) ...<ArcAction>[
         ArcAction(
           icon: Icons.chevron_left,
