@@ -1350,8 +1350,6 @@ class PromptLink extends ChangeNotifier {
     // 单机自测时允许处理自己的广播（模拟另一台手机）
     if (isSelf && !_singleDeviceTest) return;
     _lastPeerMessageAt = DateTime.now();
-    // 单机自测：自己扮演拨号端
-    final peerRole = isSelf ? 'dialer' : peer.role;
 
     switch (message.type) {
       case LanMessageType.query:
@@ -1362,11 +1360,13 @@ class PromptLink extends ChangeNotifier {
         break;
 
       case LanMessageType.hello:
-        // 拨号端的存在宣告（每 5 秒一次，不再刷日志）
-        if (_asPlayer && !_peerConnected && (peerRole == 'dialer' || _singleDeviceTest)) {
-          // 播放端主动发起连接
-          _send(peer, LanMessageType.connect);
-        }
+        // 对端的存在宣告（每 5 秒一次，不刷日志）
+        //
+        // ⚠️ **不再自动连接**：同一局域网经常有好几台设备都在跑本应用
+        // （同事都用），自动连会连到别人那台 —— 多个播放端也会抢同一个
+        // 拨号端。现在只让 lan_link 更新 peers 列表，由用户从「扫描到的设备」
+        // 里手动选。notify 是为了让那个列表实时刷新。
+        notifyListeners();
         break;
 
       case LanMessageType.connect:
@@ -1429,7 +1429,35 @@ class PromptLink extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 播放端：手动发起连接拨号端
+  /// 局域网上当前在线的设备（15 秒内有心跳，已由 lan_link 过滤并排序）
+  ///
+  /// 播放端在这里找「拨号端」手动连接；拨号端也会看到播放端，方便排查。
+  /// 不再自动配对的原因见 `case LanMessageType.hello` 那段注释。
+  List<LanPeer> get discoveredPeers {
+    final list = _link.peers
+        .where((p) => p.deviceId != _deviceId)
+        .toList()
+      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    return list;
+  }
+
+  /// 连接指定的对端（播放端 -> 拨号端）
+  Future<bool> connectToPeer(LanPeer peer) async {
+    if (!_asPlayer) {
+      _log('请先开启「播放端」');
+      return false;
+    }
+    if (peer.deviceId == _deviceId) return false;
+    _log('正在连接 ${peer.displayName}…');
+    _send(peer, LanMessageType.connect);
+    return true;
+  }
+
+  /// 播放端：广播一次查询，刷新「扫描到的设备」列表
+  ///
+  /// 以前这个动作会**自动连第一个回应的拨号端**；现在只负责让对端回应
+  /// （对方收到 query 会回 hello），列表由 [discoveredPeers] 提供，连接交给
+  /// [connectToPeer]。同一个局域网多台设备同时用时，这样才不会连错。
   Future<void> connectToDialer() async {
     if (!_asPlayer) {
       _log('请先开启「播放端」');
@@ -1438,7 +1466,7 @@ class PromptLink extends ChangeNotifier {
     _seeking = true;
     _connectAttempts = 0;
     notifyListeners();
-    _log('正在寻找拨号端…');
+    _log('正在搜索局域网设备…');
     _queryTimer?.cancel();
     _queryTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       if (!_seeking || _peerConnected) {
@@ -1452,7 +1480,7 @@ class PromptLink extends ChangeNotifier {
         timer.cancel();
         _seeking = false;
         notifyListeners();
-        _log('未找到拨号端，请确认两台手机在同一 Wi-Fi 且拨号端已开启');
+        _log('没有发现设备，请确认两台手机在同一 Wi-Fi 且对端已开启');
         return;
       }
       _link.broadcast(LanMessage(

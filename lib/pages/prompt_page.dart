@@ -495,6 +495,17 @@ class _PromptPageState extends State<PromptPage> {
                 AppToast.error(context, '请先添加开场白音频（选择 / 生成 / 录制）');
                 return;
               }
+              // 手机端：既没连上播放端、本机也不是播放端 -> 广播出去没人会念。
+              // 桌面端点这个按钮本来就是本机播，不用连。
+              if (!PlatformBridge.isDesktop &&
+                  !_link.peerConnected &&
+                  !_link.asPlayer) {
+                AppToast.error(
+                  context,
+                  '还没有连接播放端：请在「连接」页点「扫描设备」选择',
+                );
+                return;
+              }
               _link.triggerManually();
             },
                   icon: const Icon(Icons.campaign_outlined, size: 18),
@@ -587,7 +598,7 @@ class _PromptPageState extends State<PromptPage> {
     final text = _link.peerConnected
         ? '已连接 ${_link.connectedPeerName ?? '对端'}'
         : _link.seeking
-            ? '正在寻找拨号端…'
+            ? '正在搜索局域网设备…'
             : _link.listening
                 ? (_link.asPlayer ? '等待手机拨号端连接' : '等待播放端连接')
                 : '局域网未启动';
@@ -599,14 +610,16 @@ class _PromptPageState extends State<PromptPage> {
             : Colors.black54;
     if (_link.asPlayer && _link.listening) {
       return TextButton(
-        onPressed: _link.peerConnected ? _link.disconnectPeer : _link.connectToDialer,
+        // 不再「一键自动连第一个」：同网段可能有多台设备在跑本应用，
+        // 点开列表由用户挑（设备来自 lan_link 的 15 秒心跳筛选）
+        onPressed: _link.peerConnected ? _link.disconnectPeer : _showDevicePicker,
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           minimumSize: const Size(0, 30),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         child: Text(
-          _link.peerConnected ? '断开' : (_link.seeking ? '搜索中…' : '连接拨号端'),
+          _link.peerConnected ? '断开' : '扫描设备',
           style: const TextStyle(fontSize: 12),
         ),
       );
@@ -705,7 +718,7 @@ class _PromptPageState extends State<PromptPage> {
           TextField(
             controller: _nameController,
             decoration: const InputDecoration(
-              labelText: '设备名（另一台手机看到的名字）',
+              labelText: '设备名（另一台设备看到的名字）',
               isDense: true,
             ),
             onSubmitted: (v) => _link.setDeviceName(v),
@@ -1258,6 +1271,93 @@ class _PromptPageState extends State<PromptPage> {
       nameOf: (o) => o.name,
       descOf: (o) => '${o.languages} · ${o.note}',
       urlOf: (o) => o.url,
+    );
+  }
+
+  /// 扫描并选择要连接的局域网设备
+  ///
+  /// 以前「连接拨号端」是自动连第一个回应的设备 —— 同一 Wi-Fi 下多人都在用
+  /// 本应用时会连错（甚至多个播放端抢同一个拨号端）。现在改成列出扫描结果，
+  /// 由用户手动挑。列表随 5 秒心跳实时刷新。
+  void _showDevicePicker() {
+    final link = _link;
+    if (!link.asPlayer) {
+      AppToast.error(context, '请先开启「播放端」');
+      return;
+    }
+    // 先广播一次查询，让对端立刻回应（不等下一个 5 秒心跳）
+    link.connectToDialer();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => ListenableBuilder(
+        listenable: link,
+        builder: (context, _) {
+          final peers = link.discoveredPeers;
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Text(
+                    '选择要连接的设备',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    '只列出同一 Wi-Fi 下正在运行本应用的设备（15 秒内有心跳）',
+                    style: TextStyle(
+                        fontSize: 11, color: Colors.black54, height: 1.4),
+                  ),
+                ),
+                if (peers.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: Text(
+                      '还没有发现设备。\n'
+                      '请确认：两台手机连同一个 Wi-Fi；对端已开启「拨号端」或「播放端」。',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.black54, height: 1.6),
+                    ),
+                  )
+                else
+                  for (final peer in peers)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        peer.role == 'dialer'
+                            ? Icons.phone_in_talk
+                            : Icons.campaign_outlined,
+                        size: 20,
+                        color: const Color(0xFF2F6BFF),
+                      ),
+                      title: Text(peer.displayName,
+                          style: const TextStyle(fontSize: 13)),
+                      subtitle: Text(peer.role == 'dialer' ? '拨号端' : '播放端',
+                          style: const TextStyle(fontSize: 11)),
+                      trailing: const Icon(Icons.link, size: 20),
+                      onTap: () async {
+                        final ok = await link.connectToPeer(peer);
+                        if (!sheetContext.mounted) return;
+                        if (ok) Navigator.of(sheetContext).pop();
+                      },
+                    ),
+                const Divider(height: 1),
+                TextButton.icon(
+                  onPressed: () => link.connectToDialer(),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('重新搜索'),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

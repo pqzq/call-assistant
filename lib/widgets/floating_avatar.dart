@@ -351,6 +351,15 @@ class _FloatingAvatarHostState extends State<FloatingAvatarHost> {
             AppToast.error(context, '请先添加开场白音频（选择 / 生成 / 录制）');
             return;
           }
+          // 浮窗只在手机端出现：没连播放端、本机也不是播放端时，
+          // 广播出去没人会念（同一 Wi-Fi 多台设备时尤其容易误判）
+          if (!link.peerConnected && !link.asPlayer) {
+            AppToast.error(
+              context,
+              '还没有连接播放端：请在「连接」页点「扫描设备」选择',
+            );
+            return;
+          }
           link.triggerManually();
         },
       ),
