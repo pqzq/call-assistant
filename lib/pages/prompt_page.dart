@@ -150,9 +150,15 @@ class _PromptPageState extends State<PromptPage> {
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: const Text('双机联动播报'),
-        // 半透明白 + 无阴影：让底部内容透上来一点，接近玻璃质感。
-        // 0.92 而不是 0.72：太透时下面滚上来的卡片会和标题叠在一起
+        // 白底玻璃：主题把 AppBar 的 foregroundColor / titleTextStyle 都设成了白色
+        // （原本配蓝底），改成白底后必须显式改回深色，否则白字白底看不见
         backgroundColor: Colors.white.withValues(alpha: 0.92),
+        foregroundColor: const Color(0xFF1B2A44),
+        titleTextStyle: const TextStyle(
+          color: Color(0xFF1B2A44),
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+        ),
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
@@ -475,8 +481,8 @@ class _PromptPageState extends State<PromptPage> {
         child: GlassSurface(
           borderRadius: 20,
           blur: 24,
-          // 0.94：既保留玻璃感，又保证里面的按钮/文字看得清
-          opacity: 0.94,
+          // 0.88：比 0.94 更透一点，能看出玻璃；blur 24 保证字还是清楚的
+          opacity: 0.88,
           padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
           child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
