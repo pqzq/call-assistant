@@ -466,19 +466,9 @@ class _PromptPageState extends State<PromptPage> {
                   label: '拨号端',
                   icon: Icons.phone_in_talk,
                   on: _link.autoTrigger,
-                  onChanged: (v) async {
-                // 开拨号端前先确认「有东西可播」：
-                // 既没有开场白音频、端侧 TTS 也没就绪 -> 接通后广播出去是静音，
-                // 等到电话接通才发现就晚了。
-                if (v && !_link.hasAudio && !_link.ttsReady) {
-                  AppToast.error(
-                    context,
-                    '请先在「播报」页设置开场白音频，否则接通后播放端没有声音',
-                  );
-                  return;
-                }
-                await _link.setAutoTrigger(v);
-              },
+                  // 开拨号端不需要本机有音频：音频在「播放端」那台，
+              // 拨号端只负责广播播报指令
+              onChanged: (v) => _link.setAutoTrigger(v),
                 ),
                 const SizedBox(width: 8),
               ],
@@ -498,9 +488,13 @@ class _PromptPageState extends State<PromptPage> {
               Expanded(
                 child: FilledButton.icon(
                   onPressed: () {
-              // 没有开场白音频时播报是「静默」的（TTS / 录音 / 导入都写到
-              // 同一个文件，所以 hasAudio 就是有没有可播内容的唯一判据）
-              if (!_link.hasAudio) {
+              // 只有「本机要播」时才需要本机有音频：
+              //   - 桌面端：本机播
+              //   - 双角色（asPlayer）：本机播
+              // 只当拨号端时**不需要** —— 音频在播放端那台，这里只发播报指令
+              final localPlays =
+                  PlatformBridge.isDesktop || _link.asPlayer;
+              if (localPlays && !_link.hasAudio) {
                 // 文案别太长：Toast 宽度有限，超过两行会被裁掉
                 AppToast.error(context, '请先添加开场白音频（选择 / 生成 / 录制）');
                 return;

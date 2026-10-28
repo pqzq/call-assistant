@@ -15,7 +15,8 @@ class AppToast {
 
   /// 普通提示（主题色）
   static void show(
-    BuildContext context,
+    // 允许 null：通知类调用没有 context（用全局 navigatorKey 的 overlay）
+    BuildContext? context,
     String message, {
     IconData icon = Icons.check_circle_outline,
     bool isError = false,
@@ -32,7 +33,7 @@ class AppToast {
 
   /// 错误提示（红色 + 警告图标）
   static void error(
-    BuildContext context,
+    BuildContext? context,
     String message, {
     Duration duration = const Duration(milliseconds: 2600),
   }) {
@@ -46,7 +47,7 @@ class AppToast {
   }
 
   static void _show(
-    BuildContext context,
+    BuildContext? context,
     String message, {
     required IconData icon,
     required bool isError,
