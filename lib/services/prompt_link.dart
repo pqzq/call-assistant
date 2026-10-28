@@ -73,6 +73,14 @@ class PromptLink extends ChangeNotifier {
   /// 数字人渲染后端（webview / native）
   static const String _kAvatarBackend = 'prompt_avatar_backend';
 
+  /// 后端偏好「用户是否主动选过」的版本标记
+  ///
+  /// 2 = 默认后端改成原生（Windows 先行，Android 本次跟进）。
+  /// 老用户没这个标记 → 首次启动时套用新默认；之后手动切换会写入标记，
+  /// 不会再被默认值迁移覆盖。
+  static const String _kAvatarBackendVersion = 'prompt_avatar_backend_v';
+  static const int _kAvatarBackendVersionNow = 2;
+
   /// 模型实际宽高比（由 WebView 端量出来并缓存，切换后端也能复用）
   static const String _kAvatarAspect = 'prompt_avatar_aspect';
 
@@ -391,7 +399,17 @@ class PromptLink extends ChangeNotifier {
     }
     _avatarEnabled = prefs.getBool(_kAvatarEnabled) ?? false;
     _avatarModel = prefs.getString(_kAvatarModel) ?? Live2dService.defaultModel;
+    // 后端默认值变更的迁移：老用户 prefs 里存的是「旧默认 webview」，
+    // 不迁移的话「默认改原生」对他们完全没效果。
+    // 只在**第一次升级到本版**覆盖一次；之后用户手动切的任何值都会带上
+    // 当前版本号，不会再被覆盖。
+    final backendPrefVersion = prefs.getInt(_kAvatarBackendVersion) ?? 1;
     _avatarBackend = AvatarBackend.fromName(prefs.getString(_kAvatarBackend));
+    if (backendPrefVersion < _kAvatarBackendVersionNow) {
+      _avatarBackend = kDefaultAvatarBackend;
+      await prefs.setString(_kAvatarBackend, _avatarBackend.name);
+      await prefs.setInt(_kAvatarBackendVersion, _kAvatarBackendVersionNow);
+    }
     // 模型比例：只有和当前模型匹配才复用，换过模型就作废等重新量
     final savedAspectModel = prefs.getString(_kAvatarAspectModel) ?? '';
     final savedAspect = prefs.getDouble(_kAvatarAspect) ?? 0;
@@ -903,6 +921,8 @@ class PromptLink extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kAvatarBackend, backend.name);
+      // 记下「用户主动选过」的版本，避免下次启动被默认值迁移覆盖
+      await prefs.setInt(_kAvatarBackendVersion, _kAvatarBackendVersionNow);
     } catch (_) {
       // 忽略
     }

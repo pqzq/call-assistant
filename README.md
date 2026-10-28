@@ -866,11 +866,25 @@ WebView 侧的适配系数同步从 `0.96` 提到 `0.99`（几乎贴边），见
 
 - **Windows 默认「原生」**：WebView2 会常驻 `msedgewebview2.exe`（浏览器进程 + GPU 进程 +
   渲染进程），内存占用明显高于原生；原生是外部纹理，在同一个进程内合成
-- **其他平台默认「WebView」**：Android 原生后端依赖 pub cache 补丁，默认走稳的那条
+- **Android 默认「原生」**：WebView 要起一整个 Chromium 内核，再加页面里的 PIXI / Cubism
+  Web SDK；原生走 SurfaceTexture，占用和启动都快一截
+- **macOS / Linux 默认「WebView」**：没有原生实现
+
+⚠️ **Android 的原生后端依赖 `flutter_live2d` 的本地补丁**：构建前必须跑
+`dart run tool/patch_live2d_plugin.dart`（补丁内容见 `tool/patches/`），
+否则原生后端初始化会失败（表现为数字人区域空白 + 错误提示）。
 
 - 选择会记住（`prompt_avatar_backend`），重启后保持
 - 切换后数字人立即按新后端重新加载，模型/嘴型/导入逻辑完全复用
 - **当前平台不支持的后端会置灰**（macOS / Linux 没有原生实现）
+
+**默认值变更时老用户怎么办**（`prompt_avatar_backend_v`）
+
+改默认值对**已装用户无效** —— 他们 prefs 里存着旧值。所以加了一个版本标记：
+
+- 老用户没有这个标记 → **首次升级到本版时套用一次新默认**（Android 从 WebView → 原生）
+- 之后用户手动切换后端，会同时写入版本标记 → **不再被默认值迁移覆盖**
+- 想回到 WebView：设置页手动切一次即可（会一直记住）
 
 **占用相关的两个事实**：
 

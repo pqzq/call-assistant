@@ -24,7 +24,9 @@ enum AvatarBackend {
     for (final b in AvatarBackend.values) {
       if (b.name == name) return b;
     }
-    return webview;
+    // 没存过（首次安装）→ 跟着平台默认走。
+    // 之前这里硬返回 webview，导致「默认原生」的改动对新装用户也不生效。
+    return kDefaultAvatarBackend;
   }
 }
 
@@ -115,15 +117,24 @@ String? backendUnsupportedReason(AvatarBackend backend) {
   }
 }
 
-/// 默认后端：保持 WebView（零风险，行为与之前一致）
 /// 默认后端
 ///
-/// **Windows 默认用原生**（自研纹理插件 `flutter_live2d_windows`）：
-/// WebView2 会常驻 `msedgewebview2.exe`（独立 GPU 进程 + 渲染进程），
-/// 内存占用明显高于原生；而原生走的是外部纹理，同一个进程内合成。
-/// 需要 WebView 时仍然可以在设置页手动切。
+/// **Windows 和 Android 都默认用原生**（自研纹理插件 / 打过补丁的
+/// `flutter_live2d`）：
 ///
-/// 其他平台保持 WebView：Android 的原生后端依赖 pub cache 补丁，
-/// 出问题的排查成本更高，默认走稳的那条。
+/// - Windows：WebView2 会常驻 `msedgewebview2.exe`（浏览器进程 + GPU 进程 +
+///   渲染进程），内存占用明显高于原生；原生走外部纹理，同进程内合成
+/// - Android：WebView 要起一整个 Chromium 内核 + 页面里的 PIXI / Cubism
+///   Web SDK，而原生走 SurfaceTexture，占用和启动都快一截
+///
+/// 其他平台（macOS / Linux）保持 WebView —— 没有原生实现。
+///
+/// 需要 WebView 时仍然可以在设置页手动切（选择会被记住）。
+///
+/// ⚠️ Android 的原生后端依赖 `flutter_live2d` 的本地补丁：
+/// 构建前要跑 `dart run tool/patch_live2d_plugin.dart`，
+/// 否则原生后端初始化会失败（补丁内容见 `tool/patches/`）。
 AvatarBackend get kDefaultAvatarBackend =>
-    PlatformBridge.isWindows ? AvatarBackend.native : AvatarBackend.webview;
+    (PlatformBridge.isWindows || PlatformBridge.isAndroid)
+        ? AvatarBackend.native
+        : AvatarBackend.webview;
