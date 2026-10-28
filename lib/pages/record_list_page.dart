@@ -462,7 +462,7 @@ class _RecordListPageState extends State<RecordListPage> {
                     '共 ${sheet.rowCount} 条 · 长按看详情',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11.5, color: Colors.black45),
+                    style: const TextStyle(fontSize: 11.5, color: Colors.black54),
                   ),
                 ),
                 Text(
@@ -471,7 +471,7 @@ class _RecordListPageState extends State<RecordListPage> {
                       : sheet.phoneColumns.length == 1
                           ? '号码列：${sheet.headerAt(sheet.phoneColumn!)}'
                           : '号码列：${sheet.phoneColumns.map(sheet.headerAt).join(' / ')}',
-                  style: const TextStyle(fontSize: 11.5, color: Colors.black45),
+                  style: const TextStyle(fontSize: 11.5, color: Colors.black54),
                 ),
               ],
             ),
@@ -529,7 +529,7 @@ class _RecordListPageState extends State<RecordListPage> {
               if (phones.isNotEmpty) ...<Widget>[
                 const Text(
                   '号码',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black54),
                 ),
                 const SizedBox(height: 6),
                 for (final phone in phones)
@@ -542,7 +542,7 @@ class _RecordListPageState extends State<RecordListPage> {
                           width: 86,
                           child: Text(
                             phone.label,
-                            style: const TextStyle(fontSize: 13, color: Colors.black45),
+                            style: const TextStyle(fontSize: 13, color: Colors.black54),
                           ),
                         ),
                         Expanded(
@@ -573,7 +573,7 @@ class _RecordListPageState extends State<RecordListPage> {
               ],
               const Text(
                 '其它字段',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black54),
               ),
               const SizedBox(height: 6),
               // 双列排布，字段多时也不会把弹窗撑得很高
@@ -593,7 +593,7 @@ class _RecordListPageState extends State<RecordListPage> {
                               field.label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12.5, color: Colors.black45),
+                              style: const TextStyle(fontSize: 12.5, color: Colors.black54),
                             ),
                           ),
                           Expanded(
@@ -765,7 +765,7 @@ class _StatusSection extends StatelessWidget {
       children: <Widget>[
         const Text(
           '拨打情况',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black45),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black54),
         ),
         const SizedBox(height: 6),
         Wrap(
@@ -795,7 +795,7 @@ class _StatusSection extends StatelessWidget {
         const SizedBox(height: 4),
         const Text(
           '结果写入表格末尾的「拨打情况」列，下次导入同名表格会自动带回来。',
-          style: TextStyle(fontSize: 11, height: 1.4, color: Colors.black38),
+          style: TextStyle(fontSize: 11, height: 1.4, color: Colors.black54),
         ),
       ],
     );
@@ -855,7 +855,7 @@ class _NumberPickerSheet extends StatelessWidget {
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.4,
-                      color: phone.valid ? theme.colorScheme.primary : Colors.black38,
+                      color: phone.valid ? theme.colorScheme.primary : Colors.black54,
                     ),
                   ),
                   subtitle: Text(
@@ -865,7 +865,7 @@ class _NumberPickerSheet extends StatelessWidget {
                       if (phone.note != null) phone.note!,
                       if (dialed) '已呼叫',
                     ].join(' · '),
-                    style: const TextStyle(fontSize: 12, color: Colors.black45),
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                   trailing: const Icon(Icons.call, size: 20, color: Color(0xFF17A05A)),
                 );
@@ -916,7 +916,7 @@ class _Notice extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: Colors.black45),
+              style: const TextStyle(fontSize: 13, color: Colors.black54),
             ),
           ],
         ),

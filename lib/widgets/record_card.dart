@@ -144,7 +144,7 @@ class RecordCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       if (phones.isEmpty)
-                        const Text('无号码', style: TextStyle(fontSize: 15, color: Colors.black38))
+                        const Text('无号码', style: TextStyle(fontSize: 15, color: Colors.black54))
                       else
                         ...phones.take(maxVisiblePhones).map(_buildPhoneRow),
                       if (phones.length > maxVisiblePhones)
@@ -152,7 +152,7 @@ class RecordCard extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             '还有 ${phones.length - maxVisiblePhones} 个号码…',
-                            style: const TextStyle(fontSize: 11, color: Colors.black38),
+                            style: const TextStyle(fontSize: 11, color: Colors.black54),
                           ),
                         ),
                       if (fields.isNotEmpty) const SizedBox(height: 8),
@@ -162,7 +162,7 @@ class RecordCard extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
                             '还有 ${fields.length - maxVisibleFields} 项…',
-                            style: const TextStyle(fontSize: 11, color: Colors.black38),
+                            style: const TextStyle(fontSize: 11, color: Colors.black54),
                           ),
                         ),
                     ],
@@ -278,7 +278,7 @@ class RecordCard extends StatelessWidget {
     if (phones.isEmpty) {
       return const Text(
         '无号码',
-        style: TextStyle(fontSize: 12, color: Colors.black38),
+        style: TextStyle(fontSize: 12, color: Colors.black54),
       );
     }
     final visible = phones.take(2).toList();
@@ -289,15 +289,15 @@ class RecordCard extends StatelessWidget {
             fontSize: narrow ? 15 : 13,
             height: 1.15,
             fontWeight: FontWeight.w600,
-            color: called ? Colors.black38 : const Color(0xFF1B62F0),
+            color: called ? Colors.black54 : const Color(0xFF1B62F0),
             decoration: called ? TextDecoration.lineThrough : null,
-            decorationColor: Colors.black26,
+            decorationColor: Colors.black54,
           ),
         );
 
     Widget labelText(PhoneEntry phone) => Text(
           phone.label,
-          style: const TextStyle(fontSize: 10, color: Colors.black38),
+          style: const TextStyle(fontSize: 10, color: Colors.black54),
         );
 
     if (narrow) {
@@ -334,7 +334,7 @@ class RecordCard extends StatelessWidget {
           if (phones.length > visible.length)
             Text(
               '+${phones.length - visible.length} 个号码',
-              style: const TextStyle(fontSize: 10, color: Colors.black38),
+              style: const TextStyle(fontSize: 10, color: Colors.black54),
             ),
         ],
       );
@@ -368,7 +368,7 @@ class RecordCard extends StatelessWidget {
         if (phones.length > visible.length)
           Text(
             '+${phones.length - visible.length}',
-            style: const TextStyle(fontSize: 10.5, color: Colors.black38),
+            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
           ),
       ],
     );
@@ -411,7 +411,7 @@ class RecordCard extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10.5, height: 1.2, color: Colors.black38),
+            style: const TextStyle(fontSize: 10.5, height: 1.2, color: Colors.black54),
           ),
         ),
       ],
@@ -429,7 +429,7 @@ class RecordCard extends StatelessWidget {
           children: <Widget>[
             Icon(_iconOf(phone.kind), size: 15, color: color),
             const SizedBox(width: 6),
-            Text(phone.label, style: const TextStyle(fontSize: 11, color: Colors.black45)),
+            Text(phone.label, style: const TextStyle(fontSize: 11, color: Colors.black54)),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -491,7 +491,7 @@ class RecordCard extends StatelessWidget {
               field.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.black45),
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
           ),
           Expanded(

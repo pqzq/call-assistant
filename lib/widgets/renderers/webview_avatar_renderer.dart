@@ -406,7 +406,7 @@ class WebViewAvatarRenderer implements AvatarRenderer {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(height: 10),
-          Text(message, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+          Text(message, style: const TextStyle(fontSize: 12, color: Colors.black54)),
         ],
       ),
     );

@@ -223,7 +223,7 @@ class _HomePageState extends State<HomePage> {
                 children: <Widget>[
                   CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text('正在解析表格…', style: TextStyle(color: Colors.black45)),
+                  Text('正在解析表格…', style: TextStyle(color: Colors.black54)),
                 ],
               ),
             )
@@ -266,7 +266,7 @@ class _HomePageState extends State<HomePage> {
                 ? '自动识别表格中的手机号列，\n点击号码即可跳转系统拨号页并自动填充。'
                 : '自动识别表格中的手机号列，\n点击号码即可复制（电脑端没有拨号功能）。',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, height: 1.6, color: Colors.black45),
+            style: const TextStyle(fontSize: 13, height: 1.6, color: Colors.black54),
           ),
         ),
         const SizedBox(height: 32),
@@ -425,7 +425,7 @@ class _HomePageState extends State<HomePage> {
             ),
           const SizedBox(height: 12),
           if (multipleSheets) ...<Widget>[
-            const Text('工作表', style: TextStyle(fontSize: 12, color: Colors.black45)),
+            const Text('工作表', style: TextStyle(fontSize: 12, color: Colors.black54)),
             const SizedBox(height: 4),
             DropdownButtonHideUnderline(
               child: DropdownButton<int>(
@@ -459,7 +459,7 @@ class _HomePageState extends State<HomePage> {
           ],
           Text(
             sheet.hasHeader ? '表头位于第 ${sheet.headerRow} 行' : '未识别到表头，列名使用 A / B / C 自动编号',
-            style: const TextStyle(fontSize: 12, color: Colors.black38),
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
           ),
           ],
         ),
@@ -531,7 +531,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(width: 8),
               const Text('电话号码列', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
               const SizedBox(width: 6),
-              const Text('可多选', style: TextStyle(fontSize: 11, color: Colors.black38)),
+              const Text('可多选', style: TextStyle(fontSize: 11, color: Colors.black54)),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -556,7 +556,7 @@ class _HomePageState extends State<HomePage> {
                 : autoSelected > 0
                     ? '已自动勾选 $autoSelected 列，可增删；一条记录有多个号码时，拨打会让你选择'
                     : '手动点选号码所在列（可多选）',
-            style: const TextStyle(fontSize: 12, color: Colors.black45),
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -582,7 +582,7 @@ class _HomePageState extends State<HomePage> {
           if (shown.length < columns.length)
             const Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('…还有更多列未显示', style: TextStyle(fontSize: 11, color: Colors.black38)),
+              child: Text('…还有更多列未显示', style: TextStyle(fontSize: 11, color: Colors.black54)),
             ),
         ],
       ),
@@ -618,7 +618,7 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 6),
           const Text(
             '座机只写了本地号码（如 88886666）时，拨打会自动补上这个区号；已带区号的号码不受影响。',
-            style: TextStyle(fontSize: 12, color: Colors.black45),
+            style: TextStyle(fontSize: 12, color: Colors.black54),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -660,7 +660,7 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 8),
           Text(
             '示例：$previewLocal → ${PhoneUtils.prettyDial(preview)}',
-            style: const TextStyle(fontSize: 12, color: Colors.black38),
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
           ),
         ],
       ),
@@ -709,7 +709,7 @@ class _Stat extends StatelessWidget {
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF2F6BFF)),
           ),
           const SizedBox(height: 2),
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+          Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
         ],
       ),
     );
@@ -762,7 +762,7 @@ class _DetailRow extends StatelessWidget {
             width: 78,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 13, color: Colors.black45),
+              style: const TextStyle(fontSize: 13, color: Colors.black54),
             ),
           ),
           Expanded(

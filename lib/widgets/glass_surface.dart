@@ -154,7 +154,7 @@ class GlassActionButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: active ? const Color(0xFF1B2A44) : Colors.black26,
+                color: active ? const Color(0xFF1B2A44) : Colors.black54,
               ),
             ),
           ],

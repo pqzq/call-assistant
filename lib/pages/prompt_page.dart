@@ -90,7 +90,7 @@ class _PromptPageState extends State<PromptPage> {
                   model,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: Colors.black38),
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
                 ),
                 trailing: model == _link.avatarModel
                     ? const Icon(Icons.check, size: 18)
@@ -350,7 +350,7 @@ class _PromptPageState extends State<PromptPage> {
           ),
           const Text(
             '1.00x 为自动适配；调大会放大，超出的部分从脚部裁掉（不会挡脸）。两种渲染引擎都生效。',
-            style: TextStyle(fontSize: 11, color: Colors.black38, height: 1.4),
+            style: TextStyle(fontSize: 11, color: Colors.black54, height: 1.4),
           ),
           Wrap(
             spacing: 8,
@@ -585,7 +585,8 @@ class _PromptPageState extends State<PromptPage> {
         ? const Color(0xFF17A05A)
         : _link.listening
             ? const Color(0xFF2F6BFF)
-            : Colors.black38;
+            // 未连接时的状态文字：black38 在 12px 下太淡，提到 black54
+            : Colors.black54;
     if (_link.asPlayer && _link.listening) {
       return TextButton(
         onPressed: _link.peerConnected ? _link.disconnectPeer : _link.connectToDialer,
@@ -650,7 +651,7 @@ class _PromptPageState extends State<PromptPage> {
           const SizedBox(height: 8),
           const Text(
             '需要「无障碍」权限来读取通话界面上的计时器，从而判断对方是否已接通。本应用不会读取或上传通话内容。',
-            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
           if (!enabled) ...<Widget>[
             const SizedBox(height: 12),
@@ -688,7 +689,7 @@ class _PromptPageState extends State<PromptPage> {
           const Text(
             '拨号端：本机拨打电话，检测到对方接通后广播播报指令。\n'
             '播放端：放在拨号手机旁边，用它来朗读（建议固定支架、对准麦克风）。',
-            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -736,7 +737,7 @@ class _PromptPageState extends State<PromptPage> {
           const SizedBox(height: 6),
           const Text(
                       '在本机离线把上面的开场白文本合成成 wav（sherpa-onnx 端侧合成，支持 VITS / Kokoro / Matcha，架构按模型目录里的文件自动识别）。合成只在点按钮时跑一次，之后接通播的就是这个 wav。',
-            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
           if (ready) ...<Widget>[
             const SizedBox(height: 8),
@@ -744,7 +745,7 @@ class _PromptPageState extends State<PromptPage> {
               _link.ttsModelDir ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: Colors.black38),
+              style: const TextStyle(fontSize: 11, color: Colors.black54),
             ),
           ],
           const SizedBox(height: 10),
@@ -843,7 +844,7 @@ class _PromptPageState extends State<PromptPage> {
           const SizedBox(height: 6),
           const Text(
             '很多定制系统（小米 HyperOS 等）的系统 TTS 不对第三方应用开放。用一段真人录音播放更稳、更自然，也免去引擎依赖。',
-            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
           if (hasAudio) ...<Widget>[
             const SizedBox(height: 8),
@@ -964,7 +965,7 @@ class _PromptPageState extends State<PromptPage> {
                 ? '当前模型：${_link.asrModelName}'
                 : '把「开场白音频」转成文本需要离线语音识别模型（SenseVoice，约 155MB）。'
                     '模型只在本机运行，录音不会上传。',
-            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
           const SizedBox(height: 10),
           Row(
@@ -990,7 +991,7 @@ class _PromptPageState extends State<PromptPage> {
           const Text(
             '模型包：sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2\n'
             '（tar.bz2 格式，导入后自动识别，无需手动解压）',
-            style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
+            style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black54),
           ),
         ],
       ),
@@ -1101,7 +1102,7 @@ class _PromptPageState extends State<PromptPage> {
           ),
           const Text(
             '播报时数字人会做说话口型，嘴型按语音音量同步。仅本机屏幕可见，对方在通话里看不到画面。',
-            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+            style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
           if (enabled) ...<Widget>[
             const SizedBox(height: 10),
@@ -1139,7 +1140,7 @@ class _PromptPageState extends State<PromptPage> {
               '内置样例为 Live2D 官方 Hiyori（仅测试用）。自备模型请打包成 zip'
               '（内含 *.model3.json 及其贴图/动作文件），在上面「模型与展示」里点'
               '「导入 zip」或「导入文件夹」。',
-              style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black38),
+              style: TextStyle(fontSize: 11, height: 1.6, color: Colors.black54),
             ),
           ],
         ],
@@ -1243,7 +1244,7 @@ class _PromptPageState extends State<PromptPage> {
             on
                 ? '本机同时扮演拨号端与播放端：点「连接拨号端」即可自连，随后拨号能完整走通「接通 → 广播 → 朗读 → 口型」全链路。'
                 : '只有一台手机时打开它，就能模拟出另一台手机，不用真机对测就能验证整条播报链路。',
-            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black45),
+            style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
         ],
       ),
@@ -1334,7 +1335,7 @@ class _PromptPageState extends State<PromptPage> {
                   child: Text(
                     '对着麦克风念一遍开场白，录完自动设为播报音频（会覆盖已有音频）。',
                     style: TextStyle(
-                        fontSize: 11, color: Colors.black45, height: 1.4),
+                        fontSize: 11, color: Colors.black54, height: 1.4),
                   ),
                 ),
                 if (error != null)
@@ -1422,7 +1423,7 @@ class _PromptPageState extends State<PromptPage> {
               padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
                 '点条目直接下载 .tar.bz2，传手机后点「导入模型包」',
-                style: TextStyle(fontSize: 11, color: Colors.black45),
+                style: TextStyle(fontSize: 11, color: Colors.black54),
               ),
             ),
             for (final option in options)
@@ -1486,7 +1487,7 @@ class _PromptPageState extends State<PromptPage> {
           if (logs.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('暂无日志', style: TextStyle(fontSize: 12, color: Colors.black38)),
+              child: Text('暂无日志', style: TextStyle(fontSize: 12, color: Colors.black54)),
             )
           else
             ...logs.take(20).map(
@@ -1497,7 +1498,7 @@ class _PromptPageState extends State<PromptPage> {
                       children: <Widget>[
                         Text(
                           log.timeText,
-                          style: const TextStyle(fontSize: 11, color: Colors.black38),
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
                         ),
                         const SizedBox(width: 8),
                         Expanded(

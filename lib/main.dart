@@ -44,6 +44,20 @@ class CallAssistantApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
+        // 显式指定字体，别靠「Roboto + 中文系统回退」：
+        // Flutter 默认 fontFamily 是 Roboto（不含中文），中文走系统回退时
+        // **字重可能不存在**，Skia 会合成加粗/变细，笔画就发虚。
+        // Windows 的「Microsoft YaHei UI」是针对小字号做过字形优化的 UI 字体，
+        // 比普通的「Microsoft YaHei」在 11~13px 下更清晰。
+        fontFamily: PlatformBridge.isWindows ? 'Microsoft YaHei UI' : null,
+        fontFamilyFallback: const <String>[
+          'Microsoft YaHei UI',
+          'Microsoft YaHei',
+          // macOS / Linux 的回退，避免在那些平台反而变糊
+          'PingFang SC',
+          'Noto Sans CJK SC',
+          'Noto Sans SC',
+        ],
         scaffoldBackgroundColor: const Color(0xFFF4F6FB),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF2F6BFF),
@@ -64,7 +78,7 @@ class CallAssistantApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide.none,
           ),
-          hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+          hintStyle: const TextStyle(color: Colors.black54, fontSize: 14),
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(

@@ -131,7 +131,7 @@ class _DemoPageState extends State<DemoPage> {
                   model,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: Colors.black38),
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
                 ),
                 trailing: model == _link.avatarModel ? const Icon(Icons.check, size: 18) : null,
                 onTap: () => Navigator.of(sheetContext).pop(model),

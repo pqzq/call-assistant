@@ -102,7 +102,7 @@ class _ModelList extends StatelessWidget {
                 model,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: Colors.black38),
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
               ),
               trailing: model == link.avatarModel
                   ? const Icon(Icons.check, size: 18)

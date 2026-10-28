@@ -177,9 +177,9 @@ class _AvatarOffHint extends StatelessWidget {
       children: <Widget>[
         Icon(Icons.face_retouching_natural, size: 40, color: Colors.black.withValues(alpha: 0.18)),
         const SizedBox(height: 10),
-        const Text('数字人未开启', style: TextStyle(fontSize: 13, color: Colors.black38)),
+        const Text('数字人未开启', style: TextStyle(fontSize: 13, color: Colors.black54)),
         const SizedBox(height: 2),
-        const Text('打开上方开关即可显示', style: TextStyle(fontSize: 11, color: Colors.black26)),
+        const Text('打开上方开关即可显示', style: TextStyle(fontSize: 11, color: Colors.black54)),
       ],
     );
   }

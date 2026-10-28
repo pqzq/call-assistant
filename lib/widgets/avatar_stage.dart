@@ -154,7 +154,7 @@ class AvatarBubble extends StatelessWidget {
               if (lead == null)
                 const Text(
                   '拨号后这里会显示客户信息与话术提词',
-                  style: TextStyle(fontSize: 12, color: Colors.black45, height: 1.5),
+                  style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.5),
                 )
               else ...<Widget>[
                 Row(
@@ -174,7 +174,7 @@ class AvatarBubble extends StatelessWidget {
                         fontSize: 11,
                         color: lead.lastCalled == null
                             ? const Color(0xFF17A05A)
-                            : Colors.black38,
+                            : Colors.black54,
                       ),
                     ),
                   ],
@@ -284,7 +284,7 @@ class _StatusLine extends StatelessWidget {
         ),
         if (lead != null) ...<Widget>[
           const SizedBox(width: 6),
-          const Text('·', style: TextStyle(fontSize: 12, color: Colors.black26)),
+          const Text('·', style: TextStyle(fontSize: 12, color: Colors.black54)),
           const SizedBox(width: 6),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 130),
