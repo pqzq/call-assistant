@@ -37,6 +37,14 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, bridgeChannel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAccessibilityEnabled" -> result.success(isAccessibilityEnabled())
+                // 播报状态通知：接通后是否成功通知到播放端
+                "notifyBroadcast" -> {
+                    val title = call.argument<String>("title") ?: "话务助手"
+                    val body = call.argument<String>("body") ?: ""
+                    showBroadcastNotification(title, body)
+                    result.success(true)
+                }
+
                 // 默认设备名 = 系统设置的设备名 + 认证型号，避免 Dart 端拿到 "localhost"
                 // 例：「小米手机 · 2410DPN6CC」；系统没起名字时退化成纯型号
                 "deviceModel" -> {
@@ -265,6 +273,44 @@ class MainActivity : FlutterActivity() {
             enabled.split(':').any { it.equals(expected, ignoreCase = true) }
         } catch (e: Exception) {
             false
+        }
+    }
+
+    /// 播报状态通知（「接通了，但有没有通知到播放端」）
+    ///
+    /// 独立 channel：和前台服务的常驻通知分开，用户可以单独静音/关掉，
+    /// 也不会互相顶掉。用固定 id，后来的覆盖前一条（只关心最新一次结果）。
+    private fun showBroadcastNotification(title: String, body: String) {
+        val channelId = "call_assistant_broadcast"
+        val manager = getSystemService(android.app.NotificationManager::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                "播报状态",
+                android.app.NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "接通后是否成功通知到播放端"
+            }
+            manager.createNotificationChannel(channel)
+        }
+        val builder =
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                android.app.Notification.Builder(this, channelId)
+            } else {
+                @Suppress("DEPRECATION")
+                android.app.Notification.Builder(this)
+            }
+        val notification = builder
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(android.app.Notification.BigTextStyle().bigText(body))
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setAutoCancel(true)
+            .build()
+        try {
+            manager.notify(2001, notification)
+        } catch (_: SecurityException) {
+            // 没给通知权限（Android 13+ 需要运行时授权）
         }
     }
 }

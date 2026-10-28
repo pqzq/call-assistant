@@ -1316,13 +1316,27 @@ class PromptLink extends ChangeNotifier {
         _log('本机同时是播放端，直接本机播报：$label', important: true);
       }
       speak(_script);
+      CallStateWatcher.notifyBroadcast(
+        title: '已本机播报',
+        body: '$label · 本机同时是播放端',
+      );
       return;
     }
 
     if (!_link.isRunning) {
       _log('局域网未就绪，无法通知播放端');
+      CallStateWatcher.notifyBroadcast(
+        title: '播报未发送',
+        body: '$label · 局域网未启动，请检查角色开关',
+      );
       return;
     }
+    // 能否送达：已连接最确定；否则看列表里有没有在线的播放端
+    // （广播是无差别发的，连没连上都会收到 —— 但只有在线设备能收到）
+    final connectedName = _peerConnected ? (_connectedPeerName ?? '对端') : null;
+    final hasOnlinePlayer =
+        discoveredPeers.any((p) => p.role == 'player' || p.role == 'both');
+
     _link.broadcast(LanMessage(
       type: LanMessageType.answered,
       deviceId: _deviceId,
@@ -1332,6 +1346,24 @@ class PromptLink extends ChangeNotifier {
       rowLabel: label,
     ));
     _log('已广播播报指令');
+
+    // 系统通知：接通那一刻人往往不在界面上，锁屏也能确认「到底通知到没有」
+    if (connectedName != null) {
+      CallStateWatcher.notifyBroadcast(
+        title: '已通知播放端',
+        body: '$label → $connectedName',
+      );
+    } else if (hasOnlinePlayer) {
+      CallStateWatcher.notifyBroadcast(
+        title: '已广播（未连接）',
+        body: '$label · 列表里有播放端，但不保证它在播',
+      );
+    } else {
+      CallStateWatcher.notifyBroadcast(
+        title: '播报可能未送达',
+        body: '$label · 没有检测到在线的播放端',
+      );
+    }
   }
 
   /// 手动触发一次播报（测试用）

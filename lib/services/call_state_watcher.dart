@@ -180,6 +180,26 @@ class CallStateWatcher {
   }
 
   /// 设备机型（用作默认设备名），取不到时返回空串
+  /// 发一条「播报状态」系统通知
+  ///
+  /// 接通时人往往在别的界面（或手机放桌上），光看日志不知道有没有成功通知到
+  /// 播放端。发一条通知，锁屏也能看到结果。
+  ///
+  /// 桌面端没有这个通道，调用失败直接忽略（不影响主流程）。
+  static Future<void> notifyBroadcast({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _methodChannel.invokeMethod<bool>('notifyBroadcast', <String, String>{
+        'title': title,
+        'body': body,
+      });
+    } catch (_) {
+      // 忽略：通知失败不该影响播报
+    }
+  }
+
   /// 设备默认名
   ///
   /// - Android：原生 `deviceModel`（系统设备名 · 认证型号，如「小米手机 · 2410DPN6CC」）
