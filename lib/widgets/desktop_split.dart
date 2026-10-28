@@ -162,49 +162,89 @@ class _AvatarPanel extends StatelessWidget {
     );
   }
 
-  /// 面板顶部：标题 + 开关 + 后端/模型信息（悬浮玻璃块）
+  /// 面板顶部 = ① 标题栏（56，与右栏 AppBar 等高）+ ② 悬浮玻璃块（98）
   ///
-  /// 高度**固定** 98，与右栏快捷条完全一致（右栏：8 外 + 6 + 26 + 6 + 40 + 6 = 92，
-  /// 取 98 留余量），两栏顶部边界严格对齐成一条横线。
+  /// 右栏是带 AppBar 的整页（HomePage / PromptPage），左栏没有，所以必须补一个
+  /// 等高的标题栏才能让两栏顶部边界对齐。加上玻璃块外部的 8px 上边距，
+  /// 左栏顶部总高 = 56 + 8 + 98，与右栏（AppBar 56 + 快捷条外部 8 + 98）一致。
   Widget _panelHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: SizedBox(
-        height: 98,
-        child: GlassSurface(
-          borderRadius: 20,
-          blur: 24,
-          opacity: 0.82,
-          padding: const EdgeInsets.fromLTRB(14, 10, 8, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: <Widget>[
-              Row(
+    return Column(
+      children: <Widget>[
+        // ① 标题栏：和 AppBar 同高同风格
+        SizedBox(
+          height: 56,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: const <Widget>[
+                Icon(Icons.face_retouching_natural,
+                    size: 18, color: Color(0xFF2F6BFF)),
+                SizedBox(width: 8),
+                Text('数字人',
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+        // ② 玻璃块：固定 98，与右栏快捷条等高
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: SizedBox(
+            height: 98,
+            child: GlassSurface(
+              borderRadius: 20,
+              blur: 24,
+              // 0.94：既保留玻璃感，又保证里面的字看得清（0.82 时内容会透上来）
+              opacity: 0.94,
+              padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: <Widget>[
-                  const Icon(Icons.face_retouching_natural,
-                      size: 18, color: Color(0xFF2F6BFF)),
-                  const SizedBox(width: 8),
-                  const Text('数字人',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  Switch(
-                    value: link.avatarEnabled,
-                    onChanged: (v) => link.setAvatarEnabled(v),
+                  // 开关行：图标 19 + 11px 小字，与底栏 _ActionArea 同一视觉语言
+                  Row(
+                    children: <Widget>[
+                      Icon(
+                        link.avatarEnabled
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                        size: 19,
+                        color: link.avatarEnabled
+                            ? const Color(0xFF2F6BFF)
+                            : const Color(0xFFB6BECC),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        link.avatarEnabled ? '已显示' : '已隐藏',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: link.avatarEnabled
+                              ? const Color(0xFF2F6BFF)
+                              : const Color(0xFFB6BECC),
+                        ),
+                      ),
+                      const Spacer(),
+                      Switch(
+                        value: link.avatarEnabled,
+                        onChanged: (v) => link.setAvatarEnabled(v),
+                      ),
+                    ],
+                  ),
+                  // 第二行：渲染后端 · 当前模型
+                  Text(
+                    '${link.avatarBackend.displayName} · ${link.avatarModel}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
                   ),
                 ],
               ),
-              // 第二行：渲染后端 + 当前模型
-              Text(
-                '${link.avatarBackend.displayName} · ${link.avatarModel}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: Colors.black54),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -363,8 +363,14 @@ class _RecordListPageState extends State<RecordListPage> {
     final rows = _visibleRows();
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: Text(sheet.name.isEmpty ? '号码列表' : sheet.name),
+        // 与其它页面统一：半透明白 + 无阴影
+        backgroundColor: Colors.white.withValues(alpha: 0.92),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         actions: <Widget>[
           // 双机联动快捷跳转（放在排版按钮左边）
           IconButton(

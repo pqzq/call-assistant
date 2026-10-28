@@ -150,10 +150,12 @@ class _PromptPageState extends State<PromptPage> {
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: const Text('双机联动播报'),
-        // 半透明白 + 无阴影：让底部内容透上来一点，接近玻璃质感
-        backgroundColor: Colors.white.withValues(alpha: 0.72),
+        // 半透明白 + 无阴影：让底部内容透上来一点，接近玻璃质感。
+        // 0.92 而不是 0.72：太透时下面滚上来的卡片会和标题叠在一起
+        backgroundColor: Colors.white.withValues(alpha: 0.92),
         elevation: 0,
         scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         actions: <Widget>[
           PopupMenuButton<String>(
             tooltip: '数字人模型',
@@ -473,7 +475,8 @@ class _PromptPageState extends State<PromptPage> {
         child: GlassSurface(
           borderRadius: 20,
           blur: 24,
-          opacity: 0.82,
+          // 0.94：既保留玻璃感，又保证里面的按钮/文字看得清
+          opacity: 0.94,
           padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
           child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -107,7 +107,8 @@ class GlassNavBar extends StatelessWidget {
       margin: margin,
       borderRadius: 24,
       blur: 24,
-      opacity: 0.82,
+      // 0.90：内容滚到下面时也能看清（0.82 时文字会透上来叠在一起）
+      opacity: 0.90,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: child,
     );

@@ -196,8 +196,15 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final sheet = _currentSheet;
     return Scaffold(
+      // 与左栏渐变的中间色一致：两栏底色看不出分界
+      backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
         title: const Text('话务助手'),
+        // 半透明白 + 无阴影：和播报页顶部保持同一种玻璃质感
+        backgroundColor: Colors.white.withValues(alpha: 0.92),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         actions: <Widget>[
           IconButton(
             tooltip: '双机联动播报',
