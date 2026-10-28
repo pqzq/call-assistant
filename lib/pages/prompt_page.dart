@@ -361,7 +361,7 @@ class _PromptPageState extends State<PromptPage> {
               _modelButton('导入文件夹', Icons.folder_copy_outlined, _importModelFromFolder),
               if (_demoSupported)
               _modelButton('演示模式', Icons.fullscreen, _openDemo),
-              _modelButton('复位位置', Icons.my_location, _link.resetAvatarPosition),
+
             ],
           ),
         ],
@@ -486,7 +486,16 @@ class _PromptPageState extends State<PromptPage> {
             children: <Widget>[
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _link.triggerManually,
+                  onPressed: () {
+              // 没有开场白音频时播报是「静默」的（TTS / 录音 / 导入都写到
+              // 同一个文件，所以 hasAudio 就是有没有可播内容的唯一判据）
+              if (!_link.hasAudio) {
+                // 文案别太长：Toast 宽度有限，超过两行会被裁掉
+                AppToast.error(context, '请先添加开场白音频（选择 / 生成 / 录制）');
+                return;
+              }
+              _link.triggerManually();
+            },
                   icon: const Icon(Icons.campaign_outlined, size: 18),
                   label: const Text('立即播报'),
                   style: FilledButton.styleFrom(
@@ -899,12 +908,32 @@ class _PromptPageState extends State<PromptPage> {
               label: const Text('用麦克风录制'),
             ),
           ),
+          // 已选音频：文件名 + 紧跟其后的 × 清除按钮（不再占一整行文字按钮）
           if (hasAudio)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _link.clearAudio,
-                child: const Text('清除音频', style: TextStyle(fontSize: 12)),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.audiotrack, size: 14, color: Colors.black45),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      _audioFileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _link.clearAudio,
+                    icon: const Icon(Icons.close, size: 16),
+                    color: Colors.black45,
+                    tooltip: '清除音频',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                  ),
+                ],
               ),
             ),
           const SizedBox(height: 10),
@@ -1123,15 +1152,6 @@ class _PromptPageState extends State<PromptPage> {
                       style: TextStyle(fontSize: 12, height: 1.5, color: Color(0xFF2F6BFF)),
                     ),
                   ),
-                  TextButton(
-                    onPressed: _link.resetAvatarPosition,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size(0, 30),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text('复位', style: TextStyle(fontSize: 12)),
-                  ),
                 ],
               ),
             ),
@@ -1261,6 +1281,14 @@ class _PromptPageState extends State<PromptPage> {
       descOf: (o) => '${o.languages} · ${o.note}',
       urlOf: (o) => o.url,
     );
+  }
+
+  /// 当前开场白音频的文件名（显示在「已设置」下面，后面跟 × 清除按钮）
+  String get _audioFileName {
+    final path = _link.audioPath;
+    if (path == null || path.isEmpty) return '';
+    final parts = path.split(RegExp(r'[/\\]'));
+    return parts.isEmpty ? path : parts.last;
   }
 
   /// 用麦克风录一段开场白（录完直接设为播报音频）

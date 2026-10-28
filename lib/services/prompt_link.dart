@@ -777,13 +777,6 @@ class PromptLink extends ChangeNotifier {
     }
   }
 
-  /// 位置复位到默认（右上）
-  Future<void> resetAvatarPosition() async {
-    await setAvatarPosition(defaultAvatarX, defaultAvatarY);
-    notifyListeners();
-    _log('数字人位置已复位');
-  }
-
   /// 导入用户自备模型（zip 内含 *.model3.json）
   Future<bool> importAvatarModel() async {
     try {
