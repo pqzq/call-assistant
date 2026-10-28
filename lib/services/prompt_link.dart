@@ -1298,6 +1298,21 @@ class PromptLink extends ChangeNotifier {
   }
 
   void _broadcastAnswered(String label) {
+    // 本机同时是播放端 -> **直接本机播，不再广播**
+    //
+    // 以前是「广播 + 本机也播」，同一 Wi-Fi 下如果还有别的播放端，
+    // 两边会同时响（有回声/错位）。想用另一台播时，把本机的
+    // 「播放端」关掉即可 —— 开着它就表示「我想用本机念」。
+    if (_asPlayer) {
+      if (!_link.isRunning) {
+        _log('局域网未就绪，但本机是播放端，直接本机播报', important: true);
+      } else {
+        _log('本机同时是播放端，直接本机播报：$label', important: true);
+      }
+      speak(_script);
+      return;
+    }
+
     if (!_link.isRunning) {
       _log('局域网未就绪，无法通知播放端');
       return;
@@ -1311,10 +1326,6 @@ class PromptLink extends ChangeNotifier {
       rowLabel: label,
     ));
     _log('已广播播报指令');
-    if (_asPlayer) {
-      // 同一台手机也在播放角色时，本地兜底朗读
-      speak(_script);
-    }
   }
 
   /// 手动触发一次播报（测试用）

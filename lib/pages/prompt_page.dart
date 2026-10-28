@@ -595,20 +595,25 @@ class _PromptPageState extends State<PromptPage> {
 
   /// 连接状态 + 手动连接按钮
   Widget _buildConnChip() {
-    final text = _link.peerConnected
-        ? '已连接 ${_link.connectedPeerName ?? '对端'}'
-        : _link.seeking
-            ? '正在搜索局域网设备…'
-            : _link.listening
-                ? (_link.asPlayer ? '等待手机拨号端连接' : '等待播放端连接')
-                : '局域网未启动';
-    final color = _link.peerConnected
+    // 同时开两个角色 = 本机自己播，不需要连任何设备
+    final both = _link.asPlayer && _link.autoTrigger;
+    final text = both
+        ? '本机双角色：无需连接'
+        : _link.peerConnected
+            ? '已连接 ${_link.connectedPeerName ?? '对端'}'
+            : _link.seeking
+                ? '正在搜索局域网设备…'
+                : _link.listening
+                    ? (_link.asPlayer ? '等待手机拨号端连接' : '等待播放端连接')
+                    : '局域网未启动';
+    final color = both || _link.peerConnected
         ? const Color(0xFF17A05A)
         : _link.listening
             ? const Color(0xFF2F6BFF)
             // 未连接时的状态文字：black38 在 12px 下太淡，提到 black54
             : Colors.black54;
-    if (_link.asPlayer && _link.listening) {
+    // 双角色时不显示「扫描设备」：本机闭环，再去连别人反而会重复播报
+    if (_link.asPlayer && !both && _link.listening) {
       return TextButton(
         // 不再「一键自动连第一个」：同网段可能有多台设备在跑本应用，
         // 点开列表由用户挑（设备来自 lan_link 的 15 秒心跳筛选）
@@ -1253,7 +1258,9 @@ class _PromptPageState extends State<PromptPage> {
           ),
           Text(
             on
-                ? '本机同时扮演拨号端与播放端：点「连接拨号端」即可自连，随后拨号能完整走通「接通 → 广播 → 朗读 → 口型」全链路。'
+                ? '本机同时扮演拨号端与播放端：拨号接通后**直接本机播报**，不用连接任何设备，'
+                    '就能走通「接通 → 播报 → 口型」全链路。'
+                    '（想用另一台手机播时，把本机的「播放端」关掉即可）'
                 : '只有一台手机时打开它，就能模拟出另一台手机，不用真机对测就能验证整条播报链路。',
             style: const TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
           ),
