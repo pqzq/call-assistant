@@ -5,6 +5,9 @@ analyzer:
     - build/**
     - android/**
     - windows/**
+    # 本地插件（含 example 示例工程）：不是项目本体，升级 Flutter 后
+    # 新的分析器会扫到 plugins/**/example/lib，报一堆 flutter_live2d 示例的错
+    - plugins/**
 
 linter:
   rules:
