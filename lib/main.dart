@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import 'pages/home_page.dart';
 import 'services/app_navigator.dart';
@@ -64,14 +65,18 @@ class CallAssistantApp extends StatelessWidget {
         // 与左右两栏的底色一致（左栏是渐变中间色，右栏各页也用这个值）
         scaffoldBackgroundColor: const Color(0xFFF1F5FF),
         appBarTheme: const AppBarTheme(
-          // 全局透明：直接透出页面底色（左右两栏是同一片底，看不出分界）
-          backgroundColor: Colors.transparent,
+          // 淡白半透明（不是纯透明）：完全透明时状态栏会和内容糊在一起，
+          // 0.45 的白既能透出底色、又能把标题区域和内容分开
+          backgroundColor: Color(0x73FFFFFF),
           surfaceTintColor: Colors.transparent,
           // 图标 / 操作按钮用主题蓝
           foregroundColor: Color(0xFF2F6BFF),
           elevation: 0,
           scrolledUnderElevation: 0,
           centerTitle: false,
+          // 状态栏图标用**深色**：背景是浅色，白色图标会看不清。
+          // （AppBar 背景透明/半透明时它没法自己判断，必须显式指定）
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
           // ⚠️ 刻意不设 titleTextStyle：
           // 它是**新建**的 TextStyle，不继承 ThemeData.fontFamily，中文会回退到
           // Roboto 的 fallback，字重看着和左栏不一致。
