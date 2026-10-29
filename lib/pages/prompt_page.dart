@@ -17,6 +17,7 @@ import '../widgets/glass_surface.dart';
 import '../widgets/confirm_dialog.dart';
 import 'demo_page.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/page_title.dart';
 import '../widgets/desktop_body.dart';
 
 /// 双机联动配置：A 手机检测接通，B 手机朗读开场白
@@ -149,22 +150,9 @@ class _PromptPageState extends State<PromptPage> {
       // 与左栏渐变的中间色一致：两栏底色看不出分界
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
-        title: const Text('双机联动播报'),
-        // 完全透明：直接透出 Scaffold 底色（和左栏是同一片底，看不出分界）。
-        // 主题把 AppBar 的 foregroundColor / titleTextStyle 都设成了白色（配蓝底用的），
-        // 所以文字和图标颜色必须显式指定，否则透明底上白字看不见。
-        backgroundColor: Colors.transparent,
-        // 图标用主题蓝
-        foregroundColor: const Color(0xFF2F6BFF),
-        // 标题：与左栏标题一致（15 / w700）
-        titleTextStyle: const TextStyle(
-          color: Color(0xFF1B2A44),
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-        ),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
+        // 与左栏「数字人」用同一个样式常量（15 / w700，且继承主题字体）
+        title: const Text('双机联动播报', style: kPageTitleStyle),
+        // 透明底 / 蓝色图标 / 无阴影都来自全局 appBarTheme，这里不再重复
         actions: <Widget>[
           PopupMenuButton<String>(
             tooltip: '数字人模型',

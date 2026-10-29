@@ -15,6 +15,7 @@ import '../widgets/glass_surface.dart';
 import 'prompt_page.dart';
 import 'record_list_page.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/page_title.dart';
 import '../widgets/desktop_body.dart';
 
 class HomePage extends StatefulWidget {
@@ -199,19 +200,9 @@ class _HomePageState extends State<HomePage> {
       // 与左栏渐变的中间色一致：两栏底色看不出分界
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
-        title: const Text('话务助手'),
-        // 与左栏标题栏一致：**完全透明**（透出 Scaffold 底色）、图标主题蓝、
-        // 标题 15 / w700（主题里那套白底白字要显式覆盖）
-        backgroundColor: Colors.transparent,
-        foregroundColor: const Color(0xFF2F6BFF),
-        titleTextStyle: const TextStyle(
-          color: Color(0xFF1B2A44),
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-        ),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
+        // 与左栏「数字人」同一个样式常量
+        title: const Text('话务助手', style: kPageTitleStyle),
+        // 透明底 / 蓝色图标 / 无阴影由全局 appBarTheme 提供
         actions: <Widget>[
           IconButton(
             tooltip: '双机联动播报',

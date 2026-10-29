@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'glass_surface.dart';
+import 'page_title.dart';
 
 import '../services/prompt_link.dart';
 import 'app_toast.dart';
@@ -176,8 +177,7 @@ class _AvatarPanel extends StatelessWidget {
             const Icon(Icons.face_retouching_natural,
                 size: 18, color: Color(0xFF2F6BFF)),
             const SizedBox(width: 8),
-            const Text('数字人',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const Text('数字人', style: kPageTitleStyle),
             const SizedBox(width: 8),
             // 当前模型：小字灰，占剩余宽度，长了省略
             Expanded(

@@ -61,17 +61,22 @@ class CallAssistantApp extends StatelessWidget {
           'Noto Sans CJK SC',
           'Noto Sans SC',
         ],
-        scaffoldBackgroundColor: const Color(0xFFF4F6FB),
+        // 与左右两栏的底色一致（左栏是渐变中间色，右栏各页也用这个值）
+        scaffoldBackgroundColor: const Color(0xFFF1F5FF),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF2F6BFF),
-          foregroundColor: Colors.white,
+          // 全局透明：直接透出页面底色（左右两栏是同一片底，看不出分界）
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          // 图标 / 操作按钮用主题蓝
+          foregroundColor: Color(0xFF2F6BFF),
           elevation: 0,
+          scrolledUnderElevation: 0,
           centerTitle: false,
-          titleTextStyle: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+          // ⚠️ 刻意不设 titleTextStyle：
+          // 它是**新建**的 TextStyle，不继承 ThemeData.fontFamily，中文会回退到
+          // Roboto 的 fallback，字重看着和左栏不一致。
+          // 不设则用 textTheme.titleLarge（带主题字体），各页再用
+          // kPageTitleStyle 覆盖字号/字重/颜色。
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,

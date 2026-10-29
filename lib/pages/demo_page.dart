@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/page_title.dart';
+
 import '../services/prompt_link.dart';
 import '../widgets/live2d_avatar.dart';
 import '../widgets/app_toast.dart';
@@ -151,7 +153,7 @@ class _DemoPageState extends State<DemoPage> {
       // 与「双机联动播报」页保持同一背景色
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('数字人演示'),
+        title: const Text('数字人演示', style: kPageTitleStyle),
         actions: <Widget>[
           IconButton(
             tooltip: '切换模型',

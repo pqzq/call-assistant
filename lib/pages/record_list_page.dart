@@ -14,6 +14,7 @@ import '../services/prompt_link.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/record_card.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/page_title.dart';
 import '../widgets/desktop_body.dart';
 import '../widgets/confirm_dialog.dart';
 import 'prompt_page.dart';
@@ -365,18 +366,11 @@ class _RecordListPageState extends State<RecordListPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5FF),
       appBar: AppBar(
-        title: Text(sheet.name.isEmpty ? '号码列表' : sheet.name),
-        // 与其它页面统一：透明底（透出 Scaffold 底色）、图标主题蓝、标题 15 / w700
-        backgroundColor: Colors.transparent,
-        foregroundColor: const Color(0xFF2F6BFF),
-        titleTextStyle: const TextStyle(
-          color: Color(0xFF1B2A44),
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
+        title: Text(
+          sheet.name.isEmpty ? '号码列表' : sheet.name,
+          style: kPageTitleStyle,
         ),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
+        // 透明底 / 蓝色图标 / 无阴影由全局 appBarTheme 提供
         actions: <Widget>[
           // 双机联动快捷跳转（放在排版按钮左边）
           IconButton(
