@@ -1267,7 +1267,14 @@ class _PromptPageState extends State<PromptPage> {
             controller: _scriptController,
             maxLines: 4,
             minLines: 3,
-            decoration: const InputDecoration(hintText: '输入接通后要朗读的固定文本'),
+            decoration: const InputDecoration(
+              hintText: '输入接通后要朗读的固定文本',
+              // 说明拆句规则：提词器的「上一步 / 下一步」按这些标点分步，
+              // 整段不打标点的话只会算一句，看着就像「不支持多句」
+              helperText: '用「。！？」或换行分成多句，提词器的「上一步 / 下一步」才能逐句切换',
+              helperMaxLines: 2,
+              helperStyle: TextStyle(fontSize: 11, height: 1.4),
+            ),
             onTapOutside: (_) => _link.setScript(_scriptController.text),
             onSubmitted: (v) => _link.setScript(v),
           ),
