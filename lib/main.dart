@@ -65,9 +65,10 @@ class CallAssistantApp extends StatelessWidget {
         // 与左右两栏的底色一致（左栏是渐变中间色，右栏各页也用这个值）
         scaffoldBackgroundColor: const Color(0xFFF1F5FF),
         appBarTheme: const AppBarTheme(
-          // 淡白半透明（不是纯透明）：完全透明时状态栏会和内容糊在一起，
-          // 0.45 的白既能透出底色、又能把标题区域和内容分开
-          backgroundColor: Color(0x73FFFFFF),
+          // 直接用页面底色（不透明的 0xFFF1F5FF，与 scaffoldBackgroundColor 同值）：
+          // 视觉上和「透出底色」一样完全融入页面，又不透明 ——
+          // 状态栏后面有确定的浅色打底，配合下面的深色图标才看得清
+          backgroundColor: Color(0xFFF1F5FF),
           surfaceTintColor: Colors.transparent,
           // 图标 / 操作按钮用主题蓝
           foregroundColor: Color(0xFF2F6BFF),
@@ -75,7 +76,7 @@ class CallAssistantApp extends StatelessWidget {
           scrolledUnderElevation: 0,
           centerTitle: false,
           // 状态栏图标用**深色**：背景是浅色，白色图标会看不清。
-          // （AppBar 背景透明/半透明时它没法自己判断，必须显式指定）
+          // （AppBar 背景与页面同色时它没法自己判断，必须显式指定）
           systemOverlayStyle: SystemUiOverlayStyle.dark,
           // ⚠️ 刻意不设 titleTextStyle：
           // 它是**新建**的 TextStyle，不继承 ThemeData.fontFamily，中文会回退到
