@@ -57,7 +57,7 @@ jobs:
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.47.8'
           channel: stable
           cache: true
 
@@ -65,6 +65,8 @@ jobs:
         # 仓库里默认配置了国内镜像（本地网络需要）；GitHub runner 在海外，官方源更快更全
         run: |
           sed -i 's|https://mirrors.cloud.tencent.com/gradle/|https://services.gradle.org/distributions/|' \
+            android/gradle/wrapper/gradle-wrapper.properties
+          sed -i 's|https://mirrors.huaweicloud.com/gradle/|https://services.gradle.org/distributions/|' \
             android/gradle/wrapper/gradle-wrapper.properties
           sed -i '/mirrors\.cloud\.tencent\.com\/nexus\/repository\/maven-public/d' \
             android/settings.gradle.kts android/build.gradle.kts
@@ -145,13 +147,15 @@ jobs:
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.47.8'
           channel: stable
           cache: true
 
       - name: 切换到官方依赖源
         run: |
           sed -i 's|https://mirrors.cloud.tencent.com/gradle/|https://services.gradle.org/distributions/|' \
+            android/gradle/wrapper/gradle-wrapper.properties
+          sed -i 's|https://mirrors.huaweicloud.com/gradle/|https://services.gradle.org/distributions/|' \
             android/gradle/wrapper/gradle-wrapper.properties
           sed -i '/mirrors\.cloud\.tencent\.com\/nexus\/repository\/maven-public/d' \
             android/settings.gradle.kts android/build.gradle.kts
@@ -256,7 +260,7 @@ jobs:
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.47.8'
           channel: stable
           cache: true
 
