@@ -100,6 +100,62 @@ class TtsSynthesizer {
         }
       }
 
+      // espeak-ng-data：Kokoro / VITS / Matcha 做音素化都要它。
+      // 有的包放在模型目录下，有的多套一层子目录 —— 只查第一层会漏，
+      // 漏了就是空串传给 native -> Validate() exit(-1) -> 闪退。
+      String dataDir = '';
+      final localData = Directory('${dir.path}/espeak-ng-data');
+      if (localData.existsSync()) {
+        dataDir = localData.path;
+      } else {
+        for (final sub in entries.whereType<Directory>()) {
+          final nested = Directory('${sub.path}/espeak-ng-data');
+          if (nested.existsSync()) {
+            dataDir = nested.path;
+            break;
+          }
+        }
+      }
+
+      // ⚠️ lang 决定 sherpa 内部拼哪个 lexicon 文件（lexicon-<lang>.txt）。
+      // 空串会拼成 lexicon-.txt -> fopen 失败 -> 空指针解引用 -> SIGSEGV（闪退）。
+      // 所以必须有确定值：lang.txt 优先，没有就按本项目的场景默认中文。
+      if (lang.isEmpty) lang = 'zh';
+
+      // lexicon：Kokoro 多语言包是 lexicon-zh.txt / lexicon-us-en.txt 这类命名，
+      // 只认 lexicon.txt 会漏。按 lang 精确匹配优先，再退到任意 lexicon-*.txt。
+      String lexicon = '';
+      final plainLexicon = File('${dir.path}/lexicon.txt');
+      if (plainLexicon.existsSync()) {
+        lexicon = plainLexicon.path;
+      } else {
+        // ① lexicon-<lang>.txt（zh / ja / ko 这种）
+        final exact = File('${dir.path}/lexicon-$lang.txt');
+        if (exact.existsSync()) {
+          lexicon = exact.path;
+        }
+        // ② lexicon-<地区>-<lang>.txt（en 是 lexicon-us-en.txt / lexicon-gb-en.txt）
+        if (lexicon.isEmpty) {
+          for (final f in files) {
+            final n = _baseName(f.path).toLowerCase();
+            if (n.startsWith('lexicon') && n.endsWith('-$lang.txt')) {
+              lexicon = f.path;
+              break;
+            }
+          }
+        }
+        // ③ 兜底：任意 lexicon*.txt（总比空串强）
+        if (lexicon.isEmpty) {
+          for (final f in files) {
+            final n = _baseName(f.path).toLowerCase();
+            if (n.startsWith('lexicon') && n.endsWith('.txt')) {
+              lexicon = f.path;
+              break;
+            }
+          }
+        }
+      }
+
       _modelDir = modelFile.parent.path;
       _modelConfig = _ModelFiles(
         arch: arch,
@@ -107,10 +163,8 @@ class TtsSynthesizer {
         vocoder: vocoderFile?.path ?? '',
         voices: voices,
         tokens: tokens.first.path,
-        dataDir: Directory('${dir.path}/espeak-ng-data').existsSync()
-            ? '${dir.path}/espeak-ng-data'
-            : '',
-        lexicon: File('${dir.path}/lexicon.txt').existsSync() ? '${dir.path}/lexicon.txt' : '',
+        dataDir: dataDir,
+        lexicon: lexicon,
         dictDir: dictDir,
         lang: lang,
       );
@@ -319,6 +373,10 @@ class TtsSynthesizer {
         .toList(growable: false);
   }
 
+  /// 最近一次失败原因（让界面能显示「具体缺什么」，而不是笼统的合成失败）
+  String? _lastError;
+  String? get lastError => _lastError;
+
   Future<sherpa.OfflineTts?> _ensureTts() async {
     if (_tts != null) return _tts;
 
@@ -326,7 +384,30 @@ class TtsSynthesizer {
       await detectModel();
     }
     final files = _modelConfig;
-    if (files == null) return null;
+    if (files == null) {
+      _lastError = '没有识别到可用模型（目录里缺少 model.onnx 或 tokens.txt）';
+      return null;
+    }
+
+    // ⚠️ 关键：sherpa-onnx 的 xxxModelConfig::Validate() 用 **exit(-1)** 报错。
+    // 在 Android 上 exit(-1) 就是「进程被 kill」，用户看到的是**闪退**，
+    // Dart 层的 try/catch 根本拦不住。
+    // 而 OfflineTtsKokoroModelConfig 的所有字符串字段默认都是空串 ''，
+    // detectModel 找不到对应文件时就传空串进去 -> Validate 失败 -> exit(-1)。
+    // 所以在调 native 之前必须自己校验，缺字段就直接返回 null。
+    if (files.arch == TtsArch.kokoro) {
+      final missing = <String>[
+        if (files.model.isEmpty) 'model.onnx',
+        if (files.voices.isEmpty) 'voices.bin',
+        if (files.tokens.isEmpty) 'tokens.txt',
+        if (files.dataDir.isEmpty) 'espeak-ng-data/',
+      ];
+      if (missing.isNotEmpty) {
+        _lastError = 'Kokoro 模型缺少 ${missing.join('、')}'
+            '（模型目录：${_modelDir ?? '未知'}）';
+        return null;
+      }
+    }
 
     if (!_bindingsReady) {
       await sherpa.initBindingsAsync();
@@ -390,6 +471,7 @@ class TtsSynthesizer {
     );
 
     _tts = sherpa.OfflineTts(config);
+    _lastError = null;
     return _tts;
   }
 

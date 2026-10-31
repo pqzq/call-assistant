@@ -553,7 +553,12 @@ class PromptLink extends ChangeNotifier {
     try {
       final result = await TtsSynthesizer.instance.synthesize(text: _script, speed: _rate <= 0 ? 1.0 : _rate / 0.5);
       if (result == null) {
-        _log('合成失败，请检查模型文件是否完整');
+        // 具体缺什么由 TtsSynthesizer 给出（比如 Kokoro 缺 espeak-ng-data）
+        final why = TtsSynthesizer.instance.lastError;
+        _log(
+          why == null ? '合成失败，请检查模型文件是否完整' : '合成失败：$why',
+          important: true,
+        );
         return false;
       }
       final cost = DateTime.now().difference(started).inMilliseconds;
