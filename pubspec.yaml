@@ -44,8 +44,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    # Live2D 数字人：web 运行时 + 8 个 Live2D 官方样例模型
+    # Live2D 数字人：web 运行时 + 3 个 Live2D 官方样例模型（haru / hiyori / mao）
     # （样例模型仅限测试/非商业用途，商用请替换成自有授权模型）
+    #
+    # ⚠️ 这里只能声明**实际存在的目录**：pubspec 声明了但目录不存在时
+    # `flutter build` 会报 "unable to find directory entry"，出包失败。
+    # mark / natori / rice / wanko 已移除（模型文件已删）。
+    # 模型列表是运行时从 AssetManifest 扫出来的，删掉声明后 UI 自动不再列出。
     - assets/live2d/
     - assets/live2d/haru/
     - assets/live2d/haru/Haru.2048/
@@ -58,16 +63,3 @@ flutter:
     - assets/live2d/mao/Mao.2048/
     - assets/live2d/mao/motions/
     - assets/live2d/mao/expressions/
-    - assets/live2d/mark/
-    - assets/live2d/mark/Mark.2048/
-    - assets/live2d/mark/motions/
-    - assets/live2d/natori/
-    - assets/live2d/natori/Natori.2048/
-    - assets/live2d/natori/motions/
-    - assets/live2d/natori/exp/
-    - assets/live2d/rice/
-    - assets/live2d/rice/Rice.2048/
-    - assets/live2d/rice/motions/
-    - assets/live2d/wanko/
-    - assets/live2d/wanko/Wanko.1024/
-    - assets/live2d/wanko/motions/

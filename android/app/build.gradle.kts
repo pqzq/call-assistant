@@ -62,6 +62,27 @@ android {
             }
         }
     }
+
+    // Live2D 的模型 / 贴图资源不做 APK 压缩。
+    //
+    // Cubism 通过 AAssetManager 读这些文件：压缩后必须先解压到内存，
+    // 大文件（.moc3 400KB+、贴图 2MB+）既费时又吃内存；某些 ROM 上
+    // openFd()（走 mmap）对压缩资源还会直接失败 —— 表现为
+    // 「模型加载成功但贴图异常 / 白模」。
+    //
+    // 代价是 APK 大约多 0.5MB（这些文件本来就难压缩，png 已默认不压）。
+    androidResources {
+        noCompress += listOf(
+            "moc3",
+            "model3.json",
+            "motion3.json",
+            "physics3.json",
+            "exp3.json",
+            "pose3.json",
+            "cdi3.json",
+            "png",
+        )
+    }
 }
 
 kotlin {
