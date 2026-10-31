@@ -2,16 +2,10 @@ name: 构建与发布
 
 on:
   push:
-    branches: [main]
+    # **只有打 v* 标签才触发**：日常 push / PR 一律不跑，
+    # Actions 分钟数（私有仓库按分钟计费）只花在真正发版上。
+    # 平时靠本地 flutter analyze / flutter test 把关。
     tags: ['v*']
-  pull_request:
-    branches: [main]
-    # 纯文档改动不跑 CI（Actions 分钟数按私有仓库计费，能省则省）
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
-  workflow_dispatch:
 
 # 同一个分支只保留最新一次运行
 concurrency:
@@ -20,11 +14,13 @@ concurrency:
 
 jobs:
   # ============================================================
-  # CI：PR / 推送到 main 时跑（打标签时跳过，避免重复构建）
+  # 质量门禁：打 tag 时**先**跑（analyze + test，约 3~4 分钟）
+  #
+  # 构建 APK / Windows 各要十几分钟，先花这几分钟能在构建之前拦下
+  # 编译错误和测试失败。release-* 两个 job 都 needs 它。
   # ============================================================
   ci:
     name: 分析 · 测试
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
@@ -64,7 +60,8 @@ jobs:
   # ============================================================
   release-android:
     name: 发布 Android APK
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    # ci（analyze + test）通过后才开始构建，免得构建到一半才发现编译错误
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
@@ -192,7 +189,7 @@ jobs:
   # ============================================================
   release-windows:
     name: 发布 Windows 版
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: ci
     runs-on: windows-latest
     steps:
       - name: 检出代码
@@ -273,7 +270,6 @@ jobs:
   publish:
     name: 创建 GitHub Release
     needs: [release-android, release-windows]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
