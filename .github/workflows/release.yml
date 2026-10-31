@@ -6,6 +6,11 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+    # 纯文档改动不跑 CI（Actions 分钟数按私有仓库计费，能省则省）
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
   workflow_dispatch:
 
 # 同一个分支只保留最新一次运行
@@ -18,34 +23,12 @@ jobs:
   # CI：PR / 推送到 main 时跑（打标签时跳过，避免重复构建）
   # ============================================================
   ci:
-    name: 分析 · 测试 · Debug APK
+    name: 分析 · 测试
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-
-      - name: 释放磁盘空间
-        # runner 预装的组件占了 30GB+；NDK 不能删（flutter_live2d 的原生代码需要），
-        # 只清本项目确定用不到的大件
-        run: |
-          echo "===== 清理前 ====="
-          df -h /
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /opt/ghc /usr/local/.ghcup
-          sudo rm -rf /usr/local/share/chromium
-          sudo docker image prune -af >/dev/null 2>&1 || true
-          sudo apt-get clean -qq >/dev/null 2>&1 || true
-          echo "===== 清理后 ====="
-          df -h /
-
-      - name: 安装 Android SDK 组件（CMake / NDK）
-        # flutter_live2d 用 Cubism Native SDK，需要 CMake 3.10.2 + NDK 27.2
-        run: |
-          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --install \
-            "cmake;3.10.2.4988404" "ndk;27.2.12479018"
 
       - name: 配置 JDK 21（与本地 flutter config --jdk-dir 一致）
         uses: actions/setup-java@v4
@@ -61,23 +44,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: 切换到官方依赖源
-        # 仓库里默认配置了国内镜像（本地网络需要）；GitHub runner 在海外，官方源更快更全
-        run: |
-          sed -i 's|https://mirrors.cloud.tencent.com/gradle/|https://services.gradle.org/distributions/|' \
-            android/gradle/wrapper/gradle-wrapper.properties
-          sed -i 's|https://mirrors.huaweicloud.com/gradle/|https://services.gradle.org/distributions/|' \
-            android/gradle/wrapper/gradle-wrapper.properties
-          sed -i '/mirrors\.cloud\.tencent\.com\/nexus\/repository\/maven-public/d' \
-            android/settings.gradle.kts android/build.gradle.kts
-          sed -i '/repo\.huaweicloud\.com\/repository\/maven/d' \
-            android/settings.gradle.kts android/build.gradle.kts
-
       - name: 安装依赖
-        env:
-          # runner 内存/磁盘紧张，把 gradle daemon 堆调小，
-          # 避免下载 lint jar 时把磁盘吃光（No space left on device）
-          ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
         run: flutter pub get
 
       - name: 给 flutter_live2d 打本地补丁
@@ -91,19 +58,6 @@ jobs:
 
       - name: 单元测试
         run: flutter test
-
-      - name: 构建 Debug APK
-        env:
-          ORG_GRADLE_JVMARGS: -Xmx2G -XX:MaxMetaspaceSize=1G
-        run: flutter build apk --debug
-
-      - name: 上传 Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          retention-days: 14
-          if-no-files-found: error
 
   # ============================================================
   # 发布 Android（只有打 v* 标签才跑）
@@ -229,6 +183,8 @@ jobs:
         with:
           name: release-android
           path: build/app/outputs/flutter-apk/call-assistant-*.apk
+          # 构建完几分钟内就会被 publish 取走，7 天足够（省 artifact 存储）
+          retention-days: 7
           if-no-files-found: error
 
   # ============================================================
@@ -241,16 +197,6 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-
-      - name: 释放磁盘空间
-        # windows-latest 预装 Android NDK / SDK 占 20GB+，本项目用不到
-        shell: pwsh
-        run: |
-          "===== 清理前 ====="
-          Get-PSDrive C | Select-Object Used, Free
-          Remove-Item -Recurse -Force "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\com.android.tools.build" -ErrorAction SilentlyContinue
-          "===== 清理后 ====="
-          Get-PSDrive C | Select-Object Used, Free
 
       - name: 启用符号链接
         # Flutter 给插件建 .plugin_symlinks 时需要符号链接权限；
@@ -265,8 +211,19 @@ jobs:
           cache: true
 
       - name: 安装 nuget
-        # flutter_tts 的 Windows 实现用 nuget 还原 Microsoft.Windows.CppWinRT
-        run: choco install nuget.commandline --no-progress -y
+        # audioplayers_windows / flutter_tts 的 CMake 用 nuget 还原 WIL / CppWinRT。
+        #
+        # 直接下 exe 并加进 PATH：插件的 CMakeLists 里 `find_program(NUGET nuget)`
+        # 命中就不再走 FetchContent（那条路要访问 dist.nuget.org 并做 SHA256 校验，
+        # 网络抖动时直接失败）。比 choco install 快得多 —— choco 要 1 分钟左右。
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\nuget"
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/v6.5.0/nuget.exe" `
+            -OutFile "$dir\nuget.exe" -UseBasicParsing
+          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append
+          & "$dir\nuget.exe" help | Select-Object -First 1
 
       - name: 安装依赖
         run: flutter pub get
@@ -307,6 +264,7 @@ jobs:
         with:
           name: release-windows
           path: build/call-assistant-*.zip
+          retention-days: 7
           if-no-files-found: error
 
   # ============================================================
