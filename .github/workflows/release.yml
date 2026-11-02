@@ -31,14 +31,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
+          # 不缓存 Gradle 依赖（同上：占 storage，只 tag 才跑命中率低）
 
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.8'
           channel: stable
-          cache: true
+          # 关掉缓存：Free 私有仓库只有 500MB storage，
+          # 一份 Flutter SDK 缓存就要 1GB+（ubuntu / windows 各一份）。
+          # 现在只有打 tag 才跑，缓存命中率本来就低，
+          # 每次重下 SDK 约多 1~2 分钟，比占配额（$0.25/GB/月）划算。
+          cache: false
 
       - name: 安装依赖
         run: flutter pub get
@@ -93,14 +97,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
+          # 不缓存 Gradle 依赖（同上：占 storage，只 tag 才跑命中率低）
 
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.8'
           channel: stable
-          cache: true
+          # 关掉缓存：Free 私有仓库只有 500MB storage，
+          # 一份 Flutter SDK 缓存就要 1GB+（ubuntu / windows 各一份）。
+          # 现在只有打 tag 才跑，缓存命中率本来就低，
+          # 每次重下 SDK 约多 1~2 分钟，比占配额（$0.25/GB/月）划算。
+          cache: false
 
       - name: 切换到官方依赖源
         run: |
@@ -181,7 +189,8 @@ jobs:
           name: release-android
           path: build/app/outputs/flutter-apk/call-assistant-*.apk
           # 构建完几分钟内就会被 publish 取走，7 天足够（省 artifact 存储）
-          retention-days: 7
+          # 1 天就够：publish 在同一个 run 里几分钟内就 download 走了
+          retention-days: 1
           if-no-files-found: error
 
   # ============================================================
@@ -205,7 +214,11 @@ jobs:
         with:
           flutter-version: '3.47.8'
           channel: stable
-          cache: true
+          # 关掉缓存：Free 私有仓库只有 500MB storage，
+          # 一份 Flutter SDK 缓存就要 1GB+（ubuntu / windows 各一份）。
+          # 现在只有打 tag 才跑，缓存命中率本来就低，
+          # 每次重下 SDK 约多 1~2 分钟，比占配额（$0.25/GB/月）划算。
+          cache: false
 
       - name: 安装 nuget
         # audioplayers_windows / flutter_tts 的 CMake 用 nuget 还原 WIL / CppWinRT。
@@ -261,7 +274,8 @@ jobs:
         with:
           name: release-windows
           path: build/call-assistant-*.zip
-          retention-days: 7
+          # 1 天就够：publish 在同一个 run 里几分钟内就 download 走了
+          retention-days: 1
           if-no-files-found: error
 
   # ============================================================
@@ -273,6 +287,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # 需要在最后一步删掉本次运行的临时 artifact
+      actions: write
     steps:
       - name: 下载全部产物
         uses: actions/download-artifact@v4
@@ -291,3 +307,23 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      - name: 清理本次运行的临时 artifact
+        # 产物已经传到 Release 页了，中间用的 artifact 没必要留。
+        # 一次发版约 170MB（两个 ABI 的 APK + Windows zip），
+        # 攒几次就把 Free plan 的 500MB storage 占满。
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          ids=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+                 --jq '.artifacts[].id')
+          if [ -z "$ids" ]; then
+            echo "没有需要清理的 artifact"
+            exit 0
+          fi
+          for id in $ids; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" \
+              && echo "已删除 artifact $id"
+          done
