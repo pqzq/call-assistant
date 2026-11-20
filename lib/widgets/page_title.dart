@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 页面标题样式（左右两栏的标题栏统一用它）
 ///

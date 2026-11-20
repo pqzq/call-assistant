@@ -55,10 +55,9 @@ jobs:
 
       - name: 静态分析
         # --no-fatal-infos：Flutter 3.50 起 info 级也会让 analyze 退出码变 1
-        # （3.47 时只有 error/warning 才算失败）。
-        # 当前 22 条 info 全是「package:flutter/material.dart 已废弃，
-        # 建议改用 package:material_ui/material_ui.dart」，不影响编译，
-        # 但会把整个发布流程卡住。
+        # （3.47 时只有 error/warning 才算失败）。项目已迁移到 material_ui，
+        # 当前 analyze 是 0 issue；保留这个参数是为了防止以后新出现的 info
+        # 级提示（新的 deprecation 之类）把发布流程卡住。
         run: flutter analyze --no-fatal-infos
 
       - name: 单元测试

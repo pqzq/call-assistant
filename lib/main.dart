@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
+import 'package:material_ui/material_ui.dart';
 
 import 'pages/home_page.dart';
 import 'services/app_navigator.dart';
