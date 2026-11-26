@@ -1,5 +1,47 @@
 # 更新日志
 
+## v1.2.9
+
+### 修复
+
+- **Kokoro 模型合成语音闪退**：`kokoro-multi-lang-v1_1` 包里没有 `lang.txt`，
+  `detectModel()` 填的 `lang` 是空串；sherpa-onnx 内部按 `lang` 拼 `lexicon-<lang>.txt`
+  （拼成 `lexicon-.txt`），`fopen` 失败后空指针解引用 → SIGSEGV，进程被杀。
+  现在 `lang` 缺失时默认 `zh`，`lexicon` 按语言精确匹配
+  （`lexicon-zh.txt` → `lexicon-*-en.txt` → 任意 `lexicon*.txt`）。
+  另外 `_ensureTts()` 加了前置校验：Kokoro 缺 `model` / `voices` / `tokens` /
+  `espeak-ng-data` 时**直接返回 null**（sherpa 的 `Validate()` 用 `exit(-1)`，
+  Dart 的 try/catch 拦不住），界面会显示具体缺哪个文件
+- **live2d 贴图加载异常 / 构建报错**：`pubspec.yaml` 还声明着 `mark` / `natori` /
+  `rice` / `wanko` 四个模型目录，但文件已删 → `flutter build` 报
+  `unable to find directory entry`，选中这些模型时贴图必然空。
+  已移除这 13 行声明（模型列表是运行时扫 AssetManifest 得到的，UI 自动不再列出）
+
+### 变更
+
+- **Flutter 3.47.8 → 3.50.1**（Dart 3.13.7 → **3.14.0**，DevTools 2.61.0）
+- **迁移到 `material_ui`**：Flutter 3.50 起 `package:flutter/material.dart` 已废弃
+  （Material 从 SDK 拆成独立包）。新增依赖 `material_ui ^1.11.1`，
+  21 个文件的 import 换成 `package:material_ui/material_ui.dart`，API 完全兼容
+- **AGP 9.1.0 → 9.1.1**：Flutter 3.50.1 的最低要求
+- **live2d 资源不压缩**：`androidResources.noCompress` 加入
+  `moc3 / model3.json / motion3.json / physics3.json / exp3.json / pose3.json / cdi3.json / png`
+  —— Cubism 走 `AAssetManager` 读这些文件，压缩后要先解压到内存，`openFd(mmap)` 对压缩资源还会失败
+- 移除 4 个未使用的模型后，Windows 包 37.6 → **31.3 MB**，APK 149.7 → **144.2 MB**
+
+### 工程
+
+- **Actions 只在打 `v*` 标签时触发**：日常 push / PR 不再消耗分钟数；
+  `ci`（analyze + test）作为发版前的质量门禁，`release-*` 都 `needs: ci`
+- **ci job 瘦身**：12 步 → 7 步（约 10 分钟 → 3~4 分钟）。analyze / test 是纯 Dart，
+  不需要 NDK / CMake / Gradle，去掉了装 SDK、清磁盘、构建 Debug APK 等步骤
+- **削减 Actions storage**（Free 配额只有 500MB）：
+  关掉 Flutter SDK 缓存（1GB+/份 × 2 平台）和 Gradle 缓存，
+  artifact 保留 7 天 → **1 天**，并在 `publish` 末尾用 `GITHUB_TOKEN` 删掉本次运行的临时 artifact
+- `flutter analyze --no-fatal-infos`：Flutter 3.50 起 info 级也会让退出码变 1
+  （迁移到 material_ui 后当前是 0 issue，保留该参数防以后新增的 info 卡住发布）
+- CI 的 `flutter-version` 同步为 `3.50.1`；「切换到官方依赖源」补了华为云镜像的 sed
+
 ## v1.2.8
 
 ### 新增

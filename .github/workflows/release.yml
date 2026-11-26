@@ -36,7 +36,7 @@ jobs:
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.8'
+          flutter-version: '3.50.1'
           channel: stable
           # 关掉缓存：Free 私有仓库只有 500MB storage，
           # 一份 Flutter SDK 缓存就要 1GB+（ubuntu / windows 各一份）。
@@ -106,7 +106,7 @@ jobs:
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.8'
+          flutter-version: '3.50.1'
           channel: stable
           # 关掉缓存：Free 私有仓库只有 500MB storage，
           # 一份 Flutter SDK 缓存就要 1GB+（ubuntu / windows 各一份）。
@@ -216,7 +216,7 @@ jobs:
       - name: 配置 Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.8'
+          flutter-version: '3.50.1'
           channel: stable
           # 关掉缓存：Free 私有仓库只有 500MB storage，
           # 一份 Flutter SDK 缓存就要 1GB+（ubuntu / windows 各一份）。
